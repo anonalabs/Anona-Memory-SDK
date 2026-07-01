@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anona"
+version = "0.1.0"
+description = "Anona Memory SDK — managed AI memory for intelligent agents"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "Anona Labs" }]
+dependencies = ["httpx>=0.24"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/anonalabs/Anona-Memory-SDK"
+Repository = "https://github.com/anonalabs/Anona-Memory-SDK"
+
+[project.optional-dependencies]
+litellm = ["litellm>=1.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
