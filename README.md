@@ -50,7 +50,8 @@ async with AnonaClient(api_key="...") as client:
 - `add_memory(space_id, content, metadata=None) -> dict`
 - `search(space_id, query, limit=10) -> list[dict]`
 - `insights(space_id, query) -> str | None`
-- `async_add_memory(...)`, `async_search(...)`, `async_insights(...)` — async equivalents
+- `list_spaces() -> list[dict]`
+- `async_add_memory(...)`, `async_search(...)`, `async_insights(...)`, `async_list_spaces(...)` — async equivalents
 - `close()` / `aclose()` — release underlying HTTP clients
 
 Errors raise `AnonaError(status_code, detail)`.
@@ -77,11 +78,55 @@ import litellm
 litellm.completion(model="gpt-4o", messages=[{"role": "user", "content": "..."}])
 ```
 
+## MCP server
+
+The SDK ships an [MCP](https://modelcontextprotocol.io) server so any MCP client
+— Claude Desktop, Claude Code, Cursor — can read and write Anona memory as native
+tools: `remember`, `recall`, `list_spaces`, and `get_insights`.
+
+Install the extra:
+
+```bash
+pip install "anona[mcp]"
+```
+
+**Claude Desktop / Cursor** — add to `claude_desktop_config.json` (or
+`~/.cursor/mcp.json`), then restart:
+
+```json
+{
+  "mcpServers": {
+    "anona": {
+      "command": "uvx",
+      "args": ["--from", "anona[mcp]", "anona-mcp"],
+      "env": {
+        "ANONA_API_KEY": "anona_live_...",
+        "ANONA_SPACE_ID": "space_123"
+      }
+    }
+  }
+}
+```
+
+**Claude Code** — one command:
+
+```bash
+claude mcp add anona \
+  --env ANONA_API_KEY=anona_live_... \
+  --env ANONA_SPACE_ID=space_123 \
+  -- uvx --from "anona[mcp]" anona-mcp
+```
+
+`ANONA_SPACE_ID` sets the default space so you can just say "remember this"
+without naming one; override it per call with the `space_id` argument. The key
+is personal — the server only reaches spaces you are a member of.
+
 ## Requirements
 
-- Python >= 3.9
+- Python >= 3.10
 - `httpx >= 0.24`
 - `litellm >= 1.0` (optional, only for the LiteLLM integration)
+- `mcp >= 1.2` (optional, only for the MCP server)
 
 ## License
 

@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "anona"
-version = "0.1.0"
+version = "0.2.0"
 description = "Anona Memory SDK — managed AI memory for intelligent agents"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [{ name = "Anona Labs" }]
 dependencies = ["httpx>=0.24"]
 classifiers = [
@@ -23,6 +23,11 @@ Repository = "https://github.com/anonalabs/Anona-Memory-SDK"
 
 [project.optional-dependencies]
 litellm = ["litellm>=1.0"]
+mcp = ["mcp>=1.2"]
+dev = ["pytest", "pytest-asyncio", "respx", "anyio", "mcp>=1.2"]
+
+[project.scripts]
+anona-mcp = "anona.integrations.mcp:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

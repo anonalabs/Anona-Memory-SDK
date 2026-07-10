@@ -69,6 +69,11 @@ class AnonaClient:
         self._raise(resp)
         return resp.json().get("insights")
 
+    def list_spaces(self) -> list[dict]:
+        resp = self._client.get(f"{self._base_url}/v1/spaces/")
+        self._raise(resp)
+        return resp.json().get("spaces", [])
+
     # ── Async ─────────────────────────────────────────────────────────────────
 
     async def async_add_memory(
@@ -104,6 +109,11 @@ class AnonaClient:
         )
         self._raise(resp)
         return resp.json().get("insights")
+
+    async def async_list_spaces(self) -> list[dict]:
+        resp = await self._async_client.get(f"{self._base_url}/v1/spaces/")
+        self._raise(resp)
+        return resp.json().get("spaces", [])
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
