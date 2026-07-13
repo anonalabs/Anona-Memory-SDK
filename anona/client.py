@@ -13,17 +13,31 @@ class AnonaError(Exception):
 class AnonaClient:
     """Synchronous and async client for Anona Memory API."""
 
-    def __init__(self, api_key: str, base_url: str = "https://api.anona.ai"):
+    def __init__(self, api_key: str, base_url: str = "http://anona-prod-alb-747552680.us-east-1.elb.amazonaws.com"):
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
-        self._client = httpx.Client(
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=30.0,
-        )
-        self._async_client = httpx.AsyncClient(
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=30.0,
-        )
+        # Created lazily (first sync/async call) rather than both up front —
+        # a caller that only ever uses one side previously still opened (and
+        # leaked) the other's connection pool, since close()/aclose() each
+        # only tear down their own half.
+        self._client: httpx.Client | None = None
+        self._async_client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.Client:
+        if self._client is None:
+            self._client = httpx.Client(
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                timeout=30.0,
+            )
+        return self._client
+
+    def _get_async_client(self) -> httpx.AsyncClient:
+        if self._async_client is None:
+            self._async_client = httpx.AsyncClient(
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                timeout=30.0,
+            )
+        return self._async_client
 
     def _raise(self, resp: httpx.Response) -> None:
         if not resp.is_success:
@@ -41,7 +55,7 @@ class AnonaClient:
         content: str,
         metadata: dict | None = None,
     ) -> dict:
-        resp = self._client.post(
+        resp = self._get_client().post(
             f"{self._base_url}/v1/memories",
             json={"space_id": space_id, "content": content, "metadata": metadata or {}},
         )
@@ -54,7 +68,7 @@ class AnonaClient:
         query: str,
         limit: int = 10,
     ) -> list[dict]:
-        resp = self._client.post(
+        resp = self._get_client().post(
             f"{self._base_url}/v1/search",
             json={"space_id": space_id, "query": query, "limit": limit},
         )
@@ -62,7 +76,7 @@ class AnonaClient:
         return resp.json().get("results", [])
 
     def insights(self, space_id: str, query: str) -> str | None:
-        resp = self._client.post(
+        resp = self._get_client().post(
             f"{self._base_url}/v1/insights",
             json={"space_id": space_id, "query": query},
         )
@@ -70,7 +84,7 @@ class AnonaClient:
         return resp.json().get("insights")
 
     def list_spaces(self) -> list[dict]:
-        resp = self._client.get(f"{self._base_url}/v1/spaces/")
+        resp = self._get_client().get(f"{self._base_url}/v1/spaces/")
         self._raise(resp)
         return resp.json().get("spaces", [])
 
@@ -82,7 +96,7 @@ class AnonaClient:
         content: str,
         metadata: dict | None = None,
     ) -> dict:
-        resp = await self._async_client.post(
+        resp = await self._get_async_client().post(
             f"{self._base_url}/v1/memories",
             json={"space_id": space_id, "content": content, "metadata": metadata or {}},
         )
@@ -95,7 +109,7 @@ class AnonaClient:
         query: str,
         limit: int = 10,
     ) -> list[dict]:
-        resp = await self._async_client.post(
+        resp = await self._get_async_client().post(
             f"{self._base_url}/v1/search",
             json={"space_id": space_id, "query": query, "limit": limit},
         )
@@ -103,7 +117,7 @@ class AnonaClient:
         return resp.json().get("results", [])
 
     async def async_insights(self, space_id: str, query: str) -> str | None:
-        resp = await self._async_client.post(
+        resp = await self._get_async_client().post(
             f"{self._base_url}/v1/insights",
             json={"space_id": space_id, "query": query},
         )
@@ -111,17 +125,21 @@ class AnonaClient:
         return resp.json().get("insights")
 
     async def async_list_spaces(self) -> list[dict]:
-        resp = await self._async_client.get(f"{self._base_url}/v1/spaces/")
+        resp = await self._get_async_client().get(f"{self._base_url}/v1/spaces/")
         self._raise(resp)
         return resp.json().get("spaces", [])
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def close(self) -> None:
-        self._client.close()
+        """Close the sync client, if one was ever opened."""
+        if self._client is not None:
+            self._client.close()
 
     async def aclose(self) -> None:
-        await self._async_client.aclose()
+        """Close the async client, if one was ever opened."""
+        if self._async_client is not None:
+            await self._async_client.aclose()
 
     def __enter__(self) -> "AnonaClient":
         return self

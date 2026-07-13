@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+
 import httpx
+
+logger = logging.getLogger("anona.litellm")
 
 
 class AnonaMemory:
@@ -25,7 +29,7 @@ class AnonaMemory:
         self,
         api_key: str,
         space_id: str,
-        base_url: str = "https://api.anona.ai",
+        base_url: str = "http://anona-prod-alb-747552680.us-east-1.elb.amazonaws.com",
         recall_limit: int = 5,
         inject_mode: str = "system",
         store_after: bool = True,
@@ -64,20 +68,32 @@ class AnonaMemory:
                 )
                 if resp.is_success:
                     return resp.json().get("results", [])
+                logger.warning(
+                    "anona: memory search failed (HTTP %d) — proceeding without "
+                    "injected memories: %s",
+                    resp.status_code,
+                    resp.text,
+                )
         except Exception:
-            pass
+            logger.warning("anona: memory search failed — proceeding without injected memories", exc_info=True)
         return []
 
     async def _store(self, content: str) -> None:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                await client.post(
+                resp = await client.post(
                     f"{self._base_url}/v1/memories",
                     headers=self._headers,
                     json={"space_id": self._space_id, "content": content},
                 )
+                if not resp.is_success:
+                    logger.warning(
+                        "anona: failed to store conversation turn (HTTP %d): %s",
+                        resp.status_code,
+                        resp.text,
+                    )
         except Exception:
-            pass
+            logger.warning("anona: failed to store conversation turn", exc_info=True)
 
     # ── LiteLLM hooks ─────────────────────────────────────────────────────────
 
@@ -137,4 +153,4 @@ class AnonaMemory:
                 content = f"User: {user_msg}\nAssistant: {assistant_msg}"
                 asyncio.create_task(self._store(content))
         except Exception:
-            pass
+            logger.warning("anona: failed to prepare conversation turn for storage", exc_info=True)

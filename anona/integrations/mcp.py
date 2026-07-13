@@ -34,7 +34,7 @@ except ImportError:  # pragma: no cover
     )
     raise
 
-DEFAULT_BASE_URL = "https://api.anona.ai"
+DEFAULT_BASE_URL = "http://anona-prod-alb-747552680.us-east-1.elb.amazonaws.com"
 SPACE_ENV_VAR = "ANONA_SPACE_ID"
 
 mcp = FastMCP("Anona Memory")
