@@ -1,6 +1,6 @@
 # Anona Memory SDK
 
-Python SDK for [Anona Memory](https://anona.ai) — managed AI memory for intelligent agents. Store, search, and synthesize memories per user/space via a simple client, or auto-inject memory into LiteLLM calls with one line.
+Python SDK for [Anona Memory](https://anona.ai) — managed AI memory for intelligent agents. Record, retrieve, and reason over memories per user/space via a simple client, or auto-inject memory into LiteLLM calls with one line.
 
 ## Install
 
@@ -21,37 +21,37 @@ from anona import AnonaClient
 
 client = AnonaClient(api_key="anona_live_...", base_url="https://api.anona.ai")
 
-# Store a memory
-client.add_memory(space_id="space_123", content="User prefers dark mode.")
+# Record a memory
+client.record(space_id="space_123", content="User prefers dark mode.")
 
-# Search memories
-results = client.search(space_id="space_123", query="UI preferences", limit=5)
+# Retrieve memories
+results = client.retrieve(space_id="space_123", query="UI preferences", limit=5)
 for r in results:
     print(r["relevance_score"], r["content"])
 
-# Ask for a synthesized insight across memories
-summary = client.insights(space_id="space_123", query="What do we know about this user?")
+# Reason: a synthesized insight across memories
+summary = client.reason(space_id="space_123", query="What do we know about this user?")
 print(summary)
 
 client.close()
 ```
 
-Async variants (`async_add_memory`, `async_search`, `async_insights`) are available on the same client, or use it as a context manager:
+Async variants (`async_record`, `async_retrieve`, `async_reason`) are available on the same client, or use it as a context manager:
 
 ```python
 async with AnonaClient(api_key="...") as client:
-    await client.async_add_memory(space_id="space_123", content="...")
+    await client.async_record(space_id="space_123", content="...")
 ```
 
 ## API
 
 ### `AnonaClient(api_key, base_url="https://api.anona.ai")`
 
-- `add_memory(space_id, content, metadata=None) -> dict`
-- `search(space_id, query, limit=10) -> list[dict]`
-- `insights(space_id, query) -> str | None`
+- `record(space_id, content, metadata=None) -> dict`
+- `retrieve(space_id, query, limit=10) -> list[dict]`
+- `reason(space_id, query) -> str | None`
 - `list_spaces() -> list[dict]`
-- `async_add_memory(...)`, `async_search(...)`, `async_insights(...)`, `async_list_spaces(...)` — async equivalents
+- `async_record(...)`, `async_retrieve(...)`, `async_reason(...)`, `async_list_spaces(...)` — async equivalents
 - `close()` / `aclose()` — release underlying HTTP clients
 
 Errors raise `AnonaError(status_code, detail)`.
@@ -82,7 +82,7 @@ litellm.completion(model="gpt-4o", messages=[{"role": "user", "content": "..."}]
 
 The SDK ships an [MCP](https://modelcontextprotocol.io) server so any MCP client
 — Claude Desktop, Claude Code, Cursor — can read and write Anona memory as native
-tools: `remember`, `recall`, `list_spaces`, and `get_insights`.
+tools: `record`, `retrieve`, `list_spaces`, and `reason`.
 
 Install the extra:
 

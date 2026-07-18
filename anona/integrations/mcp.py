@@ -2,7 +2,7 @@
 Anona Memory MCP server.
 
 Exposes Anona memory as MCP tools so any MCP client (Claude Desktop, Claude Code,
-Cursor) can store and recall memories natively.
+Cursor) can store and retrieve memories natively.
 
 Run:
     ANONA_API_KEY=anona_live_... uvx --from anona anona-mcp
@@ -74,24 +74,24 @@ def _format_error(exc: AnonaError) -> str:
 
 
 @mcp.tool()
-def remember(content: str, space_id: str | None = None) -> str:
-    """Store a fact in Anona memory so it can be recalled in later conversations.
+def record(content: str, space_id: str | None = None) -> str:
+    """Store a fact in Anona memory so it can be retrieved in later conversations.
 
     Args:
-        content: The fact to remember, written as a complete sentence.
+        content: The fact to record, written as a complete sentence.
         space_id: Space to store it in. Defaults to the ANONA_SPACE_ID env var.
     """
     space = _resolve_space(space_id)
     with _client() as c:
         try:
-            c.add_memory(space_id=space, content=content)
+            c.record(space_id=space, content=content)
         except AnonaError as exc:
             return f"Failed to store memory: {_format_error(exc)}"
     return f"Stored in space '{space}'."
 
 
 @mcp.tool()
-def recall(query: str, space_id: str | None = None, limit: int = 5) -> str:
+def retrieve(query: str, space_id: str | None = None, limit: int = 5) -> str:
     """Search Anona memory for facts relevant to a query.
 
     Args:
@@ -102,7 +102,7 @@ def recall(query: str, space_id: str | None = None, limit: int = 5) -> str:
     space = _resolve_space(space_id)
     with _client() as c:
         try:
-            results = c.search(space_id=space, query=query, limit=limit)
+            results = c.retrieve(space_id=space, query=query, limit=limit)
         except AnonaError as exc:
             return f"Search failed: {_format_error(exc)}"
 
@@ -136,10 +136,10 @@ def list_spaces() -> str:
 
 
 @mcp.tool()
-def get_insights(query: str, space_id: str | None = None) -> str:
+def reason(query: str, space_id: str | None = None) -> str:
     """Get a synthesized summary of what Anona memory knows about a topic.
 
-    Unlike recall, which returns individual memories, this returns a single
+    Unlike retrieve, which returns individual memories, this returns a single
     narrative answer built from everything stored in the space.
 
     Args:
@@ -149,7 +149,7 @@ def get_insights(query: str, space_id: str | None = None) -> str:
     space = _resolve_space(space_id)
     with _client() as c:
         try:
-            insights = c.insights(space_id=space, query=query)
+            insights = c.reason(space_id=space, query=query)
         except AnonaError as exc:
             return f"Failed to get insights: {_format_error(exc)}"
     return insights or f"No insights available in space '{space}' for that query."

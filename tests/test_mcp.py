@@ -29,7 +29,7 @@ def env(monkeypatch):
 @pytest.mark.anyio
 async def test_all_tools_registered():
     tools = await anona_mcp.mcp.list_tools()
-    assert {t.name for t in tools} == {"remember", "recall", "list_spaces", "get_insights"}
+    assert {t.name for t in tools} == {"record", "retrieve", "list_spaces", "reason"}
 
 
 @pytest.fixture
@@ -61,15 +61,15 @@ def test_missing_api_key_raises(monkeypatch):
         anona_mcp._client()
 
 
-# ── remember ──────────────────────────────────────────────────────────────────
+# ── record ──────────────────────────────────────────────────────────────────
 
 
 @respx.mock
-def test_remember_posts_memory():
-    route = respx.post(f"{BASE}/v1/memories").mock(
+def test_record_posts_memory():
+    route = respx.post(f"{BASE}/v1/record").mock(
         return_value=httpx.Response(201, json={"memory_id": "m1"})
     )
-    out = anona_mcp.remember("Srujan uses zsh.", space_id=SPACE)
+    out = anona_mcp.record("Srujan uses zsh.", space_id=SPACE)
 
     assert route.called
     body = json.loads(route.calls[0].request.read())
@@ -79,24 +79,24 @@ def test_remember_posts_memory():
 
 
 @respx.mock
-def test_remember_surfaces_gateway_error_message():
-    respx.post(f"{BASE}/v1/memories").mock(
+def test_record_surfaces_gateway_error_message():
+    respx.post(f"{BASE}/v1/record").mock(
         return_value=httpx.Response(
             403,
             json={"error": {"code": "space_access_denied", "message": "No access."}},
         )
     )
-    out = anona_mcp.remember("x", space_id=SPACE)
+    out = anona_mcp.record("x", space_id=SPACE)
     assert "Failed to store memory" in out
     assert "No access." in out
 
 
-# ── recall ────────────────────────────────────────────────────────────────────
+# ── retrieve ────────────────────────────────────────────────────────────────────
 
 
 @respx.mock
-def test_recall_formats_results_with_scores():
-    respx.post(f"{BASE}/v1/search").mock(
+def test_retrieve_formats_results_with_scores():
+    respx.post(f"{BASE}/v1/retrieve").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -107,7 +107,7 @@ def test_recall_formats_results_with_scores():
             },
         )
     )
-    out = anona_mcp.recall("who am i", space_id=SPACE)
+    out = anona_mcp.retrieve("who am i", space_id=SPACE)
 
     assert "1. Name is Srujan." in out
     assert "relevance 0.91" in out
@@ -115,17 +115,17 @@ def test_recall_formats_results_with_scores():
 
 
 @respx.mock
-def test_recall_empty_results():
-    respx.post(f"{BASE}/v1/search").mock(return_value=httpx.Response(200, json={"results": []}))
-    assert "No memories found" in anona_mcp.recall("nothing", space_id=SPACE)
+def test_retrieve_empty_results():
+    respx.post(f"{BASE}/v1/retrieve").mock(return_value=httpx.Response(200, json={"results": []}))
+    assert "No memories found" in anona_mcp.retrieve("nothing", space_id=SPACE)
 
 
 @respx.mock
-def test_recall_passes_limit():
-    route = respx.post(f"{BASE}/v1/search").mock(
+def test_retrieve_passes_limit():
+    route = respx.post(f"{BASE}/v1/retrieve").mock(
         return_value=httpx.Response(200, json={"results": []})
     )
-    anona_mcp.recall("q", space_id=SPACE, limit=3)
+    anona_mcp.retrieve("q", space_id=SPACE, limit=3)
     assert json.loads(route.calls[0].request.read())["limit"] == 3
 
 
@@ -152,25 +152,25 @@ def test_list_spaces_empty():
     assert "No spaces found" in anona_mcp.list_spaces()
 
 
-# ── get_insights ──────────────────────────────────────────────────────────────
+# ── reason ──────────────────────────────────────────────────────────────
 
 
 @respx.mock
-def test_get_insights_returns_text():
-    respx.post(f"{BASE}/v1/insights").mock(
+def test_reason_returns_text():
+    respx.post(f"{BASE}/v1/reason").mock(
         return_value=httpx.Response(200, json={"insights": "Uses FastAPI."})
     )
-    assert anona_mcp.get_insights("stack", space_id=SPACE) == "Uses FastAPI."
+    assert anona_mcp.reason("stack", space_id=SPACE) == "Uses FastAPI."
 
 
 @respx.mock
-def test_get_insights_surfaces_error_message():
-    respx.post(f"{BASE}/v1/insights").mock(
+def test_reason_surfaces_error_message():
+    respx.post(f"{BASE}/v1/reason").mock(
         return_value=httpx.Response(
             403, json={"error": {"code": "space_access_denied", "message": "No access."}}
         )
     )
-    out = anona_mcp.get_insights("stack", space_id=SPACE)
+    out = anona_mcp.reason("stack", space_id=SPACE)
     assert "Failed to get insights" in out
     assert "No access." in out
 

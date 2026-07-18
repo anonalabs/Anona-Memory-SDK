@@ -49,35 +49,35 @@ class AnonaClient:
 
     # ── Sync ──────────────────────────────────────────────────────────────────
 
-    def add_memory(
+    def record(
         self,
         space_id: str,
         content: str,
         metadata: dict | None = None,
     ) -> dict:
         resp = self._get_client().post(
-            f"{self._base_url}/v1/memories",
+            f"{self._base_url}/v1/record",
             json={"space_id": space_id, "content": content, "metadata": metadata or {}},
         )
         self._raise(resp)
         return resp.json()
 
-    def search(
+    def retrieve(
         self,
         space_id: str,
         query: str,
         limit: int = 10,
     ) -> list[dict]:
         resp = self._get_client().post(
-            f"{self._base_url}/v1/search",
+            f"{self._base_url}/v1/retrieve",
             json={"space_id": space_id, "query": query, "limit": limit},
         )
         self._raise(resp)
         return resp.json().get("results", [])
 
-    def insights(self, space_id: str, query: str) -> str | None:
+    def reason(self, space_id: str, query: str) -> str | None:
         resp = self._get_client().post(
-            f"{self._base_url}/v1/insights",
+            f"{self._base_url}/v1/reason",
             json={"space_id": space_id, "query": query},
         )
         self._raise(resp)
@@ -90,35 +90,35 @@ class AnonaClient:
 
     # ── Async ─────────────────────────────────────────────────────────────────
 
-    async def async_add_memory(
+    async def async_record(
         self,
         space_id: str,
         content: str,
         metadata: dict | None = None,
     ) -> dict:
         resp = await self._get_async_client().post(
-            f"{self._base_url}/v1/memories",
+            f"{self._base_url}/v1/record",
             json={"space_id": space_id, "content": content, "metadata": metadata or {}},
         )
         self._raise(resp)
         return resp.json()
 
-    async def async_search(
+    async def async_retrieve(
         self,
         space_id: str,
         query: str,
         limit: int = 10,
     ) -> list[dict]:
         resp = await self._get_async_client().post(
-            f"{self._base_url}/v1/search",
+            f"{self._base_url}/v1/retrieve",
             json={"space_id": space_id, "query": query, "limit": limit},
         )
         self._raise(resp)
         return resp.json().get("results", [])
 
-    async def async_insights(self, space_id: str, query: str) -> str | None:
+    async def async_reason(self, space_id: str, query: str) -> str | None:
         resp = await self._get_async_client().post(
-            f"{self._base_url}/v1/insights",
+            f"{self._base_url}/v1/reason",
             json={"space_id": space_id, "query": query},
         )
         self._raise(resp)

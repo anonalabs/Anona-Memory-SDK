@@ -58,7 +58,7 @@ class AnonaMemory:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(
-                    f"{self._base_url}/v1/search",
+                    f"{self._base_url}/v1/retrieve",
                     headers=self._headers,
                     json={
                         "space_id": self._space_id,
@@ -82,7 +82,7 @@ class AnonaMemory:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(
-                    f"{self._base_url}/v1/memories",
+                    f"{self._base_url}/v1/record",
                     headers=self._headers,
                     json={"space_id": self._space_id, "content": content},
                 )
