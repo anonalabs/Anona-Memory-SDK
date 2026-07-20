@@ -51,7 +51,10 @@ async with AnonaClient(api_key="...") as client:
 - `retrieve(space_id, query, limit=10) -> list[dict]`
 - `reason(space_id, query) -> str | None`
 - `list_spaces() -> list[dict]`
-- `async_record(...)`, `async_retrieve(...)`, `async_reason(...)`, `async_list_spaces(...)` — async equivalents
+- `get_graph(space_id, limit=500, min_count=1) -> dict` — entity relationship graph (nodes + co-occurrence edges)
+- `list_entities(space_id, limit=100, offset=0) -> list[dict]`
+- `get_entity(space_id, entity_id) -> dict` — one entity + its observations
+- `async_record(...)`, `async_retrieve(...)`, `async_reason(...)`, `async_list_spaces(...)`, `async_get_graph(...)`, `async_list_entities(...)`, `async_get_entity(...)` — async equivalents
 - `close()` / `aclose()` — release underlying HTTP clients
 
 Errors raise `AnonaError(status_code, detail)`.

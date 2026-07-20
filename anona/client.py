@@ -88,6 +88,39 @@ class AnonaClient:
         self._raise(resp)
         return resp.json().get("spaces", [])
 
+    def get_graph(self, space_id: str, *, limit: int = 500, min_count: int = 1) -> dict:
+        """Entity relationship graph for a space.
+
+        Nodes are entities; an edge means two entities were mentioned together in
+        the same memory (weighted). Returns
+        ``{"nodes", "edges", "total_entities", "total_edges"}``.
+        """
+        resp = self._get_client().get(
+            f"{self._base_url}/v1/spaces/{space_id}/graph",
+            params={"limit": limit, "min_count": min_count},
+        )
+        self._raise(resp)
+        return resp.json()
+
+    def list_entities(
+        self, space_id: str, *, limit: int = 100, offset: int = 0
+    ) -> list[dict]:
+        """List the entities extracted in a space, most-mentioned first."""
+        resp = self._get_client().get(
+            f"{self._base_url}/v1/spaces/{space_id}/entities",
+            params={"limit": limit, "offset": offset},
+        )
+        self._raise(resp)
+        return resp.json().get("items", [])
+
+    def get_entity(self, space_id: str, entity_id: str) -> dict:
+        """One entity and its observations (what's been learned about it)."""
+        resp = self._get_client().get(
+            f"{self._base_url}/v1/spaces/{space_id}/entities/{entity_id}",
+        )
+        self._raise(resp)
+        return resp.json()
+
     # ── Async ─────────────────────────────────────────────────────────────────
 
     async def async_record(
@@ -128,6 +161,33 @@ class AnonaClient:
         resp = await self._get_async_client().get(f"{self._base_url}/v1/spaces/")
         self._raise(resp)
         return resp.json().get("spaces", [])
+
+    async def async_get_graph(
+        self, space_id: str, *, limit: int = 500, min_count: int = 1
+    ) -> dict:
+        resp = await self._get_async_client().get(
+            f"{self._base_url}/v1/spaces/{space_id}/graph",
+            params={"limit": limit, "min_count": min_count},
+        )
+        self._raise(resp)
+        return resp.json()
+
+    async def async_list_entities(
+        self, space_id: str, *, limit: int = 100, offset: int = 0
+    ) -> list[dict]:
+        resp = await self._get_async_client().get(
+            f"{self._base_url}/v1/spaces/{space_id}/entities",
+            params={"limit": limit, "offset": offset},
+        )
+        self._raise(resp)
+        return resp.json().get("items", [])
+
+    async def async_get_entity(self, space_id: str, entity_id: str) -> dict:
+        resp = await self._get_async_client().get(
+            f"{self._base_url}/v1/spaces/{space_id}/entities/{entity_id}",
+        )
+        self._raise(resp)
+        return resp.json()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
