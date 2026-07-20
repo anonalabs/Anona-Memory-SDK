@@ -4,15 +4,21 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "anona"
-version = "0.2.0"
+version = "0.3.0"
 description = "Anona Memory SDK — managed AI memory for intelligent agents"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [{ name = "Anona Labs" }]
+keywords = ["ai", "memory", "agents", "llm", "rag", "mcp"]
 dependencies = ["httpx>=0.24"]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
@@ -31,3 +37,4 @@ anona-mcp = "anona.integrations.mcp:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["anona*"]
