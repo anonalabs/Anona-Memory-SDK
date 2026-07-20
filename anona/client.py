@@ -13,7 +13,7 @@ class AnonaError(Exception):
 class AnonaClient:
     """Synchronous and async client for Anona Memory API."""
 
-    def __init__(self, api_key: str, base_url: str = "http://anona-prod-alb-747552680.us-east-1.elb.amazonaws.com"):
+    def __init__(self, api_key: str, base_url: str = "https://memory.anonalabs.com"):
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         # Created lazily (first sync/async call) rather than both up front —
@@ -54,10 +54,49 @@ class AnonaClient:
         space_id: str,
         content: str,
         metadata: dict | None = None,
+        background: bool = False,
     ) -> dict:
+        """Store a memory.
+
+        With ``background=True`` the write is queued and returns immediately with
+        a ``job_id`` (``status="processing"``) instead of the stored
+        ``memory_id`` — poll it with :meth:`get_job`. Use this in latency-
+        sensitive paths so the call never blocks on fact extraction.
+        """
+        body: dict = {
+            "space_id": space_id,
+            "content": content,
+            "metadata": metadata or {},
+        }
+        if background:
+            body["async"] = True
+        resp = self._get_client().post(f"{self._base_url}/v1/record", json=body)
+        self._raise(resp)
+        return resp.json()
+
+    def record_batch(self, space_id: str, items: list[dict]) -> dict:
+        """Bulk-ingest up to 100 memories in one call (always queued).
+
+        Each item is a dict with ``content`` (required) and optional ``context``,
+        ``timestamp``, ``metadata``. Returns a ``job_id`` — poll :meth:`get_job`.
+        """
         resp = self._get_client().post(
-            f"{self._base_url}/v1/record",
-            json={"space_id": space_id, "content": content, "metadata": metadata or {}},
+            f"{self._base_url}/v1/record/batch",
+            json={"space_id": space_id, "items": items},
+        )
+        self._raise(resp)
+        return resp.json()
+
+    def get_job(self, space_id: str, job_id: str) -> dict:
+        """Status of a queued ingestion job from ``record(background=True)`` or
+        :meth:`record_batch`. Free — does not consume credits.
+
+        Returns ``{"job_id", "status", "created_at", "completed_at", "error"}``;
+        ``status`` is one of pending / processing / completed / failed /
+        cancelled / not_found.
+        """
+        resp = self._get_client().get(
+            f"{self._base_url}/v1/spaces/{space_id}/jobs/{job_id}"
         )
         self._raise(resp)
         return resp.json()
@@ -128,10 +167,36 @@ class AnonaClient:
         space_id: str,
         content: str,
         metadata: dict | None = None,
+        background: bool = False,
     ) -> dict:
+        """Async (asyncio) variant of :meth:`record`. ``background=True`` queues
+        the write and returns a ``job_id`` — poll with :meth:`async_get_job`."""
+        body: dict = {
+            "space_id": space_id,
+            "content": content,
+            "metadata": metadata or {},
+        }
+        if background:
+            body["async"] = True
         resp = await self._get_async_client().post(
-            f"{self._base_url}/v1/record",
-            json={"space_id": space_id, "content": content, "metadata": metadata or {}},
+            f"{self._base_url}/v1/record", json=body
+        )
+        self._raise(resp)
+        return resp.json()
+
+    async def async_record_batch(self, space_id: str, items: list[dict]) -> dict:
+        """Async (asyncio) variant of :meth:`record_batch`."""
+        resp = await self._get_async_client().post(
+            f"{self._base_url}/v1/record/batch",
+            json={"space_id": space_id, "items": items},
+        )
+        self._raise(resp)
+        return resp.json()
+
+    async def async_get_job(self, space_id: str, job_id: str) -> dict:
+        """Async (asyncio) variant of :meth:`get_job`."""
+        resp = await self._get_async_client().get(
+            f"{self._base_url}/v1/spaces/{space_id}/jobs/{job_id}"
         )
         self._raise(resp)
         return resp.json()
