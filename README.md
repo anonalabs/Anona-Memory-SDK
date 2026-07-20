@@ -1,6 +1,6 @@
 # Anona Memory SDK
 
-Python SDK for [Anona Memory](https://anona.ai) — managed AI memory for intelligent agents. Record, retrieve, and reason over memories per user/space via a simple client, or auto-inject memory into LiteLLM calls with one line.
+Python SDK for [Anona Memory](https://memory.anonalabs.com) — managed AI memory for intelligent agents. Record, retrieve, and reason over memories per user/space via a simple client, or auto-inject memory into LiteLLM calls with one line.
 
 ## Install
 
