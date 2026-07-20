@@ -109,7 +109,7 @@ from anona.integrations.litellm import AnonaMemory
 mem = AnonaMemory(
     api_key="anona_live_...",
     space_id="space_123",
-    base_url="https://api.anona.ai",
+    base_url="https://memory.anonalabs.com",
     recall_limit=5,       # how many memories to retrieve per call
     inject_mode="system", # "system" or "user"
     store_after=True,     # auto-store the exchange after each call
