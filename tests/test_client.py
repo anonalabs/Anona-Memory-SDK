@@ -120,3 +120,78 @@ async def test_async_record_background_and_get_job():
         assert json.loads(route.calls.last.request.content)["async"] is True
         status = await c.async_get_job(space_id=SPACE, job_id="job_a")
         assert status["status"] == "pending"
+
+
+# ── tags on the write path ──────────────────────────────────────────────────────
+
+
+@respx.mock
+def test_record_sends_tags(client):
+    route = respx.post(f"{BASE}/v1/record").mock(
+        return_value=httpx.Response(201, json={"memory_id": "m1", "status": "stored"})
+    )
+    client.record(space_id=SPACE, content="hi", tags=["agent_a", "run_7"])
+    body = json.loads(route.calls.last.request.content)
+    assert body["tags"] == ["agent_a", "run_7"]
+
+
+@respx.mock
+def test_record_omits_tags_when_none(client):
+    route = respx.post(f"{BASE}/v1/record").mock(
+        return_value=httpx.Response(201, json={"memory_id": "m1", "status": "stored"})
+    )
+    client.record(space_id=SPACE, content="hi")
+    assert "tags" not in json.loads(route.calls.last.request.content)
+
+
+@respx.mock
+def test_record_batch_passes_item_tags(client):
+    route = respx.post(f"{BASE}/v1/record/batch").mock(
+        return_value=httpx.Response(202, json={"job_id": "jb", "status": "processing", "accepted": 1})
+    )
+    client.record_batch(space_id=SPACE, items=[{"content": "a", "tags": ["x"]}])
+    body = json.loads(route.calls.last.request.content)
+    assert body["items"][0]["tags"] == ["x"]
+
+
+# ── space / memory management ────────────────────────────────────────────────────
+
+
+@respx.mock
+def test_create_space(client):
+    route = respx.post(f"{BASE}/v1/spaces/").mock(
+        return_value=httpx.Response(201, json={"space_id": "sp_1", "name": "Demo"})
+    )
+    out = client.create_space("Demo", description="d")
+    assert out["space_id"] == "sp_1"
+    assert json.loads(route.calls.last.request.content) == {"name": "Demo", "description": "d"}
+
+
+@respx.mock
+def test_delete_space(client):
+    route = respx.delete(f"{BASE}/v1/spaces/sp_9").mock(return_value=httpx.Response(204))
+    client.delete_space("sp_9")
+    assert route.called
+
+
+@respx.mock
+def test_delete_memory(client):
+    route = respx.delete(f"{BASE}/v1/spaces/sp_9/memories/mem_3").mock(
+        return_value=httpx.Response(204)
+    )
+    client.delete_memory("sp_9", "mem_3")
+    assert route.called
+
+
+@pytest.mark.anyio
+@respx.mock
+async def test_async_create_and_delete_space():
+    respx.post(f"{BASE}/v1/spaces/").mock(
+        return_value=httpx.Response(201, json={"space_id": "sp_a", "name": "A"})
+    )
+    d = respx.delete(f"{BASE}/v1/spaces/sp_a").mock(return_value=httpx.Response(204))
+    async with AnonaClient(api_key=KEY, base_url=BASE) as c:
+        out = await c.async_create_space("A")
+        assert out["space_id"] == "sp_a"
+        await c.async_delete_space("sp_a")
+    assert d.called

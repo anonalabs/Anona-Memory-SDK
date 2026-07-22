@@ -54,9 +54,13 @@ class AnonaClient:
         space_id: str,
         content: str,
         metadata: dict | None = None,
+        tags: list[str] | None = None,
         background: bool = False,
     ) -> dict:
         """Store a memory.
+
+        ``tags`` attaches visibility-scope tags that :meth:`retrieve` can filter
+        on (e.g. tag by the source agent in agent-to-agent workflows).
 
         With ``background=True`` the write is queued and returns immediately with
         a ``job_id`` (``status="processing"``) instead of the stored
@@ -68,6 +72,8 @@ class AnonaClient:
             "content": content,
             "metadata": metadata or {},
         }
+        if tags:
+            body["tags"] = tags
         if background:
             body["async"] = True
         resp = self._get_client().post(f"{self._base_url}/v1/record", json=body)
@@ -78,7 +84,8 @@ class AnonaClient:
         """Bulk-ingest up to 100 memories in one call (always queued).
 
         Each item is a dict with ``content`` (required) and optional ``context``,
-        ``timestamp``, ``metadata``. Returns a ``job_id`` — poll :meth:`get_job`.
+        ``timestamp``, ``metadata``, and ``tags`` (a list of strings, filterable
+        by :meth:`retrieve`). Returns a ``job_id`` — poll :meth:`get_job`.
         """
         resp = self._get_client().post(
             f"{self._base_url}/v1/record/batch",
@@ -160,6 +167,27 @@ class AnonaClient:
         self._raise(resp)
         return resp.json()
 
+    def create_space(self, name: str, description: str | None = None) -> dict:
+        """Create a memory space. Returns ``{"space_id", "name", ...}``."""
+        resp = self._get_client().post(
+            f"{self._base_url}/v1/spaces/",
+            json={"name": name, "description": description},
+        )
+        self._raise(resp)
+        return resp.json()
+
+    def delete_space(self, space_id: str) -> None:
+        """Delete a space and every memory in it. Irreversible."""
+        resp = self._get_client().delete(f"{self._base_url}/v1/spaces/{space_id}")
+        self._raise(resp)
+
+    def delete_memory(self, space_id: str, memory_id: str) -> None:
+        """Delete a single memory from a space. Irreversible."""
+        resp = self._get_client().delete(
+            f"{self._base_url}/v1/spaces/{space_id}/memories/{memory_id}"
+        )
+        self._raise(resp)
+
     # ── Async ─────────────────────────────────────────────────────────────────
 
     async def async_record(
@@ -167,6 +195,7 @@ class AnonaClient:
         space_id: str,
         content: str,
         metadata: dict | None = None,
+        tags: list[str] | None = None,
         background: bool = False,
     ) -> dict:
         """Async (asyncio) variant of :meth:`record`. ``background=True`` queues
@@ -176,6 +205,8 @@ class AnonaClient:
             "content": content,
             "metadata": metadata or {},
         }
+        if tags:
+            body["tags"] = tags
         if background:
             body["async"] = True
         resp = await self._get_async_client().post(
@@ -253,6 +284,31 @@ class AnonaClient:
         )
         self._raise(resp)
         return resp.json()
+
+    async def async_create_space(
+        self, name: str, description: str | None = None
+    ) -> dict:
+        """Async (asyncio) variant of :meth:`create_space`."""
+        resp = await self._get_async_client().post(
+            f"{self._base_url}/v1/spaces/",
+            json={"name": name, "description": description},
+        )
+        self._raise(resp)
+        return resp.json()
+
+    async def async_delete_space(self, space_id: str) -> None:
+        """Async (asyncio) variant of :meth:`delete_space`."""
+        resp = await self._get_async_client().delete(
+            f"{self._base_url}/v1/spaces/{space_id}"
+        )
+        self._raise(resp)
+
+    async def async_delete_memory(self, space_id: str, memory_id: str) -> None:
+        """Async (asyncio) variant of :meth:`delete_memory`."""
+        resp = await self._get_async_client().delete(
+            f"{self._base_url}/v1/spaces/{space_id}/memories/{memory_id}"
+        )
+        self._raise(resp)
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
