@@ -230,3 +230,43 @@ async def test_async_create_and_delete_space():
         assert out["space_id"] == "sp_a"
         await c.async_delete_space("sp_a")
     assert d.called
+
+
+# ── documents (file upload → retrieval) ──────────────────────────────────────
+
+
+@respx.mock
+def test_upload_file_from_bytes(client):
+    route = respx.post(f"{BASE}/v1/spaces/{SPACE}/documents").mock(
+        return_value=httpx.Response(202, json={"job_ids": ["job_u1"]})
+    )
+    out = client.upload_file(SPACE, b"hello pdf bytes", filename="a.txt", tags=["hr"])
+    assert out["job_ids"] == ["job_u1"]
+    assert route.called
+
+
+def test_upload_file_rejects_oversized(client):
+    big = b"x" * (client.MAX_FILE_BYTES + 1)
+    with pytest.raises(AnonaError) as exc:
+        client.upload_file(SPACE, big, filename="huge.bin")
+    assert exc.value.status_code == 413
+
+
+@respx.mock
+def test_list_documents(client):
+    respx.get(f"{BASE}/v1/spaces/{SPACE}/documents").mock(
+        return_value=httpx.Response(
+            200, json={"documents": [{"document_id": "file_1", "memory_count": 5}], "total": 1}
+        )
+    )
+    docs = client.list_documents(SPACE)
+    assert docs[0]["document_id"] == "file_1"
+
+
+@respx.mock
+def test_delete_document(client):
+    route = respx.delete(f"{BASE}/v1/spaces/{SPACE}/documents/file_1").mock(
+        return_value=httpx.Response(204)
+    )
+    client.delete_document(SPACE, "file_1")
+    assert route.called

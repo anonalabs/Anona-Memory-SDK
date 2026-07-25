@@ -174,6 +174,76 @@ class AnonaClient:
         self._raise(resp)
         return resp.json()
 
+    # ── Documents (file upload → retrieval) ────────────────────────────────────
+
+    #: Max size of a single uploaded file, mirrored from the API's per-file cap
+    #: so the SDK rejects an oversized file locally instead of uploading it only
+    #: to get a 413 back.
+    MAX_FILE_BYTES = 25 * 1024 * 1024
+
+    @classmethod
+    def _upload_parts(
+        cls,
+        file,
+        filename: str | None,
+        strategy: str | None,
+        tags: list[str] | str | None,
+    ) -> tuple[list, dict]:
+        """Normalise a path / bytes / file-like into httpx multipart parts."""
+        import os
+
+        if isinstance(file, (str, os.PathLike)):
+            with open(file, "rb") as fh:
+                content = fh.read()
+            name = filename or os.path.basename(str(file))
+        elif isinstance(file, (bytes, bytearray)):
+            content = bytes(file)
+            name = filename or "upload"
+        else:  # file-like
+            content = file.read()
+            name = filename or os.path.basename(str(getattr(file, "name", "upload")))
+
+        if len(content) > cls.MAX_FILE_BYTES:
+            raise AnonaError(
+                413,
+                f"'{name}' is {len(content) // (1024 * 1024)} MB, over the "
+                f"{cls.MAX_FILE_BYTES // (1024 * 1024)} MB per-file limit.",
+            )
+
+        files = [("files", (name, content))]
+        data: dict = {}
+        if strategy is not None:
+            data["strategy"] = strategy
+        if tags:
+            data["tags"] = ",".join(tags) if isinstance(tags, (list, tuple)) else tags
+        return files, data
+
+    def upload_file(
+        self,
+        space_id: str,
+        file,
+        *,
+        filename: str | None = None,
+        strategy: str | None = None,
+        tags: list[str] | str | None = None,
+    ) -> dict:
+        """Upload a file into a space so retrieval can draw on its content (RAG).
+
+        ``file`` may be a path (str / os.PathLike), raw ``bytes``, or a binary
+        file-like object. Supported types include PDF, DOCX, PPTX, XLSX, images
+        (OCR), HTML, TXT/MD, CSV, and audio (transcription).
+
+        Ingestion is asynchronous — returns ``{"job_ids": [...]}``; poll each with
+        :meth:`get_job`. By default the file is stored as retrieval chunks; pass a
+        ``strategy`` to override, and ``tags`` to scope later retrieval.
+        """
+        files, data = self._upload_parts(file, filename, strategy, tags)
+        resp = self._get_client().post(
+            f"{self._base_url}/v1/spaces/{space_id}/documents", files=files, data=data
+        )
+        self._raise(resp)
+        return resp.json()
+
     def create_space(self, name: str, description: str | None = None) -> dict:
         """Create a memory space. Returns ``{"space_id", "name", ...}``."""
         resp = self._get_client().post(
@@ -182,6 +252,24 @@ class AnonaClient:
         )
         self._raise(resp)
         return resp.json()
+
+    def list_documents(
+        self, space_id: str, *, limit: int = 100, offset: int = 0
+    ) -> list[dict]:
+        """List the documents uploaded into a space."""
+        resp = self._get_client().get(
+            f"{self._base_url}/v1/spaces/{space_id}/documents",
+            params={"limit": limit, "offset": offset},
+        )
+        self._raise(resp)
+        return resp.json().get("documents", [])
+
+    def delete_document(self, space_id: str, document_id: str) -> None:
+        """Delete a document and the memories extracted from it."""
+        resp = self._get_client().delete(
+            f"{self._base_url}/v1/spaces/{space_id}/documents/{document_id}"
+        )
+        self._raise(resp)
 
     def delete_space(self, space_id: str) -> None:
         """Delete a space and every memory in it. Irreversible."""
@@ -294,6 +382,23 @@ class AnonaClient:
         self._raise(resp)
         return resp.json()
 
+    async def async_upload_file(
+        self,
+        space_id: str,
+        file,
+        *,
+        filename: str | None = None,
+        strategy: str | None = None,
+        tags: list[str] | str | None = None,
+    ) -> dict:
+        """Async (asyncio) variant of :meth:`upload_file`."""
+        files, data = self._upload_parts(file, filename, strategy, tags)
+        resp = await self._get_async_client().post(
+            f"{self._base_url}/v1/spaces/{space_id}/documents", files=files, data=data
+        )
+        self._raise(resp)
+        return resp.json()
+
     async def async_create_space(
         self, name: str, description: str | None = None
     ) -> dict:
@@ -304,6 +409,24 @@ class AnonaClient:
         )
         self._raise(resp)
         return resp.json()
+
+    async def async_list_documents(
+        self, space_id: str, *, limit: int = 100, offset: int = 0
+    ) -> list[dict]:
+        """Async (asyncio) variant of :meth:`list_documents`."""
+        resp = await self._get_async_client().get(
+            f"{self._base_url}/v1/spaces/{space_id}/documents",
+            params={"limit": limit, "offset": offset},
+        )
+        self._raise(resp)
+        return resp.json().get("documents", [])
+
+    async def async_delete_document(self, space_id: str, document_id: str) -> None:
+        """Async (asyncio) variant of :meth:`delete_document`."""
+        resp = await self._get_async_client().delete(
+            f"{self._base_url}/v1/spaces/{space_id}/documents/{document_id}"
+        )
+        self._raise(resp)
 
     async def async_delete_space(self, space_id: str) -> None:
         """Async (asyncio) variant of :meth:`delete_space`."""
