@@ -113,10 +113,17 @@ class AnonaClient:
         space_id: str,
         query: str,
         limit: int = 10,
+        mode: str = "accurate",
     ) -> list[dict]:
+        """Search memories.
+
+        ``mode="accurate"`` (default) neurally reranks results for best
+        relevance. ``mode="fast"`` skips that pass — much lower latency, at
+        some cost to relevance quality.
+        """
         resp = self._get_client().post(
             f"{self._base_url}/v1/retrieve",
-            json={"space_id": space_id, "query": query, "limit": limit},
+            json={"space_id": space_id, "query": query, "limit": limit, "mode": mode},
         )
         self._raise(resp)
         return resp.json().get("results", [])
@@ -237,10 +244,12 @@ class AnonaClient:
         space_id: str,
         query: str,
         limit: int = 10,
+        mode: str = "accurate",
     ) -> list[dict]:
+        """Async (asyncio) variant of :meth:`retrieve`."""
         resp = await self._get_async_client().post(
             f"{self._base_url}/v1/retrieve",
-            json={"space_id": space_id, "query": query, "limit": limit},
+            json={"space_id": space_id, "query": query, "limit": limit, "mode": mode},
         )
         self._raise(resp)
         return resp.json().get("results", [])

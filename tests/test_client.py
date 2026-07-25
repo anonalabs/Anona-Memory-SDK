@@ -154,6 +154,41 @@ def test_record_batch_passes_item_tags(client):
     assert body["items"][0]["tags"] == ["x"]
 
 
+# ── retrieve mode ────────────────────────────────────────────────────────────────
+
+
+@respx.mock
+def test_retrieve_defaults_to_accurate_mode(client):
+    route = respx.post(f"{BASE}/v1/retrieve").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    client.retrieve(space_id=SPACE, query="q")
+    body = json.loads(route.calls.last.request.content)
+    assert body["mode"] == "accurate"
+
+
+@respx.mock
+def test_retrieve_sends_fast_mode(client):
+    route = respx.post(f"{BASE}/v1/retrieve").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    client.retrieve(space_id=SPACE, query="q", mode="fast")
+    body = json.loads(route.calls.last.request.content)
+    assert body["mode"] == "fast"
+
+
+@pytest.mark.anyio
+async def test_async_retrieve_sends_mode():
+    async with AnonaClient(api_key=KEY, base_url=BASE) as c:
+        with respx.mock:
+            route = respx.post(f"{BASE}/v1/retrieve").mock(
+                return_value=httpx.Response(200, json={"results": []})
+            )
+            await c.async_retrieve(space_id=SPACE, query="q", mode="fast")
+            body = json.loads(route.calls.last.request.content)
+            assert body["mode"] == "fast"
+
+
 # ── space / memory management ────────────────────────────────────────────────────
 
 
