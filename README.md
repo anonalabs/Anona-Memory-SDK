@@ -24,7 +24,7 @@ pip install "anona[litellm] @ git+https://github.com/anonalabs/Anona-Memory-SDK.
 ```python
 from anona import AnonaClient
 
-# base_url defaults to https://memory.anonalabs.com — pass it only to override.
+# base_url defaults to https://api.anonalabs.com — pass it only to override.
 client = AnonaClient(api_key="anona_live_...")
 
 # Record a memory
@@ -83,7 +83,7 @@ async with AnonaClient(api_key="...") as client:
 
 ## API
 
-### `AnonaClient(api_key, base_url="https://memory.anonalabs.com")`
+### `AnonaClient(api_key, base_url="https://api.anonalabs.com")`
 
 - `record(space_id, content, metadata=None, background=False) -> dict` — store a memory; `background=True` queues it and returns a `job_id`
 - `record_batch(space_id, items) -> dict` — bulk-ingest up to 100 items (always queued); returns a `job_id`
@@ -112,7 +112,6 @@ from anona.integrations.litellm import AnonaMemory
 mem = AnonaMemory(
     api_key="anona_live_...",
     space_id="space_123",
-    base_url="https://memory.anonalabs.com",
     recall_limit=5,       # how many memories to retrieve per call
     inject_mode="system", # "system" or "user"
     store_after=True,     # auto-store the exchange after each call

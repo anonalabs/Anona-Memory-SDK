@@ -13,7 +13,10 @@ class AnonaError(Exception):
 class AnonaClient:
     """Synchronous and async client for Anona Memory API."""
 
-    def __init__(self, api_key: str, base_url: str = "https://memory.anonalabs.com"):
+    # api.anonalabs.com reaches the API directly, without the hop through the
+    # dashboard edge worker that memory.anonalabs.com takes. memory.anonalabs.com
+    # keeps working indefinitely, so existing code needs no change.
+    def __init__(self, api_key: str, base_url: str = "https://api.anonalabs.com"):
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         # Created lazily (first sync/async call) rather than both up front —

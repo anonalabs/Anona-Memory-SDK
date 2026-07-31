@@ -18,7 +18,6 @@ class AnonaMemory:
         mem = AnonaMemory(
             api_key="anona_live_...",
             space_id="your-space-id",
-            base_url="http://localhost:3001",
         )
         mem.enable()
 
@@ -29,7 +28,7 @@ class AnonaMemory:
         self,
         api_key: str,
         space_id: str,
-        base_url: str = "http://anona-prod-alb-747552680.us-east-1.elb.amazonaws.com",
+        base_url: str = "https://api.anonalabs.com",
         recall_limit: int = 5,
         inject_mode: str = "system",
         store_after: bool = True,
