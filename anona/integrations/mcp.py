@@ -34,7 +34,10 @@ except ImportError:  # pragma: no cover
     )
     raise
 
-DEFAULT_BASE_URL = "http://anona-prod-alb-747552680.us-east-1.elb.amazonaws.com"
+# REST base for this stdio server, which authenticates with an API key.
+# Distinct from the *remote* MCP endpoint (https://memory.anonalabs.com/mcp),
+# which speaks OAuth 2.1 and must stay on that host to keep its issuer valid.
+DEFAULT_BASE_URL = "https://api.anonalabs.com"
 SPACE_ENV_VAR = "ANONA_SPACE_ID"
 
 mcp = FastMCP("Anona Memory")
