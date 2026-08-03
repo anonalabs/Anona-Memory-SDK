@@ -7,7 +7,13 @@ import pytest
 import httpx
 import respx
 
-pytest.importorskip("mcp", reason="MCP server requires the 'mcp' extra")
+# Guard on the module actually imported below, not just the top-level package:
+# mcp 2.x still provides `mcp` but moved FastMCP out of mcp.server.fastmcp, so
+# checking the parent let a wrong version pass the guard and then fail
+# collection outright instead of skipping.
+pytest.importorskip(
+    "mcp.server.fastmcp", reason="MCP server requires the 'mcp' extra (mcp<2)"
+)
 
 from anona.integrations import mcp as anona_mcp  # noqa: E402
 
