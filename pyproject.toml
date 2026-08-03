@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "anona"
-version = "0.5.1"
+version = "0.5.2"
 description = "Anona Memory SDK — managed AI memory for intelligent agents"
 readme = "README.md"
 license = { text = "MIT" }
@@ -29,7 +29,10 @@ Repository = "https://github.com/anonalabs/Anona-Memory-SDK"
 
 [project.optional-dependencies]
 litellm = ["litellm>=1.0"]
-mcp = ["mcp>=1.2"]
+# Upper bound is load-bearing: mcp 2.x moved FastMCP out of
+# mcp.server.fastmcp, so an unpinned install resolves 2.x and anona-mcp fails
+# at import with ModuleNotFoundError before it can serve anything.
+mcp = ["mcp>=1.2,<2"]
 dev = ["pytest", "pytest-asyncio", "respx", "anyio", "mcp>=1.2"]
 
 [project.scripts]

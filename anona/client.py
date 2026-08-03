@@ -1,6 +1,26 @@
 from __future__ import annotations
 
+from urllib.parse import quote
+
 import httpx
+
+
+def _seg(value: str) -> str:
+    """Percent-encode one path segment.
+
+    A ``space_id`` is whatever the customer typed as the space name, so it can
+    legally contain characters that are structural in a URL. httpx encodes
+    spaces and non-ASCII on the wire, but "/", "?" and "#" are left alone
+    because they are valid URL syntax — which meant a space named ``a/b``
+    addressed ``/v1/spaces/a/b/graph`` (a different route), and ``x?y`` or
+    ``a#b`` truncated the path and moved the remainder into a query string or
+    fragment. Every path-based method was affected, ``delete_space`` included,
+    so such a space could be created and then never reached again.
+
+    ``safe=""`` keeps those characters inside the segment they were written
+    into. The API applies the same encoding on its own hop internally.
+    """
+    return quote(str(value), safe="")
 
 
 class AnonaError(Exception):
@@ -106,7 +126,7 @@ class AnonaClient:
         cancelled / not_found.
         """
         resp = self._get_client().get(
-            f"{self._base_url}/v1/spaces/{space_id}/jobs/{job_id}"
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/jobs/{_seg(job_id)}"
         )
         self._raise(resp)
         return resp.json()
@@ -152,7 +172,7 @@ class AnonaClient:
         ``{"nodes", "edges", "total_entities", "total_edges"}``.
         """
         resp = self._get_client().get(
-            f"{self._base_url}/v1/spaces/{space_id}/graph",
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/graph",
             params={"limit": limit, "min_count": min_count},
         )
         self._raise(resp)
@@ -163,7 +183,7 @@ class AnonaClient:
     ) -> list[dict]:
         """List the entities extracted in a space, most-mentioned first."""
         resp = self._get_client().get(
-            f"{self._base_url}/v1/spaces/{space_id}/entities",
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/entities",
             params={"limit": limit, "offset": offset},
         )
         self._raise(resp)
@@ -172,7 +192,7 @@ class AnonaClient:
     def get_entity(self, space_id: str, entity_id: str) -> dict:
         """One entity and its observations (what's been learned about it)."""
         resp = self._get_client().get(
-            f"{self._base_url}/v1/spaces/{space_id}/entities/{entity_id}",
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/entities/{_seg(entity_id)}",
         )
         self._raise(resp)
         return resp.json()
@@ -242,7 +262,7 @@ class AnonaClient:
         """
         files, data = self._upload_parts(file, filename, strategy, tags)
         resp = self._get_client().post(
-            f"{self._base_url}/v1/spaces/{space_id}/documents", files=files, data=data
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/documents", files=files, data=data
         )
         self._raise(resp)
         return resp.json()
@@ -261,7 +281,7 @@ class AnonaClient:
     ) -> list[dict]:
         """List the documents uploaded into a space."""
         resp = self._get_client().get(
-            f"{self._base_url}/v1/spaces/{space_id}/documents",
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/documents",
             params={"limit": limit, "offset": offset},
         )
         self._raise(resp)
@@ -270,19 +290,19 @@ class AnonaClient:
     def delete_document(self, space_id: str, document_id: str) -> None:
         """Delete a document and the memories extracted from it."""
         resp = self._get_client().delete(
-            f"{self._base_url}/v1/spaces/{space_id}/documents/{document_id}"
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/documents/{_seg(document_id)}"
         )
         self._raise(resp)
 
     def delete_space(self, space_id: str) -> None:
         """Delete a space and every memory in it. Irreversible."""
-        resp = self._get_client().delete(f"{self._base_url}/v1/spaces/{space_id}")
+        resp = self._get_client().delete(f"{self._base_url}/v1/spaces/{_seg(space_id)}")
         self._raise(resp)
 
     def delete_memory(self, space_id: str, memory_id: str) -> None:
         """Delete a single memory from a space. Irreversible."""
         resp = self._get_client().delete(
-            f"{self._base_url}/v1/spaces/{space_id}/memories/{memory_id}"
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/memories/{_seg(memory_id)}"
         )
         self._raise(resp)
 
@@ -325,7 +345,7 @@ class AnonaClient:
     async def async_get_job(self, space_id: str, job_id: str) -> dict:
         """Async (asyncio) variant of :meth:`get_job`."""
         resp = await self._get_async_client().get(
-            f"{self._base_url}/v1/spaces/{space_id}/jobs/{job_id}"
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/jobs/{_seg(job_id)}"
         )
         self._raise(resp)
         return resp.json()
@@ -362,7 +382,7 @@ class AnonaClient:
         self, space_id: str, *, limit: int = 500, min_count: int = 1
     ) -> dict:
         resp = await self._get_async_client().get(
-            f"{self._base_url}/v1/spaces/{space_id}/graph",
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/graph",
             params={"limit": limit, "min_count": min_count},
         )
         self._raise(resp)
@@ -372,7 +392,7 @@ class AnonaClient:
         self, space_id: str, *, limit: int = 100, offset: int = 0
     ) -> list[dict]:
         resp = await self._get_async_client().get(
-            f"{self._base_url}/v1/spaces/{space_id}/entities",
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/entities",
             params={"limit": limit, "offset": offset},
         )
         self._raise(resp)
@@ -380,7 +400,7 @@ class AnonaClient:
 
     async def async_get_entity(self, space_id: str, entity_id: str) -> dict:
         resp = await self._get_async_client().get(
-            f"{self._base_url}/v1/spaces/{space_id}/entities/{entity_id}",
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/entities/{_seg(entity_id)}",
         )
         self._raise(resp)
         return resp.json()
@@ -397,7 +417,7 @@ class AnonaClient:
         """Async (asyncio) variant of :meth:`upload_file`."""
         files, data = self._upload_parts(file, filename, strategy, tags)
         resp = await self._get_async_client().post(
-            f"{self._base_url}/v1/spaces/{space_id}/documents", files=files, data=data
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/documents", files=files, data=data
         )
         self._raise(resp)
         return resp.json()
@@ -418,7 +438,7 @@ class AnonaClient:
     ) -> list[dict]:
         """Async (asyncio) variant of :meth:`list_documents`."""
         resp = await self._get_async_client().get(
-            f"{self._base_url}/v1/spaces/{space_id}/documents",
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/documents",
             params={"limit": limit, "offset": offset},
         )
         self._raise(resp)
@@ -427,21 +447,21 @@ class AnonaClient:
     async def async_delete_document(self, space_id: str, document_id: str) -> None:
         """Async (asyncio) variant of :meth:`delete_document`."""
         resp = await self._get_async_client().delete(
-            f"{self._base_url}/v1/spaces/{space_id}/documents/{document_id}"
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/documents/{_seg(document_id)}"
         )
         self._raise(resp)
 
     async def async_delete_space(self, space_id: str) -> None:
         """Async (asyncio) variant of :meth:`delete_space`."""
         resp = await self._get_async_client().delete(
-            f"{self._base_url}/v1/spaces/{space_id}"
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}"
         )
         self._raise(resp)
 
     async def async_delete_memory(self, space_id: str, memory_id: str) -> None:
         """Async (asyncio) variant of :meth:`delete_memory`."""
         resp = await self._get_async_client().delete(
-            f"{self._base_url}/v1/spaces/{space_id}/memories/{memory_id}"
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/memories/{_seg(memory_id)}"
         )
         self._raise(resp)
 
