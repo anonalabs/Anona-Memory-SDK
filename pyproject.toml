@@ -33,7 +33,10 @@ litellm = ["litellm>=1.0"]
 # mcp.server.fastmcp, so an unpinned install resolves 2.x and anona-mcp fails
 # at import with ModuleNotFoundError before it can serve anything.
 mcp = ["mcp>=1.2,<2"]
-dev = ["pytest", "pytest-asyncio", "respx", "anyio", "mcp>=1.2"]
+# Pulls mcp through the extra above rather than repeating the requirement, so
+# the two can never drift — an unpinned copy here is what turned the mcp 2.x
+# release into a red main while the extra itself looked correct.
+dev = ["pytest", "pytest-asyncio", "respx", "anyio", "anona[mcp]"]
 
 [project.scripts]
 anona-mcp = "anona.integrations.mcp:main"
