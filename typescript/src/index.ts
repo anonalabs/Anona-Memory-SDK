@@ -6,6 +6,7 @@ export type {
   RecordOptions,
   RetrieveOptions,
   TagsMatch,
+  UpdateMemoryOptions,
   UploadFile,
   UploadOptions,
 } from "./client.js";

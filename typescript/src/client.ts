@@ -8,6 +8,8 @@ import type {
   Graph,
   InsightsResult,
   JobStatus,
+  MemoryHistory,
+  MemoryItem,
   MemoryListPage,
   RecordResult,
   SearchResult,
@@ -138,6 +140,33 @@ export interface RetrieveOptions {
    * reproduce what would have been recalled at a past point in time.
    */
   queryTimestamp?: string;
+  signal?: AbortSignal;
+}
+
+/**
+ * Edit a memory, or retire it.
+ *
+ * `state: "invalidated"` drops a memory out of retrieve, consolidation and
+ * reasoning while keeping it for audit; `"active"` puts it back. That is a
+ * supersession, not a delete — reversible by design, and the reason to prefer
+ * it over `deleteMemory`.
+ *
+ * Observations (memories the system synthesised from raw facts) cannot be
+ * edited: they are derived, so the API rejects the attempt rather than letting
+ * a synthesis drift away from its evidence.
+ */
+export interface UpdateMemoryOptions {
+  spaceId: string;
+  memoryId: string;
+  text?: string;
+  context?: string;
+  occurredStart?: string;
+  occurredEnd?: string;
+  memoryType?: string;
+  entities?: string[];
+  state?: "active" | "invalidated";
+  /** Free-text note kept on the memory's history, so an audit shows why. */
+  reason?: string;
   signal?: AbortSignal;
 }
 
@@ -331,7 +360,43 @@ export class Anona {
     });
   }
 
-  /** Delete a single memory. Irreversible. */
+  /** How a memory changed over time. Empty when it has never changed. */
+  async getMemoryHistory(options: {
+    spaceId: string;
+    memoryId: string;
+    signal?: AbortSignal;
+  }): Promise<MemoryHistory> {
+    return this.http.request<MemoryHistory>({
+      method: "GET",
+      path: `/v1/spaces/${seg(options.spaceId)}/memories/${seg(options.memoryId)}/history`,
+      signal: options.signal,
+    });
+  }
+
+  /** Edit a memory, or invalidate/restore it. See {@link UpdateMemoryOptions}. */
+  async updateMemory(options: UpdateMemoryOptions): Promise<MemoryItem> {
+    const body = compact({
+      text: options.text,
+      context: options.context,
+      occurred_start: options.occurredStart,
+      occurred_end: options.occurredEnd,
+      memory_type: options.memoryType,
+      entities: options.entities,
+      state: options.state,
+      reason: options.reason,
+    });
+    if (Object.keys(body).length === 0) {
+      throw new Error("Anona: updateMemory needs at least one field to change.");
+    }
+    return this.http.request<MemoryItem>({
+      method: "PATCH",
+      path: `/v1/spaces/${seg(options.spaceId)}/memories/${seg(options.memoryId)}`,
+      signal: options.signal,
+      body,
+    });
+  }
+
+  /** Delete a single memory. Irreversible — see `updateMemory` for a reversible retire. */
   async deleteMemory(options: {
     spaceId: string;
     memoryId: string;
