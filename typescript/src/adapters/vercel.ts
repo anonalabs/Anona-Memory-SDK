@@ -121,25 +121,25 @@ export function anonaMemory(config: AnonaMemoryConfig) {
   }
 
   return {
-    async transformParams({ params }: { params: CallParams }) {
-      return recall(params);
+    async transformParams({ params }: { params: any }): Promise<any> {
+      return recall(params as CallParams);
     },
 
     async wrapGenerate({
       doGenerate,
       params,
     }: {
-      doGenerate: () => Promise<{ content?: unknown[] }>;
-      params: CallParams;
+      doGenerate: () => PromiseLike<any>;
+      params: any;
     }) {
       const result = await doGenerate();
       const answer = Array.isArray(result.content)
         ? result.content
-            .filter((part): part is TextPart => (part as TextPart)?.type === "text")
-            .map((part) => part.text)
+            .filter((part: any): part is TextPart => (part as TextPart)?.type === "text")
+            .map((part: TextPart) => part.text)
             .join("")
         : "";
-      await remember(params, answer);
+      await remember(params as CallParams, answer);
       return result;
     },
 
@@ -147,8 +147,8 @@ export function anonaMemory(config: AnonaMemoryConfig) {
       doStream,
       params,
     }: {
-      doStream: () => Promise<{ stream: ReadableStream<unknown> }>;
-      params: CallParams;
+      doStream: () => PromiseLike<any>;
+      params: any;
     }) {
       const { stream, ...rest } = await doStream();
       let answer = "";
@@ -163,7 +163,7 @@ export function anonaMemory(config: AnonaMemoryConfig) {
           controller.enqueue(chunk);
         },
         flush() {
-          return remember(params, answer);
+          return remember(params as CallParams, answer);
         },
       });
 
