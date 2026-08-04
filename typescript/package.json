@@ -1,0 +1,59 @@
+{
+  "name": "@anona/memory",
+  "version": "0.1.0",
+  "description": "Anona Memory SDK — managed AI memory for intelligent agents",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anonalabs/Anona-Memory-SDK.git",
+    "directory": "typescript"
+  },
+  "homepage": "https://anonalabs.com",
+  "engines": { "node": ">=18" },
+  "publishConfig": { "access": "public" },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.mjs" },
+      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+    },
+    "./vercel": {
+      "import": { "types": "./dist/adapters/vercel.d.ts", "default": "./dist/adapters/vercel.mjs" },
+      "require": { "types": "./dist/adapters/vercel.d.cts", "default": "./dist/adapters/vercel.cjs" }
+    },
+    "./openai-agents": {
+      "import": { "types": "./dist/adapters/openai-agents.d.ts", "default": "./dist/adapters/openai-agents.mjs" },
+      "require": { "types": "./dist/adapters/openai-agents.d.cts", "default": "./dist/adapters/openai-agents.cjs" }
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "npm run build && node --experimental-strip-types scripts/smoke.ts"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "ai": ">=5",
+    "@openai/agents": ">=0.1",
+    "zod": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "ai": { "optional": true },
+    "@openai/agents": { "optional": true },
+    "zod": { "optional": true }
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "tsup": "^8.3.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.0.0"
+  },
+  "keywords": ["ai", "memory", "agents", "llm", "rag"]
+}

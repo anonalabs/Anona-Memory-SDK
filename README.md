@@ -1,6 +1,21 @@
 # Anona Memory SDK
 
-Python SDK for [Anona Memory](https://memory.anonalabs.com) — managed AI memory for intelligent agents. Record, retrieve, and reason over memories per user/space via a simple client, or auto-inject memory into LiteLLM calls with one line.
+Official SDKs for [Anona Memory](https://memory.anonalabs.com) — managed AI memory for intelligent agents. Record, retrieve, and reason over memories per user/space via a simple client, or auto-inject memory into LiteLLM calls with one line.
+
+- **Python** — this repository root. Documented below.
+- **TypeScript** — [`typescript/`](typescript/). Zero dependencies, runs on Node 18+, Bun, Deno, Cloudflare Workers and the browser, with adapters for the Vercel AI SDK and the OpenAI Agents SDK. See [`typescript/README.md`](typescript/README.md).
+
+```typescript
+import { Anona } from "@anona/memory";
+
+const anona = new Anona({ apiKey: process.env.ANONA_API_KEY! });
+await anona.record({ spaceId: "support", content: "Alice prefers email" });
+const hits = await anona.retrieve({ spaceId: "support", query: "how to contact Alice" });
+```
+
+> The TypeScript package is not yet on npm. Until it is published, install it from
+> this repository: `npm install github:anonalabs/Anona-Memory-SDK#main --prefix ...`
+> or build it locally from `typescript/`.
 
 ## Install
 
