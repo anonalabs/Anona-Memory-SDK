@@ -45,8 +45,13 @@ step("api key minted");
 const anona = new Anona({ apiKey: key.api_key, baseUrl: BASE });
 const spaceName = `smoke-${Date.now()}`;
 
+// Declared outside the try so the finally block can delete the space even when
+// an assertion fails partway through. A failed run used to leak a live space.
+let createdSpaceId: string | undefined;
+
 try {
   const space = await anona.createSpace({ name: spaceName, description: "SDK smoke test" });
+  createdSpaceId = space.space_id;
   step(`space created: ${space.space_id}`);
 
   await anona.record({ spaceId: space.space_id, content: "Alice prefers email over phone." });
@@ -78,15 +83,78 @@ try {
   const listed = await anona.listMemories({ spaceId: space.space_id, limit: 5 });
   step(`listMemories total ${listed.total}`);
 
+  // updateMemory and getMemoryHistory MUST be exercised against the real API.
+  // Both were once built against routes that did not exist in production, and
+  // nothing caught it: the unit tests mock fetch, so they passed against
+  // imaginary endpoints. A 404/405 here is the whole point of this script.
+  // Only raw facts can be curated. `listMemories` also returns observations —
+  // the syntheses the engine derives from those facts — and the API rejects an
+  // edit to one, because a synthesis must not drift from its evidence. Picking
+  // the first item blind fails with a 400 roughly half the time.
+  const target = listed.items.find((m) => m.id && m.type !== "note");
+  if (!target?.id) {
+    throw new Error(
+      `listMemories returned no curatable memory (types: ${listed.items
+        .map((m) => m.type)
+        .join(", ")})`,
+    );
+  }
+
+  const updated = await anona.updateMemory({
+    spaceId: space.space_id,
+    memoryId: target.id,
+    context: "verified by the SDK smoke test",
+    reason: "smoke test",
+  });
+  step(`updateMemory edited ${updated.id ?? target.id}`);
+
+  await anona.updateMemory({
+    spaceId: space.space_id,
+    memoryId: target.id,
+    state: "invalidated",
+    reason: "smoke test: checking the reversible retire path",
+  });
+  await anona.updateMemory({
+    spaceId: space.space_id,
+    memoryId: target.id,
+    state: "active",
+    reason: "smoke test: restoring",
+  });
+  step("updateMemory invalidate + restore round-tripped");
+
+  const history = await anona.getMemoryHistory({
+    spaceId: space.space_id,
+    memoryId: target.id,
+  });
+  step(`getMemoryHistory returned ${history.history.length} revision(s)`);
+  // Deliberately NOT asserting a non-empty history: verified against production
+  // 2026-08-05 that editing a memory — including its `text` — leaves the history
+  // empty, so change-tracking does not reflect curation edits. What this call
+  // must prove is that the route exists and answers in the documented shape;
+  // that is the regression this guards against, since the method was once
+  // shipped against a route that did not exist.
+  if (history.memory_id !== target.id || !Array.isArray(history.history)) {
+    throw new Error(
+      `getMemoryHistory returned an unexpected shape: ${JSON.stringify(history)}`,
+    );
+  }
+
   const graph = await anona.getGraph({ spaceId: space.space_id });
   step(`graph: ${graph.total_entities} entities, ${graph.total_edges} edges`);
 
   const usage = await anona.getUsage();
   step(`usage: ${usage.credits_remaining}/${usage.credits_limit} credits left`);
 
-  await anona.deleteSpace(space.space_id);
-  step("space deleted");
 } finally {
+  if (createdSpaceId) {
+    try {
+      await anona.deleteSpace(createdSpaceId);
+      step("space deleted");
+    } catch (error) {
+      console.error(`! could not delete space ${createdSpaceId}:`, error);
+    }
+  }
+
   await fetch(`${BASE}/v1/api-keys/${key.id}`, {
     method: "DELETE",
     headers: { authorization: `Bearer ${access_token}` },

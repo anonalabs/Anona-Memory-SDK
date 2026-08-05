@@ -36,6 +36,19 @@ export interface JobStatus {
   created_at: string | null;
   completed_at: string | null;
   error: string | null;
+  /**
+   * How many memories the job produced. Null on a job that ran before the API
+   * recorded the count.
+   */
+  memory_count: number | null;
+  /**
+   * Ids of the memories the job produced, so an async or bulk write can be
+   * followed up without searching for what it created.
+   *
+   * Null when unavailable, and it may be SHORTER than `memory_count` for a very
+   * large batch — the count stays exact. Check the array before indexing it.
+   */
+  memory_ids: string[] | null;
 }
 
 export interface SearchResult {
@@ -79,6 +92,19 @@ export interface MemoryItem {
   type: string | null;
   entities: string | null;
   metadata: Record<string, unknown> | null;
+}
+
+export interface MemoryHistoryEntry {
+  previous_content: string | null;
+  changed_at: string | null;
+  previous_occurred_start: string | null;
+  previous_occurred_end: string | null;
+}
+
+export interface MemoryHistory {
+  memory_id: string;
+  /** Empty when the memory has never changed. */
+  history: MemoryHistoryEntry[];
 }
 
 export interface MemoryListPage {

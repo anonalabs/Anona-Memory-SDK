@@ -121,13 +121,40 @@ describe("getJob", () => {
       created_at: null,
       completed_at: null,
       error: null,
+      memory_count: 2,
+      memory_ids: ["m1", "m2"],
     });
     const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
 
-    await anona.getJob({ spaceId: "a/b", jobId: "job/1" });
+    const job = await anona.getJob({ spaceId: "a/b", jobId: "job/1" });
+    expect(job.memory_ids).toEqual(["m1", "m2"]);
 
     expect((fetchImpl as any).mock.calls[0]![0]).toBe(
       "https://api.anonalabs.com/v1/spaces/a%2Fb/jobs/job%2F1",
     );
+  });
+});
+
+describe("getJob memory ids", () => {
+  it("treats memory_count and memory_ids as nullable", async () => {
+    // The API omits both on a job that ran before it recorded them, and
+    // memory_ids can be shorter than memory_count on a very large batch. Typing
+    // them as required is what made `job.memory_ids.length` throw after a clean
+    // typecheck — the bug that got this surface removed the first time.
+    const fetchImpl = stub({
+      job_id: "job_1",
+      status: "completed",
+      created_at: null,
+      completed_at: null,
+      error: null,
+      memory_count: null,
+      memory_ids: null,
+    });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    const job = await anona.getJob({ spaceId: "s", jobId: "job_1" });
+
+    expect(job.memory_ids).toBeNull();
+    expect(job.memory_count).toBeNull();
   });
 });

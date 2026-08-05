@@ -73,6 +73,29 @@ Limits: 25 MB per file, 50 MB per request, 20 files per request — all checked
 before anything is sent. Ingestion is asynchronous; poll the returned job ids
 with `getJob`.
 
+## Correcting or retiring a memory
+
+```ts
+// Fix the content
+await anona.updateMemory({ spaceId, memoryId, text: "Alice moved to Berlin in March" });
+
+// Retire it without losing it — reversible, unlike deleteMemory
+await anona.updateMemory({ spaceId, memoryId, state: "invalidated", reason: "superseded" });
+await anona.updateMemory({ spaceId, memoryId, state: "active" }); // put it back
+
+// How the system's understanding of it evolved
+const { history } = await anona.getMemoryHistory({ spaceId, memoryId });
+```
+
+`getMemoryHistory` reflects supersession inside the memory layer, not your own
+edits — a memory you just changed still reports an empty history. The `reason`
+you pass to `updateMemory` is what gets retained for audit.
+
+`state: "invalidated"` drops a memory out of retrieve, consolidation and
+reasoning while keeping it for audit. Prefer it over `deleteMemory`, which is
+permanent. Memories the system synthesised from your raw facts cannot be
+edited — they are derived, so the API rejects the attempt.
+
 ## Errors
 
 ```ts
@@ -117,7 +140,7 @@ malformed response.
 | `retrieve` | Search memories |
 | `reason` | Synthesised answer across a space |
 | `listSpaces` / `getSpace` / `createSpace` / `deleteSpace` | Space management |
-| `listMemories` / `deleteMemory` | Memory management |
+| `listMemories` / `getMemoryHistory` / `updateMemory` / `deleteMemory` | Memory management |
 | `uploadFiles` / `listDocuments` / `getDocument` / `deleteDocument` | Documents |
 | `getGraph` / `listEntities` / `getEntity` | Entity graph |
 | `getUsage` | Credits and rate limit for this key |
