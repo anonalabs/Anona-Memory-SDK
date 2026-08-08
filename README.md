@@ -154,6 +154,8 @@ application down.
 Each adapter's own module docstring documents its scoping, failure behaviour
 and per-call cost. Full docs: https://docs.anonalabs.com/integrations/langchain
 
+Runnable end-to-end scripts for all six live in [`examples/`](examples/).
+
 ## LiteLLM integration
 
 Auto-inject relevant memories into every `litellm.completion()` call, and auto-store the resulting Q&A pair:
