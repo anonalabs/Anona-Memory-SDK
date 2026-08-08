@@ -67,7 +67,7 @@ def _resolve_space(space_id: str | None) -> str:
 
 
 def _format_error(exc: AnonaError) -> str:
-    """Pull a human message out of the gateway's error envelope."""
+    """Pull a human message out of the API's error envelope."""
     detail = exc.detail
     if isinstance(detail, dict):
         err = detail.get("error", detail)

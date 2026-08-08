@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import threading
 from urllib.parse import quote
 
 import httpx
@@ -18,7 +20,7 @@ def _seg(value: str) -> str:
     so such a space could be created and then never reached again.
 
     ``safe=""`` keeps those characters inside the segment they were written
-    into. The API applies the same encoding on its own hop internally.
+    into. The API applies the same encoding on its own hop to the engine.
     """
     return quote(str(value), safe="")
 
@@ -33,9 +35,10 @@ class AnonaError(Exception):
 class AnonaClient:
     """Synchronous and async client for Anona Memory API."""
 
-    # api.anonalabs.com reaches the API directly, without the hop through the
-    # dashboard edge worker that memory.anonalabs.com takes. memory.anonalabs.com
-    # keeps working indefinitely, so existing code needs no change.
+    # api.anonalabs.com routes straight to the API, without the hop through the
+    # dashboard edge worker that memory.anonalabs.com takes.
+    # memory.anonalabs.com keeps working indefinitely — existing code needs no
+    # change, and callers can still override base_url.
     def __init__(self, api_key: str, base_url: str = "https://api.anonalabs.com"):
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
@@ -44,7 +47,26 @@ class AnonaClient:
         # leaked) the other's connection pool, since close()/aclose() each
         # only tear down their own half.
         self._client: httpx.Client | None = None
+        # Manual override for _get_async_client() below, checked before it
+        # ever looks at _async_clients. AnonaClient itself never sets this —
+        # only a caller that wants to pin one specific client instance does
+        # (chiefly tests, to inject a mocked transport), and taking that on
+        # means taking on the responsibility of only ever driving it from a
+        # single event loop, same as before this class supported more than
+        # one loop at all.
         self._async_client: httpx.AsyncClient | None = None
+        # One httpx.AsyncClient per event loop that has called
+        # _get_async_client() — see that method's docstring for why a
+        # single client shared across loops is unsafe. A plain dict, not a
+        # WeakKeyDictionary: an AsyncClient's own internals may hold the
+        # loop alive indirectly, which would silently defeat GC-based
+        # eviction, so dead entries are instead swept explicitly (see
+        # below) rather than left to collection timing. Guarded by a lock
+        # because this SDK is driven from thread pools by some adapters —
+        # a different OS thread means a different running loop, hence a
+        # different dict key potentially being inserted at the same time.
+        self._async_clients: dict[asyncio.AbstractEventLoop, httpx.AsyncClient] = {}
+        self._async_clients_lock = threading.Lock()
 
     def _get_client(self) -> httpx.Client:
         if self._client is None:
@@ -55,12 +77,82 @@ class AnonaClient:
         return self._client
 
     def _get_async_client(self) -> httpx.AsyncClient:
-        if self._async_client is None:
-            self._async_client = httpx.AsyncClient(
-                headers={"Authorization": f"Bearer {self._api_key}"},
-                timeout=30.0,
-            )
-        return self._async_client
+        """The async httpx client for the CURRENTLY RUNNING event loop.
+
+        A single ``httpx.AsyncClient`` reused for this object's whole life
+        (the previous implementation) is unsafe: its pooled keep-alive
+        connection, and the anyio locks httpcore's pool guards it with, end
+        up bound to whichever event loop was running on the *first* call
+        that used it. A host that creates a fresh loop per call —
+        ``asyncio.run()`` once per turn is the ordinary shape for a CLI, a
+        synchronous Flask/Django view, or a Celery/RQ worker driving one of
+        the async framework adapters — hands the *second* call's new loop a
+        connection pool built for a now-dead one. Deterministically, not a
+        race: ``RuntimeError: Event loop is closed``, or "bound to a
+        different event loop" if the first loop is still alive elsewhere
+        (e.g. another thread). ``MemoryBridge``'s blanket ``except
+        Exception`` swallows that into a fail-open ``""``, so the caller
+        sees "no memories" on a retrieve/record the API already
+        executed — and billed.
+
+        This method keys a client per loop instead: each event loop gets
+        its own pool, so there is never a stale connection for a *different*
+        loop to inherit. Measured clean across every reported shape —
+        repeated ``asyncio.run()`` on one client, real async adapters driven
+        one-loop-per-turn, gaps past httpx's keepalive_expiry between calls,
+        and concurrent threads each running their own loop.
+
+        Rejected: a single client with ``max_keepalive_connections=0`` (no
+        idle connection ever survives to be reused across loops). Simpler,
+        and it does pass the sequential shapes above — but it still shares
+        *one* ``httpx.AsyncClient``, hence one ``httpcore.AsyncConnectionPool``,
+        across every loop that ever calls it, and that pool's own
+        bookkeeping lock (``httpcore``'s ``AsyncThreadLock``) is a
+        documented no-op in async mode: httpcore assumes an ``AsyncClient``
+        is only ever driven from one loop/thread at a time. Confirmed
+        directly: several OS threads (each its own event loop — the shape a
+        thread-pool-driven caller produces) hitting one
+        ``max_keepalive_connections=0`` client concurrently corrupts the
+        pool's internal connection-accounting list under real load
+        (``ValueError: list.remove(x): x not in list``, plus read errors) —
+        worse than the bug being fixed. Keying by loop sidesteps this
+        instead of racing to avoid it: each thread's own loop gets its own
+        pool, so there is no shared pool state for two threads to corrupt in
+        the first place.
+
+        Entries are swept for closed loops on every call rather than left
+        to accumulate: ``asyncio.run()`` always closes its loop before
+        returning, so a "new loop per call" caller would otherwise leak one
+        dict entry — and one unreachable-but-still-referenced
+        ``AsyncClient`` — per call, forever. A swept entry's connection(s)
+        are simply dropped for ordinary garbage collection to reclaim, not
+        explicitly closed: there is no way to cleanly ``aclose()`` a client
+        after its owning loop is already gone (see :meth:`aclose`, which
+        has the same limitation for exactly the same reason). That is an
+        accepted trade-off already established in this SDK, not a new one.
+
+        No handling for "called with no running event loop": every caller
+        of this method is itself a coroutine's own body (the ``async_*``
+        methods below), which can only be executing — and therefore only
+        reach this line — while some loop is actively driving it. Letting
+        ``asyncio.get_running_loop()``'s ``RuntimeError`` surface in the
+        (unreachable in practice) case where that invariant is somehow
+        violated is preferable to masking it.
+        """
+        if self._async_client is not None:
+            return self._async_client
+        loop = asyncio.get_running_loop()
+        with self._async_clients_lock:
+            for dead_loop in [lp for lp in self._async_clients if lp.is_closed()]:
+                del self._async_clients[dead_loop]
+            client = self._async_clients.get(loop)
+            if client is None:
+                client = httpx.AsyncClient(
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                    timeout=30.0,
+                )
+                self._async_clients[loop] = client
+            return client
 
     def _raise(self, resp: httpx.Response) -> None:
         if not resp.is_success:
@@ -79,8 +171,16 @@ class AnonaClient:
         metadata: dict | None = None,
         tags: list[str] | None = None,
         background: bool = False,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
     ) -> dict:
         """Store a memory.
+
+        ``user_id`` / ``agent_id`` / ``session_id`` scope the memory inside the
+        space: a memory written under a user is only returned to a
+        :meth:`retrieve` carrying the same user. That is how one space serves
+        many end users without their memories mixing.
 
         ``tags`` attaches visibility-scope tags that :meth:`retrieve` can filter
         on (e.g. tag by the source agent in agent-to-agent workflows).
@@ -97,6 +197,13 @@ class AnonaClient:
         }
         if tags:
             body["tags"] = tags
+        for key, value in (
+            ("user_id", user_id),
+            ("agent_id", agent_id),
+            ("session_id", session_id),
+        ):
+            if value:
+                body[key] = value
         if background:
             body["async"] = True
         resp = self._get_client().post(f"{self._base_url}/v1/record", json=body)
@@ -137,19 +244,78 @@ class AnonaClient:
         query: str,
         limit: int = 10,
         mode: str = "accurate",
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
     ) -> list[dict]:
         """Search memories.
+
+        ``user_id`` / ``agent_id`` / ``session_id`` restrict the search to
+        memories written under the same scope. The filter is strict: memories
+        stored without a scope are not returned to a scoped search.
 
         ``mode="accurate"`` (default) neurally reranks results for best
         relevance. ``mode="fast"`` skips that pass — much lower latency, at
         some cost to relevance quality.
         """
+        body: dict = {
+            "space_id": space_id,
+            "query": query,
+            "limit": limit,
+            "mode": mode,
+        }
+        for key, value in (
+            ("user_id", user_id),
+            ("agent_id", agent_id),
+            ("session_id", session_id),
+        ):
+            if value:
+                body[key] = value
         resp = self._get_client().post(
             f"{self._base_url}/v1/retrieve",
-            json={"space_id": space_id, "query": query, "limit": limit, "mode": mode},
+            json=body,
         )
         self._raise(resp)
         return resp.json().get("results", [])
+
+    def get_context(
+        self,
+        space_id: str,
+        query: str,
+        limit: int = 10,
+        max_tokens: int | None = None,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+    ) -> str:
+        """The relevant memories as one prompt-ready string.
+
+        The same search as :meth:`retrieve`, returned already formatted so it
+        can go straight into a system prompt — no join to write, and the token
+        budget is handled server-side rather than by a loop that does not have
+        one. Returns ``""`` when nothing matched.
+
+        ``max_tokens`` caps the block: whole memories are dropped,
+        lowest-ranked first, rather than the text being cut mid-sentence.
+        """
+        body: dict = {
+            "space_id": space_id,
+            "query": query,
+            "limit": limit,
+            "format": "block",
+        }
+        if max_tokens:
+            body["context_max_tokens"] = max_tokens
+        for key, value in (
+            ("user_id", user_id),
+            ("agent_id", agent_id),
+            ("session_id", session_id),
+        ):
+            if value:
+                body[key] = value
+        resp = self._get_client().post(f"{self._base_url}/v1/retrieve", json=body)
+        self._raise(resp)
+        return resp.json().get("context") or ""
 
     def reason(self, space_id: str, query: str) -> str | None:
         resp = self._get_client().post(
@@ -315,6 +481,9 @@ class AnonaClient:
         metadata: dict | None = None,
         tags: list[str] | None = None,
         background: bool = False,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
     ) -> dict:
         """Async (asyncio) variant of :meth:`record`. ``background=True`` queues
         the write and returns a ``job_id`` — poll with :meth:`async_get_job`."""
@@ -325,6 +494,13 @@ class AnonaClient:
         }
         if tags:
             body["tags"] = tags
+        for key, value in (
+            ("user_id", user_id),
+            ("agent_id", agent_id),
+            ("session_id", session_id),
+        ):
+            if value:
+                body[key] = value
         if background:
             body["async"] = True
         resp = await self._get_async_client().post(
@@ -356,14 +532,62 @@ class AnonaClient:
         query: str,
         limit: int = 10,
         mode: str = "accurate",
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
     ) -> list[dict]:
         """Async (asyncio) variant of :meth:`retrieve`."""
+        body: dict = {
+            "space_id": space_id,
+            "query": query,
+            "limit": limit,
+            "mode": mode,
+        }
+        for key, value in (
+            ("user_id", user_id),
+            ("agent_id", agent_id),
+            ("session_id", session_id),
+        ):
+            if value:
+                body[key] = value
         resp = await self._get_async_client().post(
             f"{self._base_url}/v1/retrieve",
-            json={"space_id": space_id, "query": query, "limit": limit, "mode": mode},
+            json=body,
         )
         self._raise(resp)
         return resp.json().get("results", [])
+
+    async def async_get_context(
+        self,
+        space_id: str,
+        query: str,
+        limit: int = 10,
+        max_tokens: int | None = None,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+    ) -> str:
+        """Async (asyncio) variant of :meth:`get_context`."""
+        body: dict = {
+            "space_id": space_id,
+            "query": query,
+            "limit": limit,
+            "format": "block",
+        }
+        if max_tokens:
+            body["context_max_tokens"] = max_tokens
+        for key, value in (
+            ("user_id", user_id),
+            ("agent_id", agent_id),
+            ("session_id", session_id),
+        ):
+            if value:
+                body[key] = value
+        resp = await self._get_async_client().post(
+            f"{self._base_url}/v1/retrieve", json=body
+        )
+        self._raise(resp)
+        return resp.json().get("context") or ""
 
     async def async_reason(self, space_id: str, query: str) -> str | None:
         resp = await self._get_async_client().post(
@@ -473,9 +697,38 @@ class AnonaClient:
             self._client.close()
 
     async def aclose(self) -> None:
-        """Close the async client, if one was ever opened."""
+        """Close every async client that was ever opened. Never raises.
+
+        There can now be more than one — see :meth:`_get_async_client` — so
+        this closes the manual override (if a caller set one) and every
+        per-loop entry, individually. Each is wrapped in its own
+        ``try``/``except``: this method itself always runs on *some* loop
+        (whichever one is driving this coroutine), but the client(s) being
+        torn down may belong to a *different*, already-closed one — the
+        ordinary shape is "fetch on loop A, loop A ends, close() runs on a
+        fresh loop B" — and there is no way to force a clean async teardown
+        of loop A's connection from loop B after the fact (``RuntimeError:
+        Event loop is closed``, or "bound to a different event loop" if
+        loop A is somehow still alive elsewhere). One entry's failure must
+        not stop the rest from being attempted, and none may propagate:
+        callers (:meth:`__aexit__`, ``MemoryBridge.close``) run this from
+        cleanup paths, often their own ``finally``, the worst possible place
+        for a new exception to appear.
+        """
         if self._async_client is not None:
-            await self._async_client.aclose()
+            try:
+                await self._async_client.aclose()
+            except Exception:
+                pass
+            self._async_client = None
+        with self._async_clients_lock:
+            clients = list(self._async_clients.values())
+            self._async_clients.clear()
+        for client in clients:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
 
     def __enter__(self) -> "AnonaClient":
         return self

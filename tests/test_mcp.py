@@ -1,4 +1,4 @@
-"""Unit tests for the Anona MCP server tools — no live gateway required."""
+"""Unit tests for the Anona MCP server tools — no live API required."""
 from __future__ import annotations
 
 import json

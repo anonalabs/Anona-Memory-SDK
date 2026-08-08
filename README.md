@@ -117,6 +117,43 @@ async with AnonaClient(api_key="...") as client:
 
 Errors raise `AnonaError(status_code, detail)`.
 
+## Framework adapters
+
+Anona plugs into the Python agent frameworks through optional extras. Every
+adapter handles recall and storage for you, and scopes memories per end user.
+
+| Framework | Install | Import |
+| --- | --- | --- |
+| LangChain / LangGraph | `pip install 'anona[langchain]'` | `anona.integrations.langchain` |
+| CrewAI | `pip install 'anona[crewai]'` | `anona.integrations.crewai` |
+| LlamaIndex | `pip install 'anona[llamaindex]'` | `anona.integrations.llamaindex` |
+| Google ADK | `pip install 'anona[adk]'` | `anona.integrations.google_adk` |
+| Microsoft Agent Framework | `pip install 'anona[msagent]'` | `anona.integrations.ms_agent` |
+| AWS Strands | `pip install 'anona[strands]'` | `anona.integrations.strands` |
+
+All six are built on one `MemoryBridge`, which owns scope resolution and the
+failure contract:
+
+```python
+from anona.integrations import MemoryBridge
+from anona.integrations.langchain import AnonaMemory
+
+bridge = MemoryBridge(
+    api_key="anona_live_...",
+    space_id="my-space",
+    user_id="customer-42",   # optional scope: this user's memories only
+)
+
+agent = create_agent(model="gpt-4o-mini", middleware=[AnonaMemory(bridge=bridge)])
+```
+
+**Memory failures never raise into your agent.** A failed recall or store is
+logged and the agent runs on without memory, rather than taking your
+application down.
+
+Each adapter's own module docstring documents its scoping, failure behaviour
+and per-call cost. Full docs: https://docs.anonalabs.com/integrations/langchain
+
 ## LiteLLM integration
 
 Auto-inject relevant memories into every `litellm.completion()` call, and auto-store the resulting Q&A pair:
@@ -191,6 +228,9 @@ is personal — the server only reaches spaces you are a member of.
 - `httpx >= 0.24`
 - `litellm >= 1.0` (optional, only for the LiteLLM integration)
 - `mcp >= 1.2` (optional, only for the MCP server)
+- one of `langchain`, `crewai`, `llama-index-core`, `google-adk`,
+  `agent-framework-core`, `strands-agents` (optional, only for the matching
+  framework adapter — see the extras above for the verified version floors)
 
 ## License
 
