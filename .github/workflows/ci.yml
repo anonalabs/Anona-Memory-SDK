@@ -47,5 +47,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,langchain,crewai,llamaindex,adk,msagent,strands]"
+      - name: Install the model providers the examples name
+        # tests/test_examples.py executes every script in examples/ against the
+        # real framework. Each constructs a model at import time, so without
+        # these the whole file skips and a broken example merges green.
+        run: |
+          python -m pip install langchain-openai llama-index-llms-openai agent-framework-openai
       - name: Run tests
         run: python -m pytest tests/ -q
