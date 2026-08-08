@@ -19,6 +19,9 @@ from anona.integrations.langchain import AnonaMemory
 
 bridge = MemoryBridge(
     api_key=os.environ["ANONA_API_KEY"],
+    # Only needed to point at a different deployment; the default is
+    # https://api.anonalabs.com.
+    base_url=os.environ.get("ANONA_BASE_URL", "https://api.anonalabs.com"),
     space_id=os.environ.get("ANONA_SPACE_ID", "examples-langchain"),
     # Scope every read and write to one end user. Memories written under this
     # user are never returned to another one, so a single space can back your

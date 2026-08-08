@@ -22,6 +22,9 @@ from anona.integrations.llamaindex import AnonaMemoryBlock
 
 bridge = MemoryBridge(
     api_key=os.environ["ANONA_API_KEY"],
+    # Only needed to point at a different deployment; the default is
+    # https://api.anonalabs.com.
+    base_url=os.environ.get("ANONA_BASE_URL", "https://api.anonalabs.com"),
     space_id=os.environ.get("ANONA_SPACE_ID", "examples-llamaindex"),
     user_id="customer-42",
 )
