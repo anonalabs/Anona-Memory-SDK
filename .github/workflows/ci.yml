@@ -28,3 +28,24 @@ jobs:
           python -m pip install -e ".[dev]"
       - name: Run tests
         run: python -m pytest tests/ -q
+
+  adapters:
+    # The six framework adapters are optional extras, so their test files
+    # self-skip when the framework is absent — without this job a clean run
+    # was 43 passed / 75 skipped and every adapter regression merged green.
+    # One Python version only: installing six agent frameworks is ~1.2GB of
+    # transitive deps, and the adapters contain no version-specific code paths.
+    name: Framework adapters
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install with every adapter extra
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,langchain,crewai,llamaindex,adk,msagent,strands]"
+      - name: Run tests
+        run: python -m pytest tests/ -q

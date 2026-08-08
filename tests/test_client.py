@@ -1,4 +1,4 @@
-"""Unit tests for AnonaClient — HTTP mocked with respx, no live gateway."""
+"""Unit tests for AnonaClient — HTTP mocked with respx, no live API."""
 from __future__ import annotations
 
 import json
