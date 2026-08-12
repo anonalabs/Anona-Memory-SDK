@@ -3,6 +3,11 @@ name: Publish to PyPI
 # Publishes when a GitHub Release is published (tag it vX.Y.Z first, then
 # create the Release), or run manually against TestPyPI via the workflow
 # dispatch. Version comes from pyproject.toml — bump it before releasing.
+#
+# Skipped for `npm-v*` tags, which belong to publish-npm.yml. Both workflows
+# listen to every release in this repo, so without the guard a TypeScript
+# release would also upload the Python package at whatever version happened to
+# be in pyproject.toml.
 on:
   release:
     types: [published]
@@ -19,6 +24,7 @@ permissions:
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' || !startsWith(github.ref_name, 'npm-v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -6,16 +6,16 @@ Official SDKs for [Anona Memory](https://memory.anonalabs.com) — managed AI me
 - **TypeScript** — [`typescript/`](typescript/). Zero dependencies, runs on Node 18+, Bun, Deno, Cloudflare Workers and the browser, with adapters for the Vercel AI SDK and the OpenAI Agents SDK. See [`typescript/README.md`](typescript/README.md).
 
 ```typescript
-import { Anona } from "@anona/memory";
+import { Anona } from "@anona-labs/memory";
 
 const anona = new Anona({ apiKey: process.env.ANONA_API_KEY! });
 await anona.record({ spaceId: "support", content: "Alice prefers email" });
 const hits = await anona.retrieve({ spaceId: "support", query: "how to contact Alice" });
 ```
 
-> The TypeScript package is not yet on npm. Until it is published, install it from
-> this repository: `npm install github:anonalabs/Anona-Memory-SDK#main --prefix ...`
-> or build it locally from `typescript/`.
+```bash
+npm install @anona-labs/memory
+```
 
 ## Install
 
