@@ -1,16 +1,16 @@
-# @anona/memory
+# @anona-labs/memory
 
 Managed memory for AI agents. Zero dependencies, runs on Node 18+, Bun, Deno,
 Cloudflare Workers and the browser.
 
 ```bash
-npm i @anona/memory
+npm i @anona-labs/memory
 ```
 
 ## Quickstart
 
 ```ts
-import { Anona } from "@anona/memory";
+import { Anona } from "@anona-labs/memory";
 
 const anona = new Anona({ apiKey: process.env.ANONA_API_KEY! });
 
@@ -26,8 +26,8 @@ console.log(memories[0]?.content);
 ```ts
 import { openai } from "@ai-sdk/openai";
 import { generateText, wrapLanguageModel } from "ai";
-import { Anona } from "@anona/memory";
-import { anonaMemory } from "@anona/memory/vercel";
+import { Anona } from "@anona-labs/memory";
+import { anonaMemory } from "@anona-labs/memory/vercel";
 
 const anona = new Anona({ apiKey: process.env.ANONA_API_KEY! });
 
@@ -45,8 +45,8 @@ Requires `ai` v5 or newer.
 
 ```ts
 import { Agent, run } from "@openai/agents";
-import { Anona } from "@anona/memory";
-import { anonaTools } from "@anona/memory/openai-agents";
+import { Anona } from "@anona-labs/memory";
+import { anonaTools } from "@anona-labs/memory/openai-agents";
 
 const anona = new Anona({ apiKey: process.env.ANONA_API_KEY! });
 const agent = new Agent({
@@ -99,7 +99,7 @@ edited — they are derived, so the API rejects the attempt.
 ## Errors
 
 ```ts
-import { AnonaError } from "@anona/memory";
+import { AnonaError } from "@anona-labs/memory";
 
 try {
   await anona.retrieve({ spaceId: "nope", query: "x" });

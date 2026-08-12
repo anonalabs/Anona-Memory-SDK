@@ -1,0 +1,96 @@
+name: Publish to npm
+
+# Publishes the TypeScript package in typescript/ when a GitHub Release whose
+# tag starts with `npm-v` is published (e.g. npm-v0.1.0), or manually via the
+# workflow dispatch. Version comes from typescript/package.json — bump it before
+# releasing; the tag is checked against it.
+#
+# The `npm-v` prefix keeps this separate from publish.yml, which publishes the
+# Python package on plain `vX.Y.Z` releases. Both workflows run on every
+# release, so each one guards on the tag or a Python release would also upload
+# the npm package (and vice versa) at whatever version happened to be committed.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Pack and validate only — do not publish"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref_name, 'npm-v')
+    runs-on: ubuntu-latest
+    # Two auth paths, in this order:
+    #
+    #  1. Trusted Publishing (OIDC) — nothing stored. Preferred, but it can
+    #     only be configured on a package that already exists, so it cannot
+    #     publish the first version.
+    #  2. An NPM_TOKEN secret — a granular token scoped to @anona-labs with
+    #     "bypass 2FA" enabled. This is what makes the first publish possible
+    #     from CI at all, since the account requires an OTP interactively.
+    #
+    # npm prefers OIDC whenever a trusted publisher matches this workflow, so
+    # the token can stay as a fallback or be deleted once step 1 is set up.
+    # id-token is also what signs the provenance attestation.
+    permissions:
+      contents: read
+      id-token: write
+    environment: npm
+    defaults:
+      run:
+        working-directory: typescript
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+
+      # Trusted publishing needs npm >= 11.5.1; the npm bundled with Node 22 is
+      # older and would fall back to asking for a token that does not exist.
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      - run: npm ci --prefer-offline
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Tag matches package version
+        if: github.event_name == 'release'
+        run: |
+          pkg=$(node -p "require('./package.json').version")
+          tag="${GITHUB_REF_NAME#npm-v}"
+          if [ "$pkg" != "$tag" ]; then
+            echo "package.json is $pkg but the tag says $tag" >&2
+            exit 1
+          fi
+
+      - name: Pack (dry run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: npm publish --dry-run --access public
+
+      # NODE_AUTH_TOKEN is picked up through the .npmrc setup-node wrote. When
+      # the secret is unset it resolves to an empty string, which npm ignores,
+      # and the OIDC path takes over.
+      - name: Publish
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
