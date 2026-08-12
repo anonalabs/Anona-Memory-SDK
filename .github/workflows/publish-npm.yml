@@ -26,10 +26,17 @@ jobs:
   publish:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref_name, 'npm-v')
     runs-on: ubuntu-latest
-    # Trusted Publishing (OIDC) — no NPM_TOKEN stored. Configure the trusted
-    # publisher on npmjs.com for this repo/workflow/environment first. That
-    # requires the package to already exist, so the very first version is
-    # published by hand (`npm publish --access public` from typescript/).
+    # Two auth paths, in this order:
+    #
+    #  1. Trusted Publishing (OIDC) — nothing stored. Preferred, but it can
+    #     only be configured on a package that already exists, so it cannot
+    #     publish the first version.
+    #  2. An NPM_TOKEN secret — a granular token scoped to @anona-labs with
+    #     "bypass 2FA" enabled. This is what makes the first publish possible
+    #     from CI at all, since the account requires an OTP interactively.
+    #
+    # npm prefers OIDC whenever a trusted publisher matches this workflow, so
+    # the token can stay as a fallback or be deleted once step 1 is set up.
     # id-token is also what signs the provenance attestation.
     permissions:
       contents: read
@@ -79,6 +86,11 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.dry_run
         run: npm publish --dry-run --access public
 
+      # NODE_AUTH_TOKEN is picked up through the .npmrc setup-node wrote. When
+      # the secret is unset it resolves to an empty string, which npm ignores,
+      # and the OIDC path takes over.
       - name: Publish
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
         run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
