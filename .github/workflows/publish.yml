@@ -44,8 +44,14 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
-    # Trusted Publishing (OIDC) — no API token stored. Configure a pending
-    # publisher on PyPI for this repo/workflow first (see README / PyPI docs).
+    # Two auth paths, and the action picks between them by whether `password`
+    # is empty: an empty value means Trusted Publishing (OIDC, nothing stored),
+    # a value means that API token.
+    #
+    # OIDC is the target state, but it needs a pending publisher configured on
+    # PyPI by an account that owns the project — so the token exists to get the
+    # first version out. Delete the secret once OIDC is configured; an
+    # account-wide upload token can publish *any* project you own.
     permissions:
       id-token: write
     environment: pypi
@@ -59,6 +65,9 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
       - name: Publish to PyPI
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
