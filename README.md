@@ -19,20 +19,15 @@ npm install @anona-labs/memory
 
 ## Install
 
-Install directly from GitHub:
-
 ```bash
-pip install git+https://github.com/anonalabs/Anona-Memory-SDK.git
+pip install anona
 ```
 
 With the LiteLLM integration (or `mcp` for the MCP server):
 
 ```bash
-pip install "anona[litellm] @ git+https://github.com/anonalabs/Anona-Memory-SDK.git"
+pip install "anona[litellm]"
 ```
-
-> The package is not yet on PyPI, so install from the Git URL above. Once it's
-> published, `pip install anona` will also work.
 
 ## Quickstart
 
@@ -186,7 +181,7 @@ tools: `record`, `retrieve`, `list_spaces`, and `reason`.
 Install the extra:
 
 ```bash
-pip install "anona[mcp] @ git+https://github.com/anonalabs/Anona-Memory-SDK.git"
+pip install "anona[mcp]"
 ```
 
 **Claude Desktop / Cursor** — add to `claude_desktop_config.json` (or
@@ -199,7 +194,7 @@ pip install "anona[mcp] @ git+https://github.com/anonalabs/Anona-Memory-SDK.git"
       "command": "uvx",
       "args": [
         "--from",
-        "anona[mcp] @ git+https://github.com/anonalabs/Anona-Memory-SDK.git",
+        "anona[mcp]",
         "anona-mcp"
       ],
       "env": {
@@ -217,7 +212,7 @@ pip install "anona[mcp] @ git+https://github.com/anonalabs/Anona-Memory-SDK.git"
 claude mcp add anona \
   --env ANONA_API_KEY=anona_live_... \
   --env ANONA_SPACE_ID=space_123 \
-  -- uvx --from "anona[mcp] @ git+https://github.com/anonalabs/Anona-Memory-SDK.git" anona-mcp
+  -- uvx --from "anona[mcp]" anona-mcp
 ```
 
 `ANONA_SPACE_ID` sets the default space so you can just say "remember this"
