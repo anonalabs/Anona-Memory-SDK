@@ -228,6 +228,8 @@ export class Anona {
     return this.http.request<RecordResult>({
       method: "POST",
       path: "/v1/record",
+      // A create: never auto-retried on a 5xx/timeout, which could store twice.
+      idempotent: false,
       signal,
       body: compact({
         space_id: spaceId,
@@ -257,6 +259,8 @@ export class Anona {
     return this.http.request<BatchRecordResult>({
       method: "POST",
       path: "/v1/record/batch",
+      // A create: never auto-retried on a 5xx/timeout, which could queue twice.
+      idempotent: false,
       signal: options.signal,
       body: {
         space_id: options.spaceId,
@@ -459,6 +463,8 @@ export class Anona {
     return this.http.request<UploadResult>({
       method: "POST",
       path: `/v1/spaces/${seg(options.spaceId)}/documents`,
+      // A create: never auto-retried on a 5xx/timeout, which could ingest twice.
+      idempotent: false,
       form,
       signal: options.signal,
     });

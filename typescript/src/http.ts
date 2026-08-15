@@ -16,6 +16,18 @@ export interface RequestOptions {
   form?: FormData;
   signal?: AbortSignal;
   expectNoContent?: boolean;
+  /**
+   * Whether this call is safe to retry automatically. Defaults to `true`.
+   *
+   * A retry only replays work; it must never duplicate it. Reads (and the
+   * name-keyed create-space, which resolves to the same space) are safe. The
+   * create endpoints — record, batch record, file upload — are not: a 5xx or a
+   * timeout can arrive after the write has already been stored, so replaying it
+   * writes the memory twice. Those pass `idempotent: false`, which limits their
+   * retries to the one failure that proves nothing was stored (a 429, rejected
+   * before the write is attempted).
+   */
+  idempotent?: boolean;
 }
 
 /**
@@ -31,7 +43,13 @@ export function seg(value: string): string {
   return encodeURIComponent(String(value));
 }
 
-const RETRYABLE = (status: number): boolean => status === 429 || status >= 500;
+// 429 is always safe to retry: the server rejects it before the write is
+// attempted, so nothing was stored. A 5xx is only safe to retry when the call
+// is idempotent — replaying a create (record / batch / upload) after a 5xx that
+// landed post-write stores the memory twice, which is exactly what the API's
+// `write_status_unknown` 503 warns against.
+const RETRYABLE = (status: number, idempotent: boolean): boolean =>
+  status === 429 || (status >= 500 && idempotent);
 
 function backoffMs(attempt: number, retryAfter: string | null): number {
   if (retryAfter) {
@@ -92,6 +110,9 @@ export class HttpClient {
       body = JSON.stringify(options.body);
     }
 
+    // Absent means safe: only the create endpoints opt out (see RequestOptions).
+    const idempotent = options.idempotent !== false;
+
     let lastError: AnonaError | undefined;
 
     for (let attempt = 0; attempt <= this.opts.maxRetries; attempt++) {
@@ -117,7 +138,11 @@ export class HttpClient {
           message: cause instanceof Error ? cause.message : "request failed",
           detail: cause,
         });
-        if (attempt < this.opts.maxRetries) {
+        // A network failure or timeout is retried only when the call is
+        // idempotent. On a create the request may have reached the server and
+        // been applied before the connection dropped, so replaying it risks a
+        // duplicate — surface the error and let the caller decide.
+        if (idempotent && attempt < this.opts.maxRetries) {
           await sleep(backoffMs(attempt, null));
           continue;
         }
@@ -133,7 +158,11 @@ export class HttpClient {
       }
 
       lastError = await this.parseError(response);
-      if (!RETRYABLE(response.status) || attempt === this.opts.maxRetries) throw lastError;
+      if (
+        !RETRYABLE(response.status, idempotent) ||
+        attempt === this.opts.maxRetries
+      )
+        throw lastError;
       await sleep(backoffMs(attempt, response.headers.get("retry-after")));
     }
 
