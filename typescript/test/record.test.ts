@@ -158,3 +158,16 @@ describe("getJob memory ids", () => {
     expect(job.memory_count).toBeNull();
   });
 });
+
+describe("record retry safety", () => {
+  it("does not auto-retry a failed create, so a memory is never stored twice", async () => {
+    const fetchImpl = vi.fn(async () => new Response("boom", { status: 503 }));
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await expect(
+      anona.record({ spaceId: "s", content: "c" }),
+    ).rejects.toMatchObject({ statusCode: 503 });
+    // Default maxRetries is 2; without idempotent:false this would be 3 calls.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});

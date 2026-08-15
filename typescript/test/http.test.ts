@@ -158,4 +158,51 @@ describe("HttpClient.request", () => {
     expect(err).toBeInstanceOf(AnonaError);
     expect(err.statusCode).toBe(408);
   });
+
+  it("does not retry a non-idempotent request on 5xx", async () => {
+    const fetchImpl = vi.fn(async () => new Response("boom", { status: 503 }));
+
+    const err = (await makeClient(fetchImpl as never)
+      .request({ method: "POST", path: "/v1/record", idempotent: false })
+      .catch((e: unknown) => e)) as AnonaError;
+
+    expect(err.statusCode).toBe(503);
+    // A 5xx can land after the write was applied, so replaying it would store
+    // the memory twice — the request is sent exactly once.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a non-idempotent request on a timeout", async () => {
+    const fetchImpl = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+          );
+        }),
+    );
+
+    const err = (await makeClient(fetchImpl as never, { timeoutMs: 10 })
+      .request({ method: "POST", path: "/v1/record", idempotent: false })
+      .catch((e: unknown) => e)) as AnonaError;
+
+    expect(err.statusCode).toBe(408);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("still retries a non-idempotent request on 429 (nothing was stored)", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("slow down", { status: 429 }))
+      .mockResolvedValueOnce(jsonResponse({ memory_id: "m" }, { status: 201 }));
+
+    const result = await makeClient(fetchImpl as never).request<{ memory_id: string }>({
+      method: "POST",
+      path: "/v1/record",
+      idempotent: false,
+    });
+
+    expect(result).toEqual({ memory_id: "m" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
 });
