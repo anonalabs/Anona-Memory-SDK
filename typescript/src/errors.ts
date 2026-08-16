@@ -1,12 +1,11 @@
 /**
  * An error returned by the Anona API.
  *
- * The gateway wraps failures as `{"error": {"code", "message"}}` — not
- * FastAPI's `{"detail": ...}` — so `code` is the stable machine-readable
- * handle and `message` the human one.
+ * The API wraps failures as `{"error": {"code", "message"}}`, so `code` is the
+ * stable machine-readable handle and `message` the human one.
  *
  * A 503 carrying no `requestId` may be a Cloudflare-mangled 502 or 504: the
- * edge strips the body of those two statuses, so the gateway rewrites them to
+ * edge strips the body of those two statuses, so the API rewrites them to
  * 503 before they leave. Report such a failure with a timestamp rather than
  * treating it as a malformed response.
  */

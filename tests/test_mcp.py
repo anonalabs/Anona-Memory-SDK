@@ -85,7 +85,7 @@ def test_record_posts_memory():
 
 
 @respx.mock
-def test_record_surfaces_gateway_error_message():
+def test_record_surfaces_api_error_message():
     respx.post(f"{BASE}/v1/record").mock(
         return_value=httpx.Response(
             403,

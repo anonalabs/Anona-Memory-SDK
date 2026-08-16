@@ -60,7 +60,7 @@ describe("HttpClient.request", () => {
     );
   });
 
-  it("maps the gateway error envelope onto AnonaError", async () => {
+  it("maps the API error envelope onto AnonaError", async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse(
         { error: { code: "space_not_found", message: "No such space" } },
