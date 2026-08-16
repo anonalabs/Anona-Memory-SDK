@@ -164,6 +164,32 @@ The same search as `retrieve`, already formatted, with the token budget applied
 server-side rather than by a loop that does not have one. Returns `""` when
 nothing matched, so it can go straight into a system prompt.
 
+## Extraction settings
+
+Recording a memory is not storage. Your text goes through one pass that decides
+which facts are worth keeping, and only what survives is stored — so a detail
+dropped there is not ranked low later, it is not there at all. These settings
+point that pass at your domain.
+
+```ts
+await anona.setExtractionSettings({
+  spaceId: "engineering",
+  guidance:
+    "Engineering log. Always capture service names, metric values with units, " +
+    "and the named owner. Treat incidents as dated events. Skip standup small talk.",
+});
+```
+
+`guidance` is added to the standard rules and applies in every mode — start
+there. `mode` is `"concise"` (the default), `"verbose"`, `"verbatim"`, or
+`"custom"`; `customPrompt` replaces the standard rules and only applies while
+the mode is `"custom"`.
+
+`setExtractionSettings` **replaces** the record, so anything you leave out is
+cleared. Settings apply to writes made after the call — stored memories are
+never re-extracted, so changing these never rewrites history. Unhelpful guidance
+produces no error; extraction simply keeps different things.
+
 ## API
 
 | Method | Purpose |
@@ -178,4 +204,8 @@ nothing matched, so it can go straight into a system prompt.
 | `listMemories` / `getMemoryHistory` / `updateMemory` / `deleteMemory` | Memory management |
 | `uploadFiles` / `listDocuments` / `getDocument` / `deleteDocument` | Documents |
 | `getGraph` / `listEntities` / `getEntity` | Entity graph |
+| `getExtractionSettings` / `setExtractionSettings` / `resetExtractionSettings` | Steer what a write keeps — see below |
+| `getChatSettings` / `setChatSettings` / `resetChatSettings` | Per-space defaults for the drop-in proxy endpoints |
+| `createWebhook` / `listWebhooks` / `updateWebhook` / `deleteWebhook` | Webhook management |
+| `listWebhookDeliveries` | Recent delivery attempts, for debugging a receiver |
 | `getUsage` | Credits and rate limit for this key |

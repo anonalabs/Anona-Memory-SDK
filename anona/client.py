@@ -497,6 +497,210 @@ class AnonaClient:
         )
         self._raise(resp)
 
+    # ── Space configuration ───────────────────────────────────────────────────
+
+    #: Both settings endpoints replace the whole record rather than patching it,
+    #: so an argument the caller leaves out is sent as an explicit null and the
+    #: stored value is cleared. Building the body here rather than dropping
+    #: unset keys is what makes that faithful.
+    _EXTRACTION_FIELDS = ("mode", "guidance", "custom_prompt")
+    _CHAT_FIELDS = ("memory_limit", "memory_token_budget", "auto_record", "memory")
+
+    def get_extraction_settings(self, space_id: str) -> dict:
+        """How this space turns recorded text into memories.
+
+        Returns ``{"space_id", "mode", "guidance", "custom_prompt"}``. A null
+        field is *unset* — it follows the platform default and keeps following
+        it, which is not the same as being set to that default's current value.
+        """
+        resp = self._get_client().get(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/extraction-settings"
+        )
+        self._raise(resp)
+        return resp.json()
+
+    def set_extraction_settings(
+        self,
+        space_id: str,
+        *,
+        mode: str | None = None,
+        guidance: str | None = None,
+        custom_prompt: str | None = None,
+    ) -> dict:
+        """Replace this space's extraction settings.
+
+        ``mode`` is ``concise`` (the default), ``verbose``, ``verbatim`` or
+        ``custom``. ``guidance`` is added to the standard extraction rules in
+        every mode — name the terms your team uses and the fields that always
+        matter. ``custom_prompt`` replaces those rules instead, and only applies
+        while ``mode`` is ``custom``.
+
+        This replaces the record: anything you leave out is cleared. Settings
+        apply to writes made after the call and never re-extract stored
+        memories.
+        """
+        resp = self._get_client().put(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/extraction-settings",
+            json={"mode": mode, "guidance": guidance, "custom_prompt": custom_prompt},
+        )
+        self._raise(resp)
+        return resp.json()
+
+    def reset_extraction_settings(self, space_id: str) -> None:
+        """Drop this space's extraction settings, back to the platform defaults."""
+        resp = self._get_client().delete(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/extraction-settings"
+        )
+        self._raise(resp)
+
+    def get_chat_settings(self, space_id: str) -> dict:
+        """This space's defaults for the drop-in LLM proxy endpoints."""
+        resp = self._get_client().get(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/chat-settings"
+        )
+        self._raise(resp)
+        return resp.json()
+
+    def set_chat_settings(
+        self,
+        space_id: str,
+        *,
+        memory_limit: int | None = None,
+        memory_token_budget: int | None = None,
+        auto_record: bool | None = None,
+        memory: bool | None = None,
+    ) -> dict:
+        """Replace this space's proxy defaults.
+
+        A request that sets the same field — in its body or an ``X-Anona-*``
+        header — still wins over these. Replaces the record, so anything left
+        out is cleared.
+        """
+        resp = self._get_client().put(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/chat-settings",
+            json={
+                "memory_limit": memory_limit,
+                "memory_token_budget": memory_token_budget,
+                "auto_record": auto_record,
+                "memory": memory,
+            },
+        )
+        self._raise(resp)
+        return resp.json()
+
+    def reset_chat_settings(self, space_id: str) -> None:
+        """Drop this space's proxy defaults, back to the platform defaults."""
+        resp = self._get_client().delete(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/chat-settings"
+        )
+        self._raise(resp)
+
+    # ── Webhooks ──────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _webhook_changes(
+        url: str | None, event_types: list[str] | None, enabled: bool | None
+    ) -> dict:
+        """Only the fields actually passed.
+
+        Updating a webhook is a PATCH, unlike the settings PUTs above: the API
+        changes what it is sent and leaves the rest alone, so an unset argument
+        has to be omitted rather than nulled.
+        """
+        changes: dict = {}
+        if url is not None:
+            changes["url"] = url
+        if event_types is not None:
+            changes["event_types"] = event_types
+        if enabled is not None:
+            changes["enabled"] = enabled
+        return changes
+
+    def create_webhook(
+        self,
+        space_id: str,
+        *,
+        url: str,
+        event_types: list[str] | None = None,
+        enabled: bool = True,
+    ) -> dict:
+        """Register an HTTPS endpoint to be called when something happens here.
+
+        Events are ``memory.created``, ``memory.consolidated`` and
+        ``security.policy_triggered``.
+
+        The response carries ``secret``, and this is the **only** time it is
+        returned — store it. Every delivery is signed with it as
+        ``X-Anona-Signature: sha256=<hex>``, the HMAC-SHA256 of the raw request
+        body; compare with a constant-time check.
+        """
+        resp = self._get_client().post(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/webhooks",
+            json={
+                "url": url,
+                "event_types": event_types or ["memory.created"],
+                "enabled": enabled,
+            },
+        )
+        self._raise(resp)
+        return resp.json()
+
+    def list_webhooks(self, space_id: str) -> list[dict]:
+        """Every webhook registered on this space."""
+        resp = self._get_client().get(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/webhooks"
+        )
+        self._raise(resp)
+        return resp.json().get("items", [])
+
+    def update_webhook(
+        self,
+        space_id: str,
+        webhook_id: str,
+        *,
+        url: str | None = None,
+        event_types: list[str] | None = None,
+        enabled: bool | None = None,
+    ) -> dict:
+        """Change a webhook's URL, events or enabled state. Only what you pass."""
+        resp = self._get_client().patch(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/webhooks/{_seg(webhook_id)}",
+            json=self._webhook_changes(url, event_types, enabled),
+        )
+        self._raise(resp)
+        return resp.json()
+
+    def delete_webhook(self, space_id: str, webhook_id: str) -> None:
+        """Remove a webhook. Queued deliveries for it stop."""
+        resp = self._get_client().delete(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/webhooks/{_seg(webhook_id)}"
+        )
+        self._raise(resp)
+
+    def list_webhook_deliveries(
+        self,
+        space_id: str,
+        webhook_id: str,
+        *,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> dict:
+        """Recent delivery attempts, newest first — for debugging a receiver.
+
+        Returns ``{"items", "next_cursor"}``; pass ``next_cursor`` back as
+        ``cursor`` for the next page.
+        """
+        params: dict = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
+        resp = self._get_client().get(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}"
+            f"/webhooks/{_seg(webhook_id)}/deliveries",
+            params=params,
+        )
+        self._raise(resp)
+        return resp.json()
+
     # ── Async ─────────────────────────────────────────────────────────────────
 
     async def async_record(
@@ -719,6 +923,146 @@ class AnonaClient:
             f"{self._base_url}/v1/spaces/{_seg(space_id)}/memories/{_seg(memory_id)}"
         )
         self._raise(resp)
+
+    async def async_get_extraction_settings(self, space_id: str) -> dict:
+        """Async (asyncio) variant of :meth:`get_extraction_settings`."""
+        resp = await self._get_async_client().get(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/extraction-settings"
+        )
+        self._raise(resp)
+        return resp.json()
+
+    async def async_set_extraction_settings(
+        self,
+        space_id: str,
+        *,
+        mode: str | None = None,
+        guidance: str | None = None,
+        custom_prompt: str | None = None,
+    ) -> dict:
+        """Async (asyncio) variant of :meth:`set_extraction_settings`."""
+        resp = await self._get_async_client().put(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/extraction-settings",
+            json={"mode": mode, "guidance": guidance, "custom_prompt": custom_prompt},
+        )
+        self._raise(resp)
+        return resp.json()
+
+    async def async_reset_extraction_settings(self, space_id: str) -> None:
+        """Async (asyncio) variant of :meth:`reset_extraction_settings`."""
+        resp = await self._get_async_client().delete(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/extraction-settings"
+        )
+        self._raise(resp)
+
+    async def async_get_chat_settings(self, space_id: str) -> dict:
+        """Async (asyncio) variant of :meth:`get_chat_settings`."""
+        resp = await self._get_async_client().get(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/chat-settings"
+        )
+        self._raise(resp)
+        return resp.json()
+
+    async def async_set_chat_settings(
+        self,
+        space_id: str,
+        *,
+        memory_limit: int | None = None,
+        memory_token_budget: int | None = None,
+        auto_record: bool | None = None,
+        memory: bool | None = None,
+    ) -> dict:
+        """Async (asyncio) variant of :meth:`set_chat_settings`."""
+        resp = await self._get_async_client().put(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/chat-settings",
+            json={
+                "memory_limit": memory_limit,
+                "memory_token_budget": memory_token_budget,
+                "auto_record": auto_record,
+                "memory": memory,
+            },
+        )
+        self._raise(resp)
+        return resp.json()
+
+    async def async_reset_chat_settings(self, space_id: str) -> None:
+        """Async (asyncio) variant of :meth:`reset_chat_settings`."""
+        resp = await self._get_async_client().delete(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/chat-settings"
+        )
+        self._raise(resp)
+
+    async def async_create_webhook(
+        self,
+        space_id: str,
+        *,
+        url: str,
+        event_types: list[str] | None = None,
+        enabled: bool = True,
+    ) -> dict:
+        """Async (asyncio) variant of :meth:`create_webhook`."""
+        resp = await self._get_async_client().post(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/webhooks",
+            json={
+                "url": url,
+                "event_types": event_types or ["memory.created"],
+                "enabled": enabled,
+            },
+        )
+        self._raise(resp)
+        return resp.json()
+
+    async def async_list_webhooks(self, space_id: str) -> list[dict]:
+        """Async (asyncio) variant of :meth:`list_webhooks`."""
+        resp = await self._get_async_client().get(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/webhooks"
+        )
+        self._raise(resp)
+        return resp.json().get("items", [])
+
+    async def async_update_webhook(
+        self,
+        space_id: str,
+        webhook_id: str,
+        *,
+        url: str | None = None,
+        event_types: list[str] | None = None,
+        enabled: bool | None = None,
+    ) -> dict:
+        """Async (asyncio) variant of :meth:`update_webhook`."""
+        resp = await self._get_async_client().patch(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/webhooks/{_seg(webhook_id)}",
+            json=self._webhook_changes(url, event_types, enabled),
+        )
+        self._raise(resp)
+        return resp.json()
+
+    async def async_delete_webhook(self, space_id: str, webhook_id: str) -> None:
+        """Async (asyncio) variant of :meth:`delete_webhook`."""
+        resp = await self._get_async_client().delete(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/webhooks/{_seg(webhook_id)}"
+        )
+        self._raise(resp)
+
+    async def async_list_webhook_deliveries(
+        self,
+        space_id: str,
+        webhook_id: str,
+        *,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> dict:
+        """Async (asyncio) variant of :meth:`list_webhook_deliveries`."""
+        params: dict = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
+        resp = await self._get_async_client().get(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}"
+            f"/webhooks/{_seg(webhook_id)}/deliveries",
+            params=params,
+        )
+        self._raise(resp)
+        return resp.json()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
