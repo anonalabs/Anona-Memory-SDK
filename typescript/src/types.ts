@@ -92,6 +92,8 @@ export interface MemoryItem {
   type: string | null;
   entities: string | null;
   metadata: Record<string, unknown> | null;
+  /** Memories this one was synthesized from. Empty on a raw fact. */
+  source_ids?: string[];
 }
 
 export interface MemoryHistoryEntry {

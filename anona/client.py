@@ -174,6 +174,7 @@ class AnonaClient:
         user_id: str | None = None,
         agent_id: str | None = None,
         session_id: str | None = None,
+        timestamp: str | None = None,
     ) -> dict:
         """Store a memory.
 
@@ -184,6 +185,13 @@ class AnonaClient:
 
         ``tags`` attaches visibility-scope tags that :meth:`retrieve` can filter
         on (e.g. tag by the source agent in agent-to-agent workflows).
+
+        ``timestamp`` (ISO 8601) is when the *event* happened, not when you are
+        recording it — use it when importing history so a memory about last June
+        is dated last June. It is returned as ``occurred_start`` /
+        ``occurred_end`` and feeds recency ranking. It does **not** change when
+        the memory was recorded, so it has no effect on :meth:`retrieve`'s
+        ``as_of``. Defaults to now.
 
         With ``background=True`` the write is queued and returns immediately with
         a ``job_id`` (``status="processing"``) instead of the stored
@@ -201,6 +209,7 @@ class AnonaClient:
             ("user_id", user_id),
             ("agent_id", agent_id),
             ("session_id", session_id),
+            ("timestamp", timestamp),
         ):
             if value:
                 body[key] = value
@@ -247,6 +256,8 @@ class AnonaClient:
         user_id: str | None = None,
         agent_id: str | None = None,
         session_id: str | None = None,
+        as_of: str | None = None,
+        query_timestamp: str | None = None,
     ) -> list[dict]:
         """Search memories.
 
@@ -257,6 +268,18 @@ class AnonaClient:
         ``mode="accurate"`` (default) neurally reranks results for best
         relevance. ``mode="fast"`` skips that pass — much lower latency, at
         some cost to relevance quality.
+
+        ``as_of`` (ISO 8601) restricts the search to memories recorded at or
+        before that instant, so the answer is what the space knew then rather
+        than what it knows now. Filters on when a memory was *recorded*, not on
+        when the event it describes happened — a backdated import is recorded
+        today no matter what ``timestamp`` it carries.
+
+        ``query_timestamp`` (ISO 8601) moves the "now" that recency scoring and
+        relative dates in the query ("last June") are measured against. It only
+        re-ranks; it never removes a result, so a memory recorded after that
+        instant can still come back. Use ``as_of`` when you need the cutoff
+        enforced.
         """
         body: dict = {
             "space_id": space_id,
@@ -268,6 +291,8 @@ class AnonaClient:
             ("user_id", user_id),
             ("agent_id", agent_id),
             ("session_id", session_id),
+            ("as_of", as_of),
+            ("query_timestamp", query_timestamp),
         ):
             if value:
                 body[key] = value
@@ -484,6 +509,7 @@ class AnonaClient:
         user_id: str | None = None,
         agent_id: str | None = None,
         session_id: str | None = None,
+        timestamp: str | None = None,
     ) -> dict:
         """Async (asyncio) variant of :meth:`record`. ``background=True`` queues
         the write and returns a ``job_id`` — poll with :meth:`async_get_job`."""
@@ -498,6 +524,7 @@ class AnonaClient:
             ("user_id", user_id),
             ("agent_id", agent_id),
             ("session_id", session_id),
+            ("timestamp", timestamp),
         ):
             if value:
                 body[key] = value
@@ -535,6 +562,8 @@ class AnonaClient:
         user_id: str | None = None,
         agent_id: str | None = None,
         session_id: str | None = None,
+        as_of: str | None = None,
+        query_timestamp: str | None = None,
     ) -> list[dict]:
         """Async (asyncio) variant of :meth:`retrieve`."""
         body: dict = {
@@ -547,6 +576,8 @@ class AnonaClient:
             ("user_id", user_id),
             ("agent_id", agent_id),
             ("session_id", session_id),
+            ("as_of", as_of),
+            ("query_timestamp", query_timestamp),
         ):
             if value:
                 body[key] = value
