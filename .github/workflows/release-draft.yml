@@ -1,0 +1,95 @@
+name: Draft a release when a version is bumped
+
+# Closes the gap between "the version changed on main" and "the version is on
+# the registry", which has now been missed twice: 0.6.0 sat published while main
+# said 0.7.0, and within a day of fixing that, main said 0.8.0 while the
+# registry said 0.7.0. Both times the code was merged, reviewed and correct, and
+# simply never reached a single user - the least visible way for work to be
+# wasted, because everything looks done.
+#
+# What this does NOT do is publish. Draft releases do not emit
+# `release: published`, so publish.yml and publish-npm.yml are untouched and
+# nothing reaches a registry from here. That is deliberate rather than timid: a
+# PyPI version can never be reused or withdrawn, so an accidental bump that
+# auto-published would be permanent. Everything up to that irreversible step is
+# automated; the step itself stays a human clicking "Publish release", which
+# then triggers the existing workflows exactly as it does today.
+#
+# So the failure mode this removes is "nobody noticed the bump", not "tagging is
+# hard". The draft is sitting in the Releases tab either way.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+      - typescript/package.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `--generate-notes` diffs against the previous tag, so it needs more
+          # than the single commit a default checkout fetches.
+          fetch-depth: 0
+
+      - name: Draft a release for each unreleased version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Existing tags, drafts included, so re-running this is a no-op rather
+          # than a pile of duplicate drafts.
+          existing="$(gh release list --limit 100 --json tagName -q '.[].tagName')"
+
+          draft_if_new() {
+            tag="$1"; title="$2"
+            if grep -Fxq "$tag" <<<"$existing"; then
+              echo "$tag already has a release or draft - nothing to do."
+              return
+            fi
+            echo "Drafting $tag"
+            gh release create "$tag" \
+              --draft \
+              --target main \
+              --title "$title" \
+              --generate-notes
+            {
+              echo "### Drafted \`$tag\`"
+              echo
+              echo "Review the notes and press **Publish release** to ship it."
+            } >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          py="$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)"
+          npm="$(node -p "require('./typescript/package.json').version")"
+
+          # The two tag shapes are load-bearing: publish.yml claims everything
+          # that is not `npm-v*`, publish-npm.yml claims everything that is.
+          # Getting a prefix wrong here publishes the wrong package.
+          draft_if_new "v${py}" "v${py}"
+          draft_if_new "npm-v${npm}" "npm-v${npm} - @anona-labs/memory"
+
+      - name: Report what is published vs what is on main
+        # Runs even when nothing was drafted, because the useful signal is the
+        # comparison itself - it is what nobody was looking at.
+        if: '!cancelled()'
+        run: |
+          set -uo pipefail
+          py="$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)"
+          npm="$(node -p "require('./typescript/package.json').version")"
+          py_live="$(curl -fsSL https://pypi.org/pypi/anona/json | python3 -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])' 2>/dev/null || echo "unknown")"
+          npm_live="$(curl -fsSL https://registry.npmjs.org/@anona-labs%2Fmemory | python3 -c 'import json,sys; print(json.load(sys.stdin)["dist-tags"]["latest"])' 2>/dev/null || echo "not published")"
+          {
+            echo "| package | main | registry |"
+            echo "| --- | --- | --- |"
+            echo "| anona (PyPI) | $py | $py_live |"
+            echo "| @anona-labs/memory (npm) | $npm | $npm_live |"
+          } >> "$GITHUB_STEP_SUMMARY"
