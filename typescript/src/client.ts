@@ -88,6 +88,14 @@ export interface RecordOptions {
   metadata?: Record<string, unknown>;
   /** Visibility-scope tags; `retrieve` can filter on these. */
   tags?: string[];
+  /**
+   * Hierarchical scope inside the space. A memory written under a `userId` is
+   * only returned to a `retrieve` carrying the same one, so a single space can
+   * serve many end users without their memories mixing.
+   */
+  userId?: string;
+  agentId?: string;
+  sessionId?: string;
   /** Queue the write and return a job id instead of blocking on extraction. */
   background?: boolean;
   signal?: AbortSignal;
@@ -125,6 +133,14 @@ export interface RetrieveOptions {
   mode?: "accurate" | "fast";
   /** Filter by memory type: fact / note / experience / summary. */
   memoryType?: string[];
+  /**
+   * Hierarchical scope inside the space. A memory written under a `userId` is
+   * only returned to a `retrieve` carrying the same one, so a single space can
+   * serve many end users without their memories mixing.
+   */
+  userId?: string;
+  agentId?: string;
+  sessionId?: string;
   tags?: string[];
   tagsMatch?: TagsMatch;
   /**
@@ -136,10 +152,18 @@ export interface RetrieveOptions {
   /** Drop hits scoring below this floor. Scores are roughly 0..1+. */
   minScore?: number;
   /**
-   * Anchor recency scoring to this ISO 8601 instant instead of now, to
-   * reproduce what would have been recalled at a past point in time.
+   * Anchor recency scoring to this ISO 8601 instant instead of now, and
+   * resolve relative dates in the query against it. Scoring only — it
+   * re-ranks, it never removes a result. Use {@link asOf} for that.
    */
   queryTimestamp?: string;
+  /**
+   * Point-in-time recall: return only memories **recorded** at or before this
+   * ISO 8601 instant, so the answer is what the space knew then rather than
+   * what it knows now. Inclusive. Filters on when a memory was recorded, not
+   * on when the event it describes happened.
+   */
+  asOf?: string;
   signal?: AbortSignal;
 }
 
@@ -238,6 +262,9 @@ export class Anona {
         timestamp: rest.timestamp,
         metadata: rest.metadata,
         tags: rest.tags,
+        user_id: rest.userId,
+        agent_id: rest.agentId,
+        session_id: rest.sessionId,
         async: background ? true : undefined,
       }),
     });
@@ -281,6 +308,33 @@ export class Anona {
     });
   }
 
+  /**
+   * The relevant memories as one prompt-ready string.
+   *
+   * Same search as `retrieve`, returned already formatted so it can go straight
+   * into a system prompt — no join to write, and the token budget is handled
+   * server-side rather than by a loop that does not have one. Returns `""` when
+   * nothing matched.
+   */
+  async getContext(options: RetrieveOptions & { maxTokens?: number }): Promise<string> {
+    const response = await this.http.request<{ context?: string }>({
+      method: "POST",
+      path: "/v1/retrieve",
+      signal: options.signal,
+      body: compact({
+        space_id: options.spaceId,
+        query: options.query,
+        limit: options.limit,
+        format: "block",
+        context_max_tokens: options.maxTokens,
+        user_id: options.userId,
+        agent_id: options.agentId,
+        session_id: options.sessionId,
+      }),
+    });
+    return response.context ?? "";
+  }
+
   /** Search memories in a space. */
   async retrieve(options: RetrieveOptions): Promise<SearchResult[]> {
     const response = await this.http.request<{ results?: SearchResult[] }>({
@@ -294,11 +348,15 @@ export class Anona {
         top_k: options.topK,
         mode: options.mode,
         memory_type: options.memoryType,
+        user_id: options.userId,
+        agent_id: options.agentId,
+        session_id: options.sessionId,
         tags: options.tags,
         tags_match: options.tagsMatch,
         prefer_observations: options.preferObservations,
         min_score: options.minScore,
         query_timestamp: options.queryTimestamp,
+        as_of: options.asOf,
       }),
     });
     return response.results ?? [];
@@ -349,17 +407,28 @@ export class Anona {
     });
   }
 
-  /** Page through the memories stored in a space. */
+  /**
+   * Page through the memories stored in a space.
+   *
+   * A synthesized memory and the raw facts behind it are the same knowledge in
+   * two layers, so the listing returns only the synthesis by default. Pass
+   * `includeSources: true` to page through the underlying evidence as well.
+   */
   async listMemories(options: {
     spaceId: string;
     limit?: number;
     offset?: number;
+    includeSources?: boolean;
     signal?: AbortSignal;
   }): Promise<MemoryListPage> {
     return this.http.request<MemoryListPage>({
       method: "GET",
       path: `/v1/spaces/${seg(options.spaceId)}/memories`,
-      query: { limit: options.limit, offset: options.offset },
+      query: {
+        limit: options.limit,
+        offset: options.offset,
+        prefer_observations: options.includeSources ? "false" : undefined,
+      },
       signal: options.signal,
     });
   }

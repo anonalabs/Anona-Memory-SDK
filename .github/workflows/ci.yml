@@ -55,3 +55,34 @@ jobs:
           python -m pip install langchain-openai llama-index-llms-openai agent-framework-openai
       - name: Run tests
         run: python -m pytest tests/ -q
+
+  typescript:
+    # typescript/ publishes to npm as @anona-labs/memory and, until now, was
+    # tested by nothing here — the same failure the adapters job above exists to
+    # prevent, in a language this workflow never mentioned. It is why scoping,
+    # asOf, getContext and source_ids could be absent from the published package
+    # for several releases with CI green the whole time: no job, so no failure.
+    name: TypeScript
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: typescript/package-lock.json
+      - run: npm ci --prefer-offline
+      # Each step runs even after an earlier one fails, so a typecheck error
+      # does not hide a test failure behind it.
+      - name: Typecheck
+        if: '!cancelled()'
+        run: npm run typecheck
+      - name: Test
+        if: '!cancelled()'
+        run: npm run test
+      - name: Build
+        if: '!cancelled()'
+        run: npm run build

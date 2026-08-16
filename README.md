@@ -95,10 +95,10 @@ async with AnonaClient(api_key="...") as client:
 
 ### `AnonaClient(api_key, base_url="https://api.anonalabs.com")`
 
-- `record(space_id, content, metadata=None, background=False) -> dict` — store a memory; `background=True` queues it and returns a `job_id`
+- `record(space_id, content, metadata=None, background=False, timestamp=None) -> dict` — store a memory; `background=True` queues it and returns a `job_id`; `timestamp` (ISO 8601) is when the *event* happened, for importing history
 - `record_batch(space_id, items) -> dict` — bulk-ingest up to 100 items (always queued); returns a `job_id`
 - `get_job(space_id, job_id) -> dict` — poll a queued job's status (free); `status` is one of pending / processing / completed / failed / cancelled / not_found
-- `retrieve(space_id, query, limit=10) -> list[dict]`
+- `retrieve(space_id, query, limit=10, as_of=None, query_timestamp=None) -> list[dict]` — see [Time travel](#time-travel) for the two temporal arguments
 - `reason(space_id, query) -> str | None`
 - `list_spaces() -> list[dict]`
 - `upload_file(space_id, file, *, filename=None, strategy=None, tags=None) -> dict` — upload a file (path / bytes / file-like) so retrieval can draw on its content; ingested asynchronously, returns `job_ids`. PDF, DOCX, PPTX, XLSX, images (OCR), HTML, TXT/MD, CSV, audio. Files over 25 MB are rejected client-side.
@@ -111,6 +111,38 @@ async with AnonaClient(api_key="...") as client:
 - `close()` / `aclose()` — release underlying HTTP clients
 
 Errors raise `AnonaError(status_code, detail)`.
+
+## Time travel
+
+Three arguments, and the distinction between them is the whole point: one is
+about **when something happened**, the other two are about **what you knew and
+when**.
+
+```python
+# Importing history: date the memory to the event, not to the import run.
+client.record(
+    space_id="support",
+    content="Renewed the enterprise contract",
+    timestamp="2025-06-14T10:00:00Z",
+)
+
+# What did the space know in June, ignoring everything learned since?
+client.retrieve(space_id="support", query="contract status", as_of="2026-06-01T00:00:00Z")
+
+# Same corpus, but score recency and resolve "last June" against a past instant.
+client.retrieve(space_id="support", query="what changed last June",
+                query_timestamp="2026-01-01T00:00:00Z")
+```
+
+- **`timestamp`** on `record` is when the *event* occurred. It feeds recency
+  ranking and is returned as `occurred_start` / `occurred_end`. It does not
+  change when the memory was *recorded*, so it has no effect on `as_of`.
+- **`as_of`** on `retrieve` is a hard cutoff: only memories **recorded** at or
+  before that instant come back. A backdated import is recorded today no matter
+  what `timestamp` it carries.
+- **`query_timestamp`** on `retrieve` only re-ranks. It moves the "now" that
+  recency and relative dates are measured against, and never removes a result.
+  Reach for `as_of` when you need the cutoff actually enforced.
 
 ## Framework adapters
 

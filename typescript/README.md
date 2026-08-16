@@ -129,15 +129,50 @@ malformed response.
 - **`retrieve` deduplicates by default.** Raw evidence facts are omitted when a
   consolidation already covers them. Pass `preferObservations: false` to see
   both layers.
+- **`asOf` and `queryTimestamp` are not the same knob.** `asOf` is a hard
+  cutoff on when a memory was *recorded*; `queryTimestamp` only re-ranks and
+  never removes a result. Reach for `asOf` when the cutoff has to be enforced.
+
+## Scoping one space to many users
+
+```ts
+await anona.record({
+  spaceId: "support",
+  content: "Alice prefers email",
+  userId: "alice",
+});
+
+// Only Alice's memories come back. The filter is strict, so memories stored
+// without a scope are not returned to a scoped search.
+await anona.retrieve({ spaceId: "support", query: "how to contact", userId: "alice" });
+```
+
+`userId`, `agentId` and `sessionId` nest in that order, and a call that passes
+none of them behaves exactly as it always did.
+
+## Prompt-ready context
+
+```ts
+const context = await anona.getContext({
+  spaceId: "support",
+  query: "what does Alice need",
+  maxTokens: 500,
+});
+```
+
+The same search as `retrieve`, already formatted, with the token budget applied
+server-side rather than by a loop that does not have one. Returns `""` when
+nothing matched, so it can go straight into a system prompt.
 
 ## API
 
 | Method | Purpose |
 | --- | --- |
-| `record` | Store a memory (`background: true` to queue) |
+| `record` | Store a memory — pass `background: true` to queue it, which is ~10× faster |
 | `recordBatch` | Up to 100 memories, always queued |
 | `getJob` | Status of a queued job |
 | `retrieve` | Search memories |
+| `getContext` | The same search, returned as one prompt-ready string |
 | `reason` | Synthesised answer across a space |
 | `listSpaces` / `getSpace` / `createSpace` / `deleteSpace` | Space management |
 | `listMemories` / `getMemoryHistory` / `updateMemory` / `deleteMemory` | Memory management |
