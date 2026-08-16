@@ -1,10 +1,12 @@
 import { HttpClient, seg } from "./http.js";
 import type {
   BatchRecordResult,
+  ChatSettings,
   DocumentItem,
   DocumentListPage,
   EntityDetail,
   EntityListPage,
+  ExtractionSettings,
   Graph,
   InsightsResult,
   JobStatus,
@@ -16,6 +18,9 @@ import type {
   Space,
   UploadResult,
   UsageSnapshot,
+  Webhook,
+  WebhookDeliveryPage,
+  WebhookEventType,
 } from "./types.js";
 
 /** Mirrors the API's per-file cap, so an oversized file fails before upload. */
@@ -626,6 +631,206 @@ export class Anona {
     return this.http.request<EntityDetail>({
       method: "GET",
       path: `/v1/spaces/${seg(options.spaceId)}/entities/${seg(options.entityId)}`,
+      signal: options.signal,
+    });
+  }
+
+  /**
+   * How this space turns recorded text into memories.
+   *
+   * A null field is unset: it follows the platform default and keeps following
+   * it, rather than being pinned to that default's current value.
+   */
+  async getExtractionSettings(
+    spaceId: string,
+    signal?: AbortSignal,
+  ): Promise<ExtractionSettings> {
+    return this.http.request<ExtractionSettings>({
+      method: "GET",
+      path: `/v1/spaces/${seg(spaceId)}/extraction-settings`,
+      signal,
+    });
+  }
+
+  /**
+   * Replace this space's extraction settings.
+   *
+   * `guidance` is added to the standard extraction rules in every mode — name
+   * the terms your team uses and the fields that always matter. `customPrompt`
+   * replaces those rules instead, and only applies while `mode` is `"custom"`.
+   *
+   * Note this replaces the record rather than patching it, so anything you
+   * leave out is cleared. Settings apply to writes made after the call and
+   * never re-extract stored memories.
+   */
+  async setExtractionSettings(options: {
+    spaceId: string;
+    mode?: ExtractionSettings["mode"];
+    guidance?: string | null;
+    customPrompt?: string | null;
+    signal?: AbortSignal;
+  }): Promise<ExtractionSettings> {
+    return this.http.request<ExtractionSettings>({
+      method: "PUT",
+      path: `/v1/spaces/${seg(options.spaceId)}/extraction-settings`,
+      signal: options.signal,
+      // Sent in full, nulls included: an omitted key would keep its stored
+      // value, which is the opposite of what a replace means.
+      body: {
+        mode: options.mode ?? null,
+        guidance: options.guidance ?? null,
+        custom_prompt: options.customPrompt ?? null,
+      },
+    });
+  }
+
+  /** Drop this space's extraction settings, back to the platform defaults. */
+  async resetExtractionSettings(spaceId: string, signal?: AbortSignal): Promise<void> {
+    await this.http.request<void>({
+      method: "DELETE",
+      path: `/v1/spaces/${seg(spaceId)}/extraction-settings`,
+      expectNoContent: true,
+      signal,
+    });
+  }
+
+  /** This space's defaults for the drop-in LLM proxy endpoints. */
+  async getChatSettings(spaceId: string, signal?: AbortSignal): Promise<ChatSettings> {
+    return this.http.request<ChatSettings>({
+      method: "GET",
+      path: `/v1/spaces/${seg(spaceId)}/chat-settings`,
+      signal,
+    });
+  }
+
+  /**
+   * Replace this space's proxy defaults.
+   *
+   * A request that sets the same field — in its body or an `X-Anona-*` header —
+   * still wins over these. Replaces the record, so anything left out is cleared.
+   */
+  async setChatSettings(options: {
+    spaceId: string;
+    memoryLimit?: number | null;
+    memoryTokenBudget?: number | null;
+    autoRecord?: boolean | null;
+    memory?: boolean | null;
+    signal?: AbortSignal;
+  }): Promise<ChatSettings> {
+    return this.http.request<ChatSettings>({
+      method: "PUT",
+      path: `/v1/spaces/${seg(options.spaceId)}/chat-settings`,
+      signal: options.signal,
+      body: {
+        memory_limit: options.memoryLimit ?? null,
+        memory_token_budget: options.memoryTokenBudget ?? null,
+        auto_record: options.autoRecord ?? null,
+        memory: options.memory ?? null,
+      },
+    });
+  }
+
+  /** Drop this space's proxy defaults, back to the platform defaults. */
+  async resetChatSettings(spaceId: string, signal?: AbortSignal): Promise<void> {
+    await this.http.request<void>({
+      method: "DELETE",
+      path: `/v1/spaces/${seg(spaceId)}/chat-settings`,
+      expectNoContent: true,
+      signal,
+    });
+  }
+
+  /**
+   * Register an HTTPS endpoint to be called when something happens in a space.
+   *
+   * The result carries `secret`, and this is the only time it is returned —
+   * store it. Every delivery is signed with it as
+   * `X-Anona-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw request body.
+   */
+  async createWebhook(options: {
+    spaceId: string;
+    url: string;
+    eventTypes?: WebhookEventType[];
+    enabled?: boolean;
+    signal?: AbortSignal;
+  }): Promise<Webhook> {
+    return this.http.request<Webhook>({
+      method: "POST",
+      path: `/v1/spaces/${seg(options.spaceId)}/webhooks`,
+      signal: options.signal,
+      body: {
+        url: options.url,
+        event_types: options.eventTypes ?? ["memory.created"],
+        enabled: options.enabled ?? true,
+      },
+    });
+  }
+
+  /** Every webhook registered on a space. */
+  async listWebhooks(spaceId: string, signal?: AbortSignal): Promise<Webhook[]> {
+    const page = await this.http.request<{ items?: Webhook[] }>({
+      method: "GET",
+      path: `/v1/spaces/${seg(spaceId)}/webhooks`,
+      signal,
+    });
+    return page.items ?? [];
+  }
+
+  /**
+   * Change a webhook's URL, events or enabled state.
+   *
+   * Unlike the settings above this is a patch: only the fields you pass change,
+   * so an omitted one is left alone rather than cleared.
+   */
+  async updateWebhook(options: {
+    spaceId: string;
+    webhookId: string;
+    url?: string;
+    eventTypes?: WebhookEventType[];
+    enabled?: boolean;
+    signal?: AbortSignal;
+  }): Promise<Webhook> {
+    return this.http.request<Webhook>({
+      method: "PATCH",
+      path: `/v1/spaces/${seg(options.spaceId)}/webhooks/${seg(options.webhookId)}`,
+      signal: options.signal,
+      body: compact({
+        url: options.url,
+        event_types: options.eventTypes,
+        enabled: options.enabled,
+      }),
+    });
+  }
+
+  /** Remove a webhook. Queued deliveries for it stop. */
+  async deleteWebhook(options: {
+    spaceId: string;
+    webhookId: string;
+    signal?: AbortSignal;
+  }): Promise<void> {
+    await this.http.request<void>({
+      method: "DELETE",
+      path: `/v1/spaces/${seg(options.spaceId)}/webhooks/${seg(options.webhookId)}`,
+      expectNoContent: true,
+      signal: options.signal,
+    });
+  }
+
+  /**
+   * Recent delivery attempts, newest first — for debugging a receiver that is
+   * not working. Pass `next_cursor` back as `cursor` for the next page.
+   */
+  async listWebhookDeliveries(options: {
+    spaceId: string;
+    webhookId: string;
+    limit?: number;
+    cursor?: string;
+    signal?: AbortSignal;
+  }): Promise<WebhookDeliveryPage> {
+    return this.http.request<WebhookDeliveryPage>({
+      method: "GET",
+      path: `/v1/spaces/${seg(options.spaceId)}/webhooks/${seg(options.webhookId)}/deliveries`,
+      query: { limit: options.limit, cursor: options.cursor },
       signal: options.signal,
     });
   }

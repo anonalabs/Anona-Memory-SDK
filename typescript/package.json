@@ -1,6 +1,6 @@
 {
   "name": "@anona-labs/memory",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Anona Memory SDK — managed AI memory for intelligent agents",
   "license": "MIT",
   "type": "module",

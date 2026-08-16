@@ -194,3 +194,66 @@ export interface UsageSnapshot {
   credits_used: number;
   rate_limit_per_min: number;
 }
+
+/**
+ * How a space turns recorded text into memories.
+ *
+ * Null means *unset* — the field follows the platform default and keeps
+ * following it, which is not the same as being pinned to that default's
+ * current value.
+ */
+export interface ExtractionSettings {
+  space_id: string;
+  mode: "concise" | "verbose" | "verbatim" | "custom" | null;
+  guidance: string | null;
+  custom_prompt: string | null;
+}
+
+/** A space's defaults for the drop-in LLM proxy endpoints. */
+export interface ChatSettings {
+  space_id: string;
+  memory_limit: number | null;
+  memory_token_budget: number | null;
+  auto_record: boolean | null;
+  memory: boolean | null;
+}
+
+export type WebhookEventType =
+  | "memory.created"
+  | "memory.consolidated"
+  | "security.policy_triggered";
+
+export interface Webhook {
+  id: string;
+  space_id: string | null;
+  url: string;
+  event_types: string[];
+  enabled: boolean;
+  /**
+   * Returned **only** when the webhook is created — store it then. Every
+   * delivery carries `X-Anona-Signature: sha256=<hex>`, the HMAC-SHA256 of the
+   * raw request body keyed with this secret. Compare in constant time.
+   */
+  secret?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+/** One delivery attempt chain, for debugging a receiver that is not working. */
+export interface WebhookDelivery {
+  id: string;
+  event_type: string;
+  url: string;
+  status: string;
+  attempts: number;
+  response_status: number | null;
+  error: string | null;
+  next_retry_at?: string | null;
+  last_attempt_at?: string | null;
+  created_at?: string | null;
+}
+
+export interface WebhookDeliveryPage {
+  items: WebhookDelivery[];
+  next_cursor: string | null;
+}

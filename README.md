@@ -107,7 +107,12 @@ async with AnonaClient(api_key="...") as client:
 - `get_graph(space_id, limit=500, min_count=1) -> dict` — entity relationship graph (nodes + co-occurrence edges)
 - `list_entities(space_id, limit=100, offset=0) -> list[dict]`
 - `get_entity(space_id, entity_id) -> dict` — one entity + its observations
-- `async_record(...)`, `async_record_batch(...)`, `async_get_job(...)`, `async_retrieve(...)`, `async_reason(...)`, `async_list_spaces(...)`, `async_upload_file(...)`, `async_list_documents(...)`, `async_delete_document(...)`, `async_get_graph(...)`, `async_list_entities(...)`, `async_get_entity(...)` — async equivalents
+- `get_extraction_settings(space_id) -> dict` / `set_extraction_settings(space_id, mode=None, guidance=None, custom_prompt=None) -> dict` / `reset_extraction_settings(space_id) -> None` — steer what a write keeps; see [Extraction settings](#extraction-settings)
+- `get_chat_settings(space_id) -> dict` / `set_chat_settings(space_id, memory_limit=None, memory_token_budget=None, auto_record=None, memory=None) -> dict` / `reset_chat_settings(space_id) -> None` — per-space defaults for the drop-in proxy endpoints
+- `create_webhook(space_id, url, event_types=None, enabled=True) -> dict` — the response carries `secret`, returned only on create
+- `list_webhooks(space_id) -> list[dict]`, `update_webhook(space_id, webhook_id, url=None, event_types=None, enabled=None) -> dict`, `delete_webhook(space_id, webhook_id) -> None`
+- `list_webhook_deliveries(space_id, webhook_id, limit=50, cursor=None) -> dict` — recent attempts, for debugging a receiver
+- `async_record(...)`, `async_record_batch(...)`, `async_get_job(...)`, `async_retrieve(...)`, `async_reason(...)`, `async_list_spaces(...)`, `async_upload_file(...)`, `async_list_documents(...)`, `async_delete_document(...)`, `async_get_graph(...)`, `async_list_entities(...)`, `async_get_entity(...)`, `async_get_extraction_settings(...)`, `async_set_extraction_settings(...)`, `async_reset_extraction_settings(...)`, `async_get_chat_settings(...)`, `async_set_chat_settings(...)`, `async_reset_chat_settings(...)`, `async_create_webhook(...)`, `async_list_webhooks(...)`, `async_update_webhook(...)`, `async_delete_webhook(...)`, `async_list_webhook_deliveries(...)` — async equivalents
 - `close()` / `aclose()` — release underlying HTTP clients
 
 Errors raise `AnonaError(status_code, detail)`.
@@ -143,6 +148,41 @@ client.retrieve(space_id="support", query="what changed last June",
 - **`query_timestamp`** on `retrieve` only re-ranks. It moves the "now" that
   recency and relative dates are measured against, and never removes a result.
   Reach for `as_of` when you need the cutoff actually enforced.
+
+## Extraction settings
+
+Recording a memory is not storage. Your text goes through one pass that decides
+which facts are worth keeping and how they are phrased, and only what survives
+is stored — so a detail dropped there is not ranked low later, it is not there
+at all. These settings point that pass at your domain.
+
+```python
+client.set_extraction_settings(
+    "engineering",
+    guidance=(
+        "Engineering log. Always capture service names, metric values with "
+        "units, and the named owner. Treat incidents as dated events. "
+        "Skip standup small talk."
+    ),
+)
+```
+
+- **`guidance`** is *added* to the standard rules and applies in every mode.
+  Reach for it first — naming your vocabulary and the fields that always matter
+  is what turns a good guess into a reliable one. Max 4,000 characters.
+- **`mode`** is `concise` (the default), `verbose` (keep every specific),
+  `verbatim` (store the text as written, derive only the metadata around it), or
+  `custom`.
+- **`custom_prompt`** *replaces* the standard rules, and only applies while
+  `mode` is `"custom"`. Max 8,000 characters.
+
+Two things worth knowing. `set_extraction_settings` **replaces** the record, so
+anything you leave out is cleared. And settings apply to writes made after the
+call — memories already stored are never re-extracted, so changing these is safe
+and never rewrites history. To see the effect, save, record a representative
+piece of text, and read the memory back.
+
+Unhelpful guidance produces no error; extraction simply keeps different things.
 
 ## Framework adapters
 
