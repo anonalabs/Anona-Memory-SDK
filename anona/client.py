@@ -498,13 +498,11 @@ class AnonaClient:
         self._raise(resp)
 
     # ── Space configuration ───────────────────────────────────────────────────
-
-    #: Both settings endpoints replace the whole record rather than patching it,
-    #: so an argument the caller leaves out is sent as an explicit null and the
-    #: stored value is cleared. Building the body here rather than dropping
-    #: unset keys is what makes that faithful.
-    _EXTRACTION_FIELDS = ("mode", "guidance", "custom_prompt")
-    _CHAT_FIELDS = ("memory_limit", "memory_token_budget", "auto_record", "memory")
+    #
+    # Both settings endpoints replace the whole record rather than patching it,
+    # so an argument the caller leaves out is sent as an explicit null and the
+    # stored value is cleared. Spelling every key out in the body, rather than
+    # dropping the unset ones, is what makes that faithful.
 
     def get_extraction_settings(self, space_id: str) -> dict:
         """How this space turns recorded text into memories.
