@@ -72,11 +72,86 @@ describe("retrieve", () => {
     });
   });
 
+  it("sends the event-time window under its API field names", async () => {
+    const fetchImpl = stub({ results: [] });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.retrieve({
+      spaceId: "s",
+      query: "q",
+      occurredAfter: "2024-06-01T00:00:00Z",
+      occurredBefore: "2024-06-30T23:59:59Z",
+    });
+
+    expect(bodyOf(fetchImpl)).toEqual({
+      space_id: "s",
+      query: "q",
+      occurred_after: "2024-06-01T00:00:00Z",
+      occurred_before: "2024-06-30T23:59:59Z",
+    });
+  });
+
+  it("sends either bound on its own, leaving the window open-ended", async () => {
+    const fetchImpl = stub({ results: [] });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.retrieve({ spaceId: "s", query: "q", occurredAfter: "2024-06-01T00:00:00Z" });
+
+    expect(bodyOf(fetchImpl)).toEqual({
+      space_id: "s",
+      query: "q",
+      occurred_after: "2024-06-01T00:00:00Z",
+    });
+  });
+
+  it("omits the window entirely when neither bound is given", async () => {
+    const fetchImpl = stub({ results: [] });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.retrieve({ spaceId: "s", query: "q", asOf: "2026-06-01T00:00:00Z" });
+
+    const body = bodyOf(fetchImpl) as Record<string, unknown>;
+    expect("occurred_after" in body).toBe(false);
+    expect("occurred_before" in body).toBe(false);
+  });
+
   it("tolerates a response with no results key", async () => {
     const fetchImpl = stub({});
     const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
 
     await expect(anona.retrieve({ spaceId: "s", query: "q" })).resolves.toEqual([]);
+  });
+});
+
+describe("getContext", () => {
+  it("forwards every RetrieveOptions field, not just the scope keys", async () => {
+    const fetchImpl = stub({ context: "1. Alice is on Scale" });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.getContext({
+      spaceId: "s",
+      query: "q",
+      maxTokens: 500,
+      mode: "fast",
+      minScore: 0.4,
+      asOf: "2026-06-01T00:00:00Z",
+      occurredAfter: "2024-06-01T00:00:00Z",
+      occurredBefore: "2024-06-30T23:59:59Z",
+    });
+
+    // The method takes the whole interface, so a field it accepts and does not
+    // forward would typecheck and then silently not apply.
+    expect(bodyOf(fetchImpl)).toEqual({
+      space_id: "s",
+      query: "q",
+      format: "block",
+      context_max_tokens: 500,
+      mode: "fast",
+      min_score: 0.4,
+      as_of: "2026-06-01T00:00:00Z",
+      occurred_after: "2024-06-01T00:00:00Z",
+      occurred_before: "2024-06-30T23:59:59Z",
+    });
   });
 });
 

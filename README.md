@@ -98,7 +98,7 @@ async with AnonaClient(api_key="...") as client:
 - `record(space_id, content, metadata=None, background=False, timestamp=None) -> dict` — store a memory; `background=True` queues it and returns a `job_id`; `timestamp` (ISO 8601) is when the *event* happened, for importing history
 - `record_batch(space_id, items) -> dict` — bulk-ingest up to 100 items (always queued); returns a `job_id`
 - `get_job(space_id, job_id) -> dict` — poll a queued job's status (free); `status` is one of pending / processing / completed / failed / cancelled / not_found
-- `retrieve(space_id, query, limit=10, as_of=None, query_timestamp=None) -> list[dict]` — see [Time travel](#time-travel) for the two temporal arguments
+- `retrieve(space_id, query, limit=10, as_of=None, query_timestamp=None, occurred_after=None, occurred_before=None) -> list[dict]` — see [Time travel](#time-travel) for the temporal arguments
 - `reason(space_id, query) -> str | None`
 - `list_spaces() -> list[dict]`
 - `upload_file(space_id, file, *, filename=None, strategy=None, tags=None) -> dict` — upload a file (path / bytes / file-like) so retrieval can draw on its content; ingested asynchronously, returns `job_ids`. PDF, DOCX, PPTX, XLSX, images (OCR), HTML, TXT/MD, CSV, audio. Files over 25 MB are rejected client-side.
@@ -137,17 +137,31 @@ client.retrieve(space_id="support", query="contract status", as_of="2026-06-01T0
 # Same corpus, but score recency and resolve "last June" against a past instant.
 client.retrieve(space_id="support", query="what changed last June",
                 query_timestamp="2026-01-01T00:00:00Z")
+
+# Everything that HAPPENED in June 2025, however recently it was imported.
+client.retrieve(space_id="support", query="contract status",
+                occurred_after="2025-06-01T00:00:00Z",
+                occurred_before="2025-06-30T23:59:59Z")
 ```
 
 - **`timestamp`** on `record` is when the *event* occurred. It feeds recency
-  ranking and is returned as `occurred_start` / `occurred_end`. It does not
-  change when the memory was *recorded*, so it has no effect on `as_of`.
+  ranking, comes back on a result as `timestamp`, and is what the event-time
+  window below matches against. It does not change when the memory was
+  *recorded*, so it has no effect on `as_of`. It is **not** copied into
+  `occurred_start` / `occurred_end`: those are filled only from a date found in
+  the memory's own text, so a memory whose text names no date has both of them
+  null while carrying a perfectly good `timestamp`.
 - **`as_of`** on `retrieve` is a hard cutoff: only memories **recorded** at or
   before that instant come back. A backdated import is recorded today no matter
   what `timestamp` it carries.
 - **`query_timestamp`** on `retrieve` only re-ranks. It moves the "now" that
   recency and relative dates are measured against, and never removes a result.
   Reach for `as_of` when you need the cutoff actually enforced.
+- **`occurred_after` / `occurred_before`** on `retrieve` bound when the thing
+  *happened*, which is the one question `as_of` cannot answer: a year of
+  history imported this morning has one record time and twelve months of event
+  time. Either bound alone is an open-ended window, and the test is an overlap,
+  so an event straddling an edge is inside.
 
 ## Extraction settings
 

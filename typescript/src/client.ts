@@ -169,6 +169,19 @@ export interface RetrieveOptions {
    * on when the event it describes happened.
    */
   asOf?: string;
+  /**
+   * Event-time window (ISO 8601): keep only memories describing something that
+   * **happened** inside it. This is what {@link asOf} cannot address — history
+   * imported today all shares one record time and spans years of event time.
+   *
+   * Either bound alone is an open-ended window, and the test is an overlap, so
+   * an event straddling an edge is inside. A memory is matched on the window
+   * its own text described, falling back to the `timestamp` it was recorded
+   * with — which carries most of the work, since a memory whose text named no
+   * date has no window of its own and is still filtered correctly.
+   */
+  occurredAfter?: string;
+  occurredBefore?: string;
   signal?: AbortSignal;
 }
 
@@ -326,15 +339,30 @@ export class Anona {
       method: "POST",
       path: "/v1/retrieve",
       signal: options.signal,
+      // Every RetrieveOptions field is forwarded, not just the scope keys: this
+      // method takes the whole interface, so anything accepted by the type and
+      // dropped here would typecheck and then silently not apply. It is the
+      // same search as `retrieve` with `format: "block"` on top.
       body: compact({
         space_id: options.spaceId,
         query: options.query,
         limit: options.limit,
+        top_k: options.topK,
+        mode: options.mode,
+        memory_type: options.memoryType,
         format: "block",
         context_max_tokens: options.maxTokens,
         user_id: options.userId,
         agent_id: options.agentId,
         session_id: options.sessionId,
+        tags: options.tags,
+        tags_match: options.tagsMatch,
+        prefer_observations: options.preferObservations,
+        min_score: options.minScore,
+        query_timestamp: options.queryTimestamp,
+        as_of: options.asOf,
+        occurred_after: options.occurredAfter,
+        occurred_before: options.occurredBefore,
       }),
     });
     return response.context ?? "";
@@ -362,6 +390,8 @@ export class Anona {
         min_score: options.minScore,
         query_timestamp: options.queryTimestamp,
         as_of: options.asOf,
+        occurred_after: options.occurredAfter,
+        occurred_before: options.occurredBefore,
       }),
     });
     return response.results ?? [];

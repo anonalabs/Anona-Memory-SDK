@@ -258,6 +258,8 @@ class AnonaClient:
         session_id: str | None = None,
         as_of: str | None = None,
         query_timestamp: str | None = None,
+        occurred_after: str | None = None,
+        occurred_before: str | None = None,
     ) -> list[dict]:
         """Search memories.
 
@@ -280,6 +282,17 @@ class AnonaClient:
         re-ranks; it never removes a result, so a memory recorded after that
         instant can still come back. Use ``as_of`` when you need the cutoff
         enforced.
+
+        ``occurred_after`` / ``occurred_before`` (ISO 8601) bound when the thing
+        *happened*, which is what ``as_of`` cannot address: history imported
+        today all shares one record time and spans years of event time. Either
+        bound alone is an open-ended window, and the test is an overlap, so an
+        event straddling an edge is inside.
+
+        A memory is matched on the event window its own text described, falling
+        back to the ``timestamp`` it was recorded with. That fallback carries
+        most of the work: a memory whose text named no date has no event window
+        of its own, and is still filtered correctly.
         """
         body: dict = {
             "space_id": space_id,
@@ -293,6 +306,8 @@ class AnonaClient:
             ("session_id", session_id),
             ("as_of", as_of),
             ("query_timestamp", query_timestamp),
+            ("occurred_after", occurred_after),
+            ("occurred_before", occurred_before),
         ):
             if value:
                 body[key] = value
@@ -766,6 +781,8 @@ class AnonaClient:
         session_id: str | None = None,
         as_of: str | None = None,
         query_timestamp: str | None = None,
+        occurred_after: str | None = None,
+        occurred_before: str | None = None,
     ) -> list[dict]:
         """Async (asyncio) variant of :meth:`retrieve`."""
         body: dict = {
@@ -780,6 +797,8 @@ class AnonaClient:
             ("session_id", session_id),
             ("as_of", as_of),
             ("query_timestamp", query_timestamp),
+            ("occurred_after", occurred_after),
+            ("occurred_before", occurred_before),
         ):
             if value:
                 body[key] = value

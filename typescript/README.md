@@ -132,6 +132,15 @@ malformed response.
 - **`asOf` and `queryTimestamp` are not the same knob.** `asOf` is a hard
   cutoff on when a memory was *recorded*; `queryTimestamp` only re-ranks and
   never removes a result. Reach for `asOf` when the cutoff has to be enforced.
+- **`occurredAfter` / `occurredBefore` bound a third thing again:** when the
+  event *happened*. That is the one question `asOf` cannot answer, since a year
+  of history imported this morning has one record time and twelve months of
+  event time. Either bound alone is an open-ended window, and the test is an
+  overlap, so an event straddling an edge is inside.
+- **A null `occurred_start` on a result is not a missing date.** Those fields
+  are filled only from a date found in the memory's own text; the `timestamp`
+  you recorded it with comes back as `timestamp`, and is what the window above
+  matches against.
 
 ## Scoping one space to many users
 
