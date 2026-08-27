@@ -327,6 +327,10 @@ class AnonaClient:
         user_id: str | None = None,
         agent_id: str | None = None,
         session_id: str | None = None,
+        as_of: str | None = None,
+        query_timestamp: str | None = None,
+        occurred_after: str | None = None,
+        occurred_before: str | None = None,
     ) -> str:
         """The relevant memories as one prompt-ready string.
 
@@ -337,6 +341,14 @@ class AnonaClient:
 
         ``max_tokens`` caps the block: whole memories are dropped,
         lowest-ranked first, rather than the text being cut mid-sentence.
+
+        The temporal arguments mean exactly what they mean on
+        :meth:`retrieve`, because this is that search with the rendering on
+        top: ``as_of`` bounds when a memory was *recorded*, ``query_timestamp``
+        only re-ranks, and ``occurred_after`` / ``occurred_before`` bound when
+        the thing *happened*. A prompt block assembled without them is
+        assembled from the whole corpus, which is rarely what a
+        point-in-time question wants.
         """
         body: dict = {
             "space_id": space_id,
@@ -350,6 +362,10 @@ class AnonaClient:
             ("user_id", user_id),
             ("agent_id", agent_id),
             ("session_id", session_id),
+            ("as_of", as_of),
+            ("query_timestamp", query_timestamp),
+            ("occurred_after", occurred_after),
+            ("occurred_before", occurred_before),
         ):
             if value:
                 body[key] = value
@@ -818,6 +834,10 @@ class AnonaClient:
         user_id: str | None = None,
         agent_id: str | None = None,
         session_id: str | None = None,
+        as_of: str | None = None,
+        query_timestamp: str | None = None,
+        occurred_after: str | None = None,
+        occurred_before: str | None = None,
     ) -> str:
         """Async (asyncio) variant of :meth:`get_context`."""
         body: dict = {
@@ -832,6 +852,10 @@ class AnonaClient:
             ("user_id", user_id),
             ("agent_id", agent_id),
             ("session_id", session_id),
+            ("as_of", as_of),
+            ("query_timestamp", query_timestamp),
+            ("occurred_after", occurred_after),
+            ("occurred_before", occurred_before),
         ):
             if value:
                 body[key] = value

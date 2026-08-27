@@ -126,7 +126,49 @@ def test_retrieve_sends_one_bound_alone(client):
     assert "occurred_before" not in body
 
 
-# ── the async client carries the same five ────────────────────────────────────
+# ── get_context takes the same arguments, because it is the same search ───────
+
+
+@respx.mock
+def test_get_context_sends_the_temporal_arguments(client):
+    route = respx.post(f"{BASE}/v1/retrieve").mock(
+        return_value=httpx.Response(200, json={"context": "1. a memory"})
+    )
+    client.get_context(
+        space_id=SPACE,
+        query="q",
+        as_of="2026-06-01T00:00:00Z",
+        query_timestamp="2026-01-01T00:00:00Z",
+        occurred_after="2024-06-01T00:00:00Z",
+        occurred_before="2024-06-30T23:59:59Z",
+    )
+    body = json.loads(route.calls.last.request.content)
+    # get_context is retrieve with the rendering on top, so a block that cannot
+    # be bounded in time is assembled from the whole corpus, which is the one
+    # thing a point-in-time question is trying to avoid.
+    assert body["format"] == "block"
+    assert body["as_of"] == "2026-06-01T00:00:00Z"
+    assert body["query_timestamp"] == "2026-01-01T00:00:00Z"
+    assert body["occurred_after"] == "2024-06-01T00:00:00Z"
+    assert body["occurred_before"] == "2024-06-30T23:59:59Z"
+
+
+@respx.mock
+def test_get_context_without_temporal_args_is_unchanged(client):
+    route = respx.post(f"{BASE}/v1/retrieve").mock(
+        return_value=httpx.Response(200, json={"context": ""})
+    )
+    client.get_context(space_id=SPACE, query="q")
+    body = json.loads(route.calls.last.request.content)
+    assert body == {
+        "space_id": SPACE,
+        "query": "q",
+        "limit": 10,
+        "format": "block",
+    }
+
+
+# ── the async client carries every one of them ────────────────────────────────
 
 
 @pytest.mark.anyio
@@ -177,6 +219,27 @@ async def test_async_retrieve_sends_the_event_time_window(client):
         occurred_before="2024-06-30T23:59:59Z",
     )
     body = json.loads(route.calls.last.request.content)
+    assert body["occurred_after"] == "2024-06-01T00:00:00Z"
+    assert body["occurred_before"] == "2024-06-30T23:59:59Z"
+    await client.aclose()
+
+
+@pytest.mark.anyio
+@respx.mock
+async def test_async_get_context_sends_the_temporal_arguments(client):
+    route = respx.post(f"{BASE}/v1/retrieve").mock(
+        return_value=httpx.Response(200, json={"context": "1. a memory"})
+    )
+    await client.async_get_context(
+        space_id=SPACE,
+        query="q",
+        as_of="2026-06-01T00:00:00Z",
+        occurred_after="2024-06-01T00:00:00Z",
+        occurred_before="2024-06-30T23:59:59Z",
+    )
+    body = json.loads(route.calls.last.request.content)
+    assert body["format"] == "block"
+    assert body["as_of"] == "2026-06-01T00:00:00Z"
     assert body["occurred_after"] == "2024-06-01T00:00:00Z"
     assert body["occurred_before"] == "2024-06-30T23:59:59Z"
     await client.aclose()
