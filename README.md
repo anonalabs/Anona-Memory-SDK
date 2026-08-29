@@ -101,6 +101,8 @@ async with AnonaClient(api_key="...") as client:
 - `retrieve(space_id, query, limit=10, as_of=None, query_timestamp=None, occurred_after=None, occurred_before=None) -> list[dict]` — see [Time travel](#time-travel) for the temporal arguments
 - `reason(space_id, query) -> str | None`
 - `list_spaces() -> list[dict]`
+- `get_user_profile(space_id, user_id, *, limit=None, offset=None, memory_type=None, format=None, context_max_tokens=None) -> dict` — everything the space has learned about one end user; see [User profiles](#user-profiles)
+- `ask_about_user(space_id, user_id, query, *, model=None) -> dict` — one synthesised answer, drawn from that user's memories only
 - `upload_file(space_id, file, *, filename=None, strategy=None, tags=None) -> dict` — upload a file (path / bytes / file-like) so retrieval can draw on its content; ingested asynchronously, returns `job_ids`. PDF, DOCX, PPTX, XLSX, images (OCR), HTML, TXT/MD, CSV, audio. Files over 25 MB are rejected client-side.
 - `list_documents(space_id, limit=100, offset=0) -> list[dict]`
 - `delete_document(space_id, document_id) -> None` — remove a document and the memories extracted from it
@@ -112,7 +114,7 @@ async with AnonaClient(api_key="...") as client:
 - `create_webhook(space_id, url, event_types=None, enabled=True) -> dict` — the response carries `secret`, returned only on create
 - `list_webhooks(space_id) -> list[dict]`, `update_webhook(space_id, webhook_id, url=None, event_types=None, enabled=None) -> dict`, `delete_webhook(space_id, webhook_id) -> None`
 - `list_webhook_deliveries(space_id, webhook_id, limit=50, cursor=None) -> dict` — recent attempts, for debugging a receiver
-- `async_record(...)`, `async_record_batch(...)`, `async_get_job(...)`, `async_retrieve(...)`, `async_reason(...)`, `async_list_spaces(...)`, `async_upload_file(...)`, `async_list_documents(...)`, `async_delete_document(...)`, `async_get_graph(...)`, `async_list_entities(...)`, `async_get_entity(...)`, `async_get_extraction_settings(...)`, `async_set_extraction_settings(...)`, `async_reset_extraction_settings(...)`, `async_get_chat_settings(...)`, `async_set_chat_settings(...)`, `async_reset_chat_settings(...)`, `async_create_webhook(...)`, `async_list_webhooks(...)`, `async_update_webhook(...)`, `async_delete_webhook(...)`, `async_list_webhook_deliveries(...)` — async equivalents
+- `async_record(...)`, `async_record_batch(...)`, `async_get_job(...)`, `async_retrieve(...)`, `async_reason(...)`, `async_get_user_profile(...)`, `async_ask_about_user(...)`, `async_list_spaces(...)`, `async_upload_file(...)`, `async_list_documents(...)`, `async_delete_document(...)`, `async_get_graph(...)`, `async_list_entities(...)`, `async_get_entity(...)`, `async_get_extraction_settings(...)`, `async_set_extraction_settings(...)`, `async_reset_extraction_settings(...)`, `async_get_chat_settings(...)`, `async_set_chat_settings(...)`, `async_reset_chat_settings(...)`, `async_create_webhook(...)`, `async_list_webhooks(...)`, `async_update_webhook(...)`, `async_delete_webhook(...)`, `async_list_webhook_deliveries(...)` — async equivalents
 - `close()` / `aclose()` — release underlying HTTP clients
 
 Errors raise `AnonaError(status_code, detail)`.
@@ -162,6 +164,49 @@ client.retrieve(space_id="support", query="contract status",
   history imported this morning has one record time and twelve months of event
   time. Either bound alone is an open-ended window, and the test is an overlap,
   so an event straddling an edge is inside.
+
+## User profiles
+
+If you scope writes with `user_id`, a space accumulates a per-user history with
+nowhere to address it directly. These two read it back, instead of you
+reconstructing it from a wide-open search.
+
+```python
+profile = client.get_user_profile("support", "alice_123")
+print(profile["memory_count"], profile["last_active"])
+
+# Prompt-ready instead of a list
+block = client.get_user_profile(
+    "support", "alice_123", format="block", context_max_tokens=500
+)
+messages = [{"role": "system", "content": block["context"]}, ...]
+
+answer = client.ask_about_user(
+    "support", "alice_123", "How does she prefer to be contacted?"
+)
+print(answer["insights"], answer["model"])
+```
+
+`user_id` has to be the **same value** your writes are scoped with — a typo on
+either side looks like an empty profile, not an error.
+
+Three things worth knowing:
+
+- **An unknown user is not a 404.** A `user_id` is a scope tag created by the
+  first write naming it, not a resource you register, so there is no valid set
+  for a typo to fall outside of. A user nobody has recorded under comes back
+  with `memory_count` of `0` and an empty `memories` list. An unknown *space* is
+  still a 404.
+- **`memory_count` can go down.** The default view collapses layers: several raw
+  facts become one synthesised note, and the note is what gets counted. A
+  profile read during an import can genuinely go 115 → 67 → 15 while the corpus
+  behind it grows the whole time. Read it as how many distinct things are
+  currently known about this user, never as an ingestion counter, and never as
+  the basis for a progress bar.
+- **`ask_about_user` returns the whole response**, not the answer string
+  `reason` returns, because `model` reports which LLM actually answered. That is
+  the rate the call was charged at, and it differs from what you asked for
+  whenever you asked for nothing.
 
 ## Extraction settings
 

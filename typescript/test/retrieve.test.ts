@@ -165,4 +165,16 @@ describe("reason", () => {
     expect((fetchImpl as any).mock.calls[0]![0]).toBe("https://api.anonalabs.com/v1/reason");
     expect(result.insights).toBe("Alice prefers email.");
   });
+
+  it("is never auto-replayed", async () => {
+    // A synthesis pass is a multi-iteration agent loop that routinely runs the
+    // better part of two minutes. Replaying it on a 5xx puts two or three
+    // overlapping runs on a space already under load, which is why it opts out
+    // of retries — and what makes its own ~90s attempt budget safe to grant.
+    const fetchImpl = vi.fn(async () => new Response("", { status: 500 }));
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never, maxRetries: 2 });
+
+    await expect(anona.reason({ spaceId: "s", query: "q" })).rejects.toThrow();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });
