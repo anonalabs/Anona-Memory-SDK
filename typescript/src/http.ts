@@ -28,6 +28,14 @@ export interface RequestOptions {
    * before the write is attempted).
    */
   idempotent?: boolean;
+  /**
+   * Per-attempt timeout override, in ms. Falls back to the client default.
+   * `reason` and `askAboutUser` raise it to the API's own ~90s synthesis budget
+   * so a normal multi-iteration run is not cut off mid-flight — safe only
+   * because both are also non-idempotent, so the long attempt is never
+   * replayed.
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -117,7 +125,10 @@ export class HttpClient {
 
     for (let attempt = 0; attempt <= this.opts.maxRetries; attempt++) {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.opts.timeoutMs);
+      const timer = setTimeout(
+        () => controller.abort(),
+        options.timeoutMs ?? this.opts.timeoutMs,
+      );
       const onExternalAbort = () => controller.abort();
       options.signal?.addEventListener("abort", onExternalAbort);
 

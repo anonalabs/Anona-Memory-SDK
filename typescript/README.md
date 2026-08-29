@@ -96,6 +96,44 @@ reasoning while keeping it for audit. Prefer it over `deleteMemory`, which is
 permanent. Memories the system synthesised from your raw facts cannot be
 edited — they are derived, so the API rejects the attempt.
 
+## What a space knows about one end user
+
+If you scope writes with `userId`, a space accumulates a per-user history.
+These two read it back without you reconstructing it from a wide-open search:
+
+```ts
+const profile = await anona.getUserProfile({ spaceId: "support", userId: "alice_123" });
+console.log(profile.memory_count, profile.last_active);
+
+// Prompt-ready instead of a list
+const { context } = await anona.getUserProfile({
+  spaceId: "support",
+  userId: "alice_123",
+  format: "block",
+  contextMaxTokens: 500,
+});
+
+// One synthesised answer, from this user's memories only
+const { insights, model } = await anona.askAboutUser({
+  spaceId: "support",
+  userId: "alice_123",
+  query: "How does she prefer to be contacted?",
+});
+```
+
+- **An unknown user is not a 404.** A `userId` is a scope tag created by the
+  first write naming it, not a resource you register, so there is nothing for a
+  typo to fall outside of — a user nobody has recorded under comes back with
+  `memory_count: 0` and an empty `memories`. An unknown *space* is still a 404.
+- **`memory_count` can go down.** Consolidation folds several raw facts into
+  one note and the default view counts the note, so a profile read during an
+  import can go 115 → 67 → 15 while the corpus behind it grows the whole time.
+  It is "how many distinct things we know about this user", not an ingestion
+  counter — do not build a progress bar on it.
+- **`askAboutUser` reports the model that answered** in `model`, which is not
+  necessarily the one you asked for, since omitting it resolves a default.
+  Reconcile the credits on the call against that field.
+
 ## Errors
 
 ```ts
@@ -132,6 +170,15 @@ malformed response.
 - **`asOf` and `queryTimestamp` are not the same knob.** `asOf` is a hard
   cutoff on when a memory was *recorded*; `queryTimestamp` only re-ranks and
   never removes a result. Reach for `asOf` when the cutoff has to be enforced.
+- **`occurredAfter` / `occurredBefore` bound a third thing again:** when the
+  event *happened*. That is the one question `asOf` cannot answer, since a year
+  of history imported this morning has one record time and twelve months of
+  event time. Either bound alone is an open-ended window, and the test is an
+  overlap, so an event straddling an edge is inside.
+- **A null `occurred_start` on a result is not a missing date.** Those fields
+  are filled only from a date found in the memory's own text; the `timestamp`
+  you recorded it with comes back as `timestamp`, and is what the window above
+  matches against.
 
 ## Scoping one space to many users
 
@@ -203,6 +250,7 @@ produces no error; extraction simply keeps different things.
 | `listSpaces` / `getSpace` / `createSpace` / `deleteSpace` | Space management |
 | `listMemories` / `getMemoryHistory` / `updateMemory` / `deleteMemory` | Memory management |
 | `uploadFiles` / `listDocuments` / `getDocument` / `deleteDocument` | Documents |
+| `getUserProfile` / `askAboutUser` | What a space knows about one end user |
 | `getGraph` / `listEntities` / `getEntity` | Entity graph |
 | `getExtractionSettings` / `setExtractionSettings` / `resetExtractionSettings` | Steer what a write keeps — see below |
 | `getChatSettings` / `setChatSettings` / `resetChatSettings` | Per-space defaults for the drop-in proxy endpoints |

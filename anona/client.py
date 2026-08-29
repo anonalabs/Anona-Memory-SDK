@@ -258,6 +258,8 @@ class AnonaClient:
         session_id: str | None = None,
         as_of: str | None = None,
         query_timestamp: str | None = None,
+        occurred_after: str | None = None,
+        occurred_before: str | None = None,
     ) -> list[dict]:
         """Search memories.
 
@@ -280,6 +282,17 @@ class AnonaClient:
         re-ranks; it never removes a result, so a memory recorded after that
         instant can still come back. Use ``as_of`` when you need the cutoff
         enforced.
+
+        ``occurred_after`` / ``occurred_before`` (ISO 8601) bound when the thing
+        *happened*, which is what ``as_of`` cannot address: history imported
+        today all shares one record time and spans years of event time. Either
+        bound alone is an open-ended window, and the test is an overlap, so an
+        event straddling an edge is inside.
+
+        A memory is matched on the event window its own text described, falling
+        back to the ``timestamp`` it was recorded with. That fallback carries
+        most of the work: a memory whose text named no date has no event window
+        of its own, and is still filtered correctly.
         """
         body: dict = {
             "space_id": space_id,
@@ -293,6 +306,8 @@ class AnonaClient:
             ("session_id", session_id),
             ("as_of", as_of),
             ("query_timestamp", query_timestamp),
+            ("occurred_after", occurred_after),
+            ("occurred_before", occurred_before),
         ):
             if value:
                 body[key] = value
@@ -312,6 +327,10 @@ class AnonaClient:
         user_id: str | None = None,
         agent_id: str | None = None,
         session_id: str | None = None,
+        as_of: str | None = None,
+        query_timestamp: str | None = None,
+        occurred_after: str | None = None,
+        occurred_before: str | None = None,
     ) -> str:
         """The relevant memories as one prompt-ready string.
 
@@ -322,6 +341,14 @@ class AnonaClient:
 
         ``max_tokens`` caps the block: whole memories are dropped,
         lowest-ranked first, rather than the text being cut mid-sentence.
+
+        The temporal arguments mean exactly what they mean on
+        :meth:`retrieve`, because this is that search with the rendering on
+        top: ``as_of`` bounds when a memory was *recorded*, ``query_timestamp``
+        only re-ranks, and ``occurred_after`` / ``occurred_before`` bound when
+        the thing *happened*. A prompt block assembled without them is
+        assembled from the whole corpus, which is rarely what a
+        point-in-time question wants.
         """
         body: dict = {
             "space_id": space_id,
@@ -335,6 +362,10 @@ class AnonaClient:
             ("user_id", user_id),
             ("agent_id", agent_id),
             ("session_id", session_id),
+            ("as_of", as_of),
+            ("query_timestamp", query_timestamp),
+            ("occurred_after", occurred_after),
+            ("occurred_before", occurred_before),
         ):
             if value:
                 body[key] = value
@@ -349,6 +380,109 @@ class AnonaClient:
         )
         self._raise(resp)
         return resp.json().get("insights")
+
+    # ── Per-user profiles ─────────────────────────────────────────────────────
+
+    #: Query parameters for :meth:`get_user_profile`, in the order the API
+    #: documents them. Every one has a server-side default, so only what the
+    #: caller actually passed is sent — filling in today's defaults would pin a
+    #: caller to values that are free to move.
+    _PROFILE_PARAMS = ("limit", "offset", "memory_type", "format", "context_max_tokens")
+
+    @staticmethod
+    def _profile_params(
+        limit: int | None,
+        offset: int | None,
+        memory_type: str | None,
+        format: str | None,
+        context_max_tokens: int | None,
+    ) -> dict:
+        # `is not None`, not truthiness: ``offset=0`` is falsy and is also a
+        # perfectly good explicit offset.
+        values = (limit, offset, memory_type, format, context_max_tokens)
+        return {
+            key: value
+            for key, value in zip(AnonaClient._PROFILE_PARAMS, values)
+            if value is not None
+        }
+
+    def get_user_profile(
+        self,
+        space_id: str,
+        user_id: str,
+        *,
+        limit: int | None = None,
+        offset: int | None = None,
+        memory_type: str | None = None,
+        format: str | None = None,
+        context_max_tokens: int | None = None,
+    ) -> dict:
+        """Everything a space has learned about one end user.
+
+        ``user_id`` must be the same value your writes are scoped with — this
+        reads back the memories tagged with it, so a typo on either side looks
+        like an empty profile.
+
+        Returns ``{"space_id", "user_id", "memory_count", "first_seen",
+        "last_active", "memories"}``. Pass ``format="block"`` for a
+        prompt-ready ``context`` string as well (with ``context_max_tokens`` to
+        cap it), rendered exactly as :meth:`get_context` renders a search.
+
+        Two things worth knowing before you build on the result:
+
+        * **An unknown user is not an error.** A ``user_id`` is a scope tag
+          created by the first write naming it, not a resource you register, so
+          there is no valid set for a typo to fall outside of. A user nobody
+          has ever recorded under returns ``memory_count: 0`` and an empty
+          ``memories``, never a 404. An unknown *space* is still a 404.
+        * **``memory_count`` can go down.** The default view collapses layers:
+          several raw facts become one synthesized note, and the note is what
+          gets counted. A profile read during an import can genuinely go 115 →
+          67 → 15 while the corpus behind it grows the whole time. Treat it as
+          "how many distinct things we know about this user" — never as an
+          ingestion counter, and never as the basis for a progress bar.
+        """
+        resp = self._get_client().get(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/users/{_seg(user_id)}/profile",
+            params=self._profile_params(
+                limit, offset, memory_type, format, context_max_tokens
+            ),
+        )
+        self._raise(resp)
+        return resp.json()
+
+    def ask_about_user(
+        self,
+        space_id: str,
+        user_id: str,
+        query: str,
+        *,
+        model: str | None = None,
+    ) -> dict:
+        """Synthesize an answer about one end user, from their memories only.
+
+        The scope is not a filter that can be relaxed: the answer only ever
+        draws on memories written under this ``user_id``.
+
+        ``model`` picks the LLM that answers (a tier name such as ``"fast"`` /
+        ``"balanced"``, or a model id) — the same catalog and the same
+        request → space default → platform default ladder :meth:`reason` uses.
+
+        Returns the whole response, not just the answer string as
+        :meth:`reason` does, because ``model`` reports which LLM *actually*
+        answered — which is what the credits on this call are charged at, and
+        differs from what you asked for whenever you asked for nothing. Read
+        the answer from ``["insights"]``.
+        """
+        body: dict = {"query": query}
+        if model:
+            body["model"] = model
+        resp = self._get_client().post(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/users/{_seg(user_id)}/ask",
+            json=body,
+        )
+        self._raise(resp)
+        return resp.json()
 
     def list_spaces(self) -> list[dict]:
         resp = self._get_client().get(f"{self._base_url}/v1/spaces/")
@@ -766,6 +900,8 @@ class AnonaClient:
         session_id: str | None = None,
         as_of: str | None = None,
         query_timestamp: str | None = None,
+        occurred_after: str | None = None,
+        occurred_before: str | None = None,
     ) -> list[dict]:
         """Async (asyncio) variant of :meth:`retrieve`."""
         body: dict = {
@@ -780,6 +916,8 @@ class AnonaClient:
             ("session_id", session_id),
             ("as_of", as_of),
             ("query_timestamp", query_timestamp),
+            ("occurred_after", occurred_after),
+            ("occurred_before", occurred_before),
         ):
             if value:
                 body[key] = value
@@ -799,6 +937,10 @@ class AnonaClient:
         user_id: str | None = None,
         agent_id: str | None = None,
         session_id: str | None = None,
+        as_of: str | None = None,
+        query_timestamp: str | None = None,
+        occurred_after: str | None = None,
+        occurred_before: str | None = None,
     ) -> str:
         """Async (asyncio) variant of :meth:`get_context`."""
         body: dict = {
@@ -813,6 +955,10 @@ class AnonaClient:
             ("user_id", user_id),
             ("agent_id", agent_id),
             ("session_id", session_id),
+            ("as_of", as_of),
+            ("query_timestamp", query_timestamp),
+            ("occurred_after", occurred_after),
+            ("occurred_before", occurred_before),
         ):
             if value:
                 body[key] = value
@@ -829,6 +975,46 @@ class AnonaClient:
         )
         self._raise(resp)
         return resp.json().get("insights")
+
+    async def async_get_user_profile(
+        self,
+        space_id: str,
+        user_id: str,
+        *,
+        limit: int | None = None,
+        offset: int | None = None,
+        memory_type: str | None = None,
+        format: str | None = None,
+        context_max_tokens: int | None = None,
+    ) -> dict:
+        """Async (asyncio) variant of :meth:`get_user_profile`."""
+        resp = await self._get_async_client().get(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/users/{_seg(user_id)}/profile",
+            params=self._profile_params(
+                limit, offset, memory_type, format, context_max_tokens
+            ),
+        )
+        self._raise(resp)
+        return resp.json()
+
+    async def async_ask_about_user(
+        self,
+        space_id: str,
+        user_id: str,
+        query: str,
+        *,
+        model: str | None = None,
+    ) -> dict:
+        """Async (asyncio) variant of :meth:`ask_about_user`."""
+        body: dict = {"query": query}
+        if model:
+            body["model"] = model
+        resp = await self._get_async_client().post(
+            f"{self._base_url}/v1/spaces/{_seg(space_id)}/users/{_seg(user_id)}/ask",
+            json=body,
+        )
+        self._raise(resp)
+        return resp.json()
 
     async def async_list_spaces(self) -> list[dict]:
         resp = await self._get_async_client().get(f"{self._base_url}/v1/spaces/")

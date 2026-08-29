@@ -1,5 +1,6 @@
 import { HttpClient, seg } from "./http.js";
 import type {
+  AskUserResult,
   BatchRecordResult,
   ChatSettings,
   DocumentItem,
@@ -18,6 +19,7 @@ import type {
   Space,
   UploadResult,
   UsageSnapshot,
+  UserProfile,
   Webhook,
   WebhookDeliveryPage,
   WebhookEventType,
@@ -169,6 +171,19 @@ export interface RetrieveOptions {
    * on when the event it describes happened.
    */
   asOf?: string;
+  /**
+   * Event-time window (ISO 8601): keep only memories describing something that
+   * **happened** inside it. This is what {@link asOf} cannot address — history
+   * imported today all shares one record time and spans years of event time.
+   *
+   * Either bound alone is an open-ended window, and the test is an overlap, so
+   * an event straddling an edge is inside. A memory is matched on the window
+   * its own text described, falling back to the `timestamp` it was recorded
+   * with — which carries most of the work, since a memory whose text named no
+   * date has no window of its own and is still filtered correctly.
+   */
+  occurredAfter?: string;
+  occurredBefore?: string;
   signal?: AbortSignal;
 }
 
@@ -326,15 +341,30 @@ export class Anona {
       method: "POST",
       path: "/v1/retrieve",
       signal: options.signal,
+      // Every RetrieveOptions field is forwarded, not just the scope keys: this
+      // method takes the whole interface, so anything accepted by the type and
+      // dropped here would typecheck and then silently not apply. It is the
+      // same search as `retrieve` with `format: "block"` on top.
       body: compact({
         space_id: options.spaceId,
         query: options.query,
         limit: options.limit,
+        top_k: options.topK,
+        mode: options.mode,
+        memory_type: options.memoryType,
         format: "block",
         context_max_tokens: options.maxTokens,
         user_id: options.userId,
         agent_id: options.agentId,
         session_id: options.sessionId,
+        tags: options.tags,
+        tags_match: options.tagsMatch,
+        prefer_observations: options.preferObservations,
+        min_score: options.minScore,
+        query_timestamp: options.queryTimestamp,
+        as_of: options.asOf,
+        occurred_after: options.occurredAfter,
+        occurred_before: options.occurredBefore,
       }),
     });
     return response.context ?? "";
@@ -362,12 +392,24 @@ export class Anona {
         min_score: options.minScore,
         query_timestamp: options.queryTimestamp,
         as_of: options.asOf,
+        occurred_after: options.occurredAfter,
+        occurred_before: options.occurredBefore,
       }),
     });
     return response.results ?? [];
   }
 
-  /** Ask a question across a space and get a synthesised answer. */
+  /**
+   * Ask a question across a space and get a synthesised answer.
+   *
+   * A synthesis pass is a multi-iteration agent loop — a single call routinely
+   * runs the better part of two minutes. So this is `idempotent: false` (a slow
+   * run must never be auto-replayed into two or three overlapping ones at a
+   * space already under load) and carries its own ~90s per-attempt timeout to
+   * match the API's own budget, rather than being cut off at the 30s default.
+   * The two go together: the long attempt is only safe because it is never
+   * retried.
+   */
   async reason(options: {
     spaceId: string;
     query: string;
@@ -376,8 +418,92 @@ export class Anona {
     return this.http.request<InsightsResult>({
       method: "POST",
       path: "/v1/reason",
+      idempotent: false,
+      timeoutMs: 90_000,
       signal: options.signal,
       body: { space_id: options.spaceId, query: options.query },
+    });
+  }
+
+  /**
+   * Everything this space has learned about one end user.
+   *
+   * `userId` must be the same value your writes are scoped with — this reads
+   * back the memories tagged with it, so a typo on either side looks like an
+   * empty profile rather than an error.
+   *
+   * Pass `format: "block"` for a prompt-ready `context` string as well (with
+   * `contextMaxTokens` to cap it), rendered exactly as `getContext` renders a
+   * search.
+   *
+   * Two things worth knowing before building on the result:
+   *
+   * - **An unknown user is not a 404.** A `userId` is a scope tag created by
+   *   the first write naming it, not a resource you register, so there is no
+   *   valid set for a typo to fall outside of. A user nobody has recorded
+   *   under returns `memory_count: 0` and an empty `memories`. An unknown
+   *   *space* is still a 404.
+   * - **`memory_count` can go down.** Consolidation folds several raw facts
+   *   into one note and the default view counts the note, so a profile read
+   *   during an import can go 115 → 67 → 15 while the corpus behind it grows.
+   *   Do not build a progress bar on it.
+   */
+  async getUserProfile(options: {
+    spaceId: string;
+    userId: string;
+    limit?: number;
+    offset?: number;
+    /** Restrict to one layer, e.g. `"note"` for only the synthesized view. */
+    memoryType?: string;
+    format?: "results" | "block";
+    contextMaxTokens?: number;
+    signal?: AbortSignal;
+  }): Promise<UserProfile> {
+    return this.http.request<UserProfile>({
+      method: "GET",
+      path: `/v1/spaces/${seg(options.spaceId)}/users/${seg(options.userId)}/profile`,
+      // Only what the caller passed: every parameter has a server-side default,
+      // and filling in today's value would pin them to a default free to move.
+      query: {
+        limit: options.limit,
+        offset: options.offset,
+        memory_type: options.memoryType,
+        format: options.format,
+        context_max_tokens: options.contextMaxTokens,
+      },
+      signal: options.signal,
+    });
+  }
+
+  /**
+   * Ask a question answered from one end user's memories only.
+   *
+   * The scope is not a filter you can relax: the answer only ever draws on
+   * memories written under this `userId`.
+   *
+   * `model` picks the LLM that answers — the same catalog and the same
+   * request → space default → platform default ladder `reason` uses. The
+   * response reports the model that *actually* answered, which is what the
+   * credits are charged at.
+   *
+   * A synthesis pass sits behind this exactly as it does behind `reason`, so
+   * it carries the same treatment: never auto-replayed, and given the API's
+   * own ~90s budget rather than the 30s default.
+   */
+  async askAboutUser(options: {
+    spaceId: string;
+    userId: string;
+    query: string;
+    model?: string;
+    signal?: AbortSignal;
+  }): Promise<AskUserResult> {
+    return this.http.request<AskUserResult>({
+      method: "POST",
+      path: `/v1/spaces/${seg(options.spaceId)}/users/${seg(options.userId)}/ask`,
+      idempotent: false,
+      timeoutMs: 90_000,
+      signal: options.signal,
+      body: compact({ query: options.query, model: options.model }),
     });
   }
 

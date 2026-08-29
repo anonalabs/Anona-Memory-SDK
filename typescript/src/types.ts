@@ -94,6 +94,15 @@ export interface MemoryItem {
   metadata: Record<string, unknown> | null;
   /** Memories this one was synthesized from. Empty on a raw fact. */
   source_ids?: string[];
+  /** The scope this memory was written under, mapped back from its tags. */
+  user_id?: string | null;
+  agent_id?: string | null;
+  session_id?: string | null;
+  /**
+   * Stamped by the API, and only in a space shared across organizations — in a
+   * space you alone own every memory is yours, so it stays null.
+   */
+  member_id?: string | null;
 }
 
 export interface MemoryHistoryEntry {
@@ -114,6 +123,47 @@ export interface MemoryListPage {
   total: number;
   limit: number;
   offset: number;
+}
+
+/** What a space has learned about one end user. */
+export interface UserProfile {
+  space_id: string;
+  user_id: string;
+  /**
+   * How many memories carry this user's scope, under whatever `memoryType`
+   * filter was sent. `0` for a user nobody has ever recorded under — which is a
+   * `200`, not a 404.
+   *
+   * **This number can go down as well as up.** The default view collapses
+   * layers: several raw facts become one synthesized note, and the note is what
+   * gets counted. Read it as "how many distinct things we currently know about
+   * this user", never as an ingestion counter.
+   */
+  memory_count: number;
+  /** When this user's earliest memory was learned — record time, not the event it describes. */
+  first_seen: string | null;
+  /** When this user's most recent memory was learned. */
+  last_active: string | null;
+  memories: MemoryItem[];
+  /** Present only when `format` is `"block"`. */
+  context?: string | null;
+  /** Present only under `format: "block"`. An approximation, not a tokenizer count. */
+  token_estimate?: number | null;
+}
+
+/** A synthesized answer drawn from one end user's memories only. */
+export interface AskUserResult {
+  space_id: string;
+  user_id: string;
+  /** The answer, or null when this user has nothing to answer from. */
+  insights: string | null;
+  usage?: TokenUsage | null;
+  /**
+   * The model that actually answered, which is not necessarily the one
+   * requested — omitting `model` resolves a default. Reconcile the credits on
+   * this call against this field, not against what you asked for.
+   */
+  model?: string | null;
 }
 
 /** How a document came to exist in a space. */
