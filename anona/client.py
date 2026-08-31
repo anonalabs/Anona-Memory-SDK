@@ -373,10 +373,35 @@ class AnonaClient:
         self._raise(resp)
         return resp.json().get("context") or ""
 
-    def reason(self, space_id: str, query: str) -> str | None:
+    def reason(
+        self,
+        space_id: str,
+        query: str,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+        model: str | None = None,
+    ) -> str | None:
+        """Synthesize an answer from everything a space knows about a topic.
+
+        ``user_id`` / ``agent_id`` / ``session_id`` narrow the synthesis to one
+        scope, exactly as they do on :meth:`retrieve` — omit them to reason over
+        the whole space. ``model`` picks the LLM that answers (a tier name such
+        as ``"fast"`` / ``"balanced"``, or a model id); omit it to use the
+        space's configured default.
+        """
+        body: dict = {"space_id": space_id, "query": query}
+        for key, value in (
+            ("user_id", user_id),
+            ("agent_id", agent_id),
+            ("session_id", session_id),
+            ("model", model),
+        ):
+            if value:
+                body[key] = value
         resp = self._get_client().post(
             f"{self._base_url}/v1/reason",
-            json={"space_id": space_id, "query": query},
+            json=body,
         )
         self._raise(resp)
         return resp.json().get("insights")
@@ -968,10 +993,28 @@ class AnonaClient:
         self._raise(resp)
         return resp.json().get("context") or ""
 
-    async def async_reason(self, space_id: str, query: str) -> str | None:
+    async def async_reason(
+        self,
+        space_id: str,
+        query: str,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+        model: str | None = None,
+    ) -> str | None:
+        """Async form of :meth:`reason` — same scope and model narrowing."""
+        body: dict = {"space_id": space_id, "query": query}
+        for key, value in (
+            ("user_id", user_id),
+            ("agent_id", agent_id),
+            ("session_id", session_id),
+            ("model", model),
+        ):
+            if value:
+                body[key] = value
         resp = await self._get_async_client().post(
             f"{self._base_url}/v1/reason",
-            json={"space_id": space_id, "query": query},
+            json=body,
         )
         self._raise(resp)
         return resp.json().get("insights")
