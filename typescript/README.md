@@ -7,6 +7,15 @@ Cloudflare Workers and the browser.
 npm i @anona-labs/memory
 ```
 
+**Documentation** — [TypeScript SDK](https://docs.anonalabs.com/sdk/javascript) ·
+[Quickstart](https://docs.anonalabs.com/quickstart) ·
+[Concepts](https://docs.anonalabs.com/concepts) ·
+[API reference](https://docs.anonalabs.com/api-reference/overview) ·
+[MCP server](https://docs.anonalabs.com/mcp-integration)
+
+Looking for Python? `pip install anona` — see
+[docs.anonalabs.com/sdk/python](https://docs.anonalabs.com/sdk/python).
+
 ## Quickstart
 
 ```ts
@@ -257,3 +266,20 @@ produces no error; extraction simply keeps different things.
 | `createWebhook` / `listWebhooks` / `updateWebhook` / `deleteWebhook` | Webhook management |
 | `listWebhookDeliveries` | Recent delivery attempts, for debugging a receiver |
 | `getUsage` | Credits and rate limit for this key |
+
+## Documentation
+
+Full guides and the complete REST reference live at
+[docs.anonalabs.com](https://docs.anonalabs.com):
+
+| Page | What it covers |
+| --- | --- |
+| [TypeScript SDK](https://docs.anonalabs.com/sdk/javascript) | Every method on the `Anona` client |
+| [Quickstart](https://docs.anonalabs.com/quickstart) | First key to first memory |
+| [Concepts](https://docs.anonalabs.com/concepts) | Spaces, scoping, observations, credits |
+| [API reference](https://docs.anonalabs.com/api-reference/overview) | The REST API this client wraps |
+| [MCP server](https://docs.anonalabs.com/mcp-integration) | Local stdio and remote transports |
+
+## License
+
+MIT

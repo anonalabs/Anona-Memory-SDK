@@ -2,8 +2,15 @@
 
 Official SDKs for [Anona Memory](https://memory.anonalabs.com) — managed AI memory for intelligent agents. Record, retrieve, and reason over memories per user/space via a simple client, or auto-inject memory into LiteLLM calls with one line.
 
-- **Python** — this repository root. Documented below.
-- **TypeScript** — [`typescript/`](typescript/). Zero dependencies, runs on Node 18+, Bun, Deno, Cloudflare Workers and the browser, with adapters for the Vercel AI SDK and the OpenAI Agents SDK. See [`typescript/README.md`](typescript/README.md).
+**Documentation** — [Python SDK](https://docs.anonalabs.com/sdk/python) ·
+[TypeScript SDK](https://docs.anonalabs.com/sdk/javascript) ·
+[Quickstart](https://docs.anonalabs.com/quickstart) ·
+[API reference](https://docs.anonalabs.com/api-reference/overview) ·
+[MCP server](https://docs.anonalabs.com/mcp-integration) ·
+[Framework integrations](https://docs.anonalabs.com/integrations/langchain)
+
+- **Python** — this repository root, published as [`anona`](https://pypi.org/project/anona/) on PyPI. Documented below and at [docs.anonalabs.com/sdk/python](https://docs.anonalabs.com/sdk/python).
+- **TypeScript** — [`typescript/`](typescript/), published as [`@anona-labs/memory`](https://www.npmjs.com/package/@anona-labs/memory) on npm. Zero dependencies, runs on Node 18+, Bun, Deno, Cloudflare Workers and the browser, with adapters for the Vercel AI SDK and the OpenAI Agents SDK. See [`typescript/README.md`](typescript/README.md) and [docs.anonalabs.com/sdk/javascript](https://docs.anonalabs.com/sdk/javascript).
 
 ```typescript
 import { Anona } from "@anona-labs/memory";
@@ -359,6 +366,21 @@ is personal — the server only reaches spaces you are a member of.
 - one of `langchain`, `crewai`, `llama-index-core`, `google-adk`,
   `agent-framework-core`, `strands-agents` (optional, only for the matching
   framework adapter — see the extras above for the verified version floors)
+
+## Documentation
+
+Full guides and the complete API reference live at
+[docs.anonalabs.com](https://docs.anonalabs.com):
+
+| Page | What it covers |
+| --- | --- |
+| [Python SDK](https://docs.anonalabs.com/sdk/python) | Every `AnonaClient` method, with examples |
+| [TypeScript SDK](https://docs.anonalabs.com/sdk/javascript) | The `Anona` client and its adapters |
+| [Quickstart](https://docs.anonalabs.com/quickstart) | First key to first memory |
+| [Concepts](https://docs.anonalabs.com/concepts) | Spaces, scoping, observations, credits |
+| [API reference](https://docs.anonalabs.com/api-reference/overview) | The REST API these SDKs wrap |
+| [MCP server](https://docs.anonalabs.com/mcp-integration) | Local stdio and remote transports |
+| [Framework integrations](https://docs.anonalabs.com/integrations/langchain) | LangChain, CrewAI, LlamaIndex, Google ADK and more |
 
 ## License
 
