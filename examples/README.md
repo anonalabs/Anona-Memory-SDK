@@ -24,6 +24,7 @@ The product, story by story. `pip install anona` is all these need.
 | [`document_qa.py`](document_qa.py) | A file becomes answerable memory: upload, poll the job, ask — with `document_id` provenance on the hits. |
 | [`time_travel.py`](time_travel.py) | Dated backfill, then the three time controls: event-time windows, `as_of` point-in-time replay, and a moved "now". |
 | [`user_profiles.py`](user_profiles.py) | Everything known about one end user — as data or a prompt block — and `ask_about_user` for questions about them. |
+| [`context_receipts.py`](context_receipts.py) | Why a search did not return the memory you expected: the receipt for one search, and `explain` for one memory. |
 | [`multi_agent_shared_space.py`](multi_agent_shared_space.py) | A researcher and a writer share one space: `agent_id` separates their working sets, an unscoped read is the handoff. |
 | [`background_ingestion.py`](background_ingestion.py) | High-volume writes: `background=True` and `record_batch`, with `get_job` polling for the stored ids. |
 | [`knowledge_graph.py`](knowledge_graph.py) | The entity graph a space builds on its own: nodes, co-occurrence edges, and per-entity observations. |

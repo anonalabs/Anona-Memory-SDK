@@ -2,9 +2,38 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from dataclasses import dataclass, field
 from urllib.parse import quote
 
 import httpx
+
+
+@dataclass
+class RetrieveWithReceipt:
+    """What :meth:`AnonaClient.retrieve_receipt` returns.
+
+    ``memories`` is exactly what :meth:`AnonaClient.retrieve` would have
+    returned for the same arguments, so the two are interchangeable at the call
+    site; this variant exists only because ``retrieve`` returns a bare list and
+    has nowhere to put the receipt id.
+
+    ``receipt_id`` is also the ``X-Request-ID`` of that call, so a receipt can
+    be fetched later from a request id you logged yourself, without having used
+    this method at all.
+    """
+
+    memories: list[dict] = field(default_factory=list)
+    receipt_id: str | None = None
+
+    def __iter__(self):
+        """Iterate the memories, so this can stand in for a plain result list."""
+        return iter(self.memories)
+
+    def __len__(self) -> int:
+        return len(self.memories)
+
+    def __getitem__(self, index):
+        return self.memories[index]
 
 
 def _seg(value: str) -> str:
@@ -317,6 +346,117 @@ class AnonaClient:
         )
         self._raise(resp)
         return resp.json().get("results", [])
+
+    def retrieve_receipt(
+        self,
+        space_id: str,
+        query: str,
+        limit: int = 10,
+        mode: str = "accurate",
+        receipt_detail: str = "basic",
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+        as_of: str | None = None,
+        query_timestamp: str | None = None,
+        occurred_after: str | None = None,
+        occurred_before: str | None = None,
+    ) -> RetrieveWithReceipt:
+        """:meth:`retrieve`, plus the id of the receipt for that search.
+
+        Same search, same results, same arguments. The only difference is the
+        return type: :meth:`retrieve` hands back a bare list, which has nowhere
+        to carry the receipt id, so this returns both. The result iterates and
+        indexes like the list does, so swapping one for the other rarely means
+        changing the code that consumes it.
+
+        ``receipt_detail="full"`` additionally asks the search pipeline to
+        account for its own cuts, so the receipt explains memories that were
+        ranked and dropped before ``limit`` or a relevance floor ever applied.
+        It costs some latency on the first call for a given query, because
+        those decisions are not part of a cached answer. Leave it ``"basic"``
+        for production traffic.
+
+        Pass the ``receipt_id`` to :meth:`get_receipt`, or to :meth:`explain`
+        with a memory id to ask about one memory in particular.
+        """
+        body: dict = {
+            "space_id": space_id,
+            "query": query,
+            "limit": limit,
+            "mode": mode,
+            "receipt": True,
+        }
+        if receipt_detail != "basic":
+            body["receipt_detail"] = receipt_detail
+        for key, value in (
+            ("user_id", user_id),
+            ("agent_id", agent_id),
+            ("session_id", session_id),
+            ("as_of", as_of),
+            ("query_timestamp", query_timestamp),
+            ("occurred_after", occurred_after),
+            ("occurred_before", occurred_before),
+        ):
+            if value:
+                body[key] = value
+        resp = self._get_client().post(
+            f"{self._base_url}/v1/retrieve",
+            json=body,
+        )
+        self._raise(resp)
+        data = resp.json()
+        return RetrieveWithReceipt(
+            memories=data.get("results", []),
+            # Fall back to the header: the id is the request id either way, and
+            # a receipt that could not be stored still leaves the call itself
+            # perfectly valid. A receipt is a debugging aid, never load-bearing.
+            receipt_id=data.get("receipt_id") or resp.headers.get("x-request-id"),
+        )
+
+    def get_receipt(self, request_id: str) -> dict:
+        """The manifest for one earlier search: what was returned, what was
+        cut, and why.
+
+        ``request_id`` is what :meth:`retrieve_receipt` returned, or the
+        ``X-Request-ID`` header of any earlier call, which is the same value.
+        Every search builds a receipt whether or not anyone asked for one, so
+        this works on a call you never flagged in advance.
+
+        Receipts expire (about an hour), and a missing, expired or foreign one
+        is an ordinary 404. Free: it returns something already computed and
+        already paid for.
+        """
+        resp = self._get_client().get(
+            f"{self._base_url}/v1/receipts/{_seg(request_id)}"
+        )
+        self._raise(resp)
+        return resp.json()
+
+    def explain(self, request_id: str, memory_id: str) -> dict:
+        """Account for one specific memory against an earlier search.
+
+        The receipt says what was cut. This answers the question it cannot:
+        why *this* memory is not in your results, including the case where no
+        stage of the search mentions it at all. That case comes back as
+        ``outcome: "not_retrieved"``, and it is the useful one: nothing matched
+        the memory, so raising ``limit`` or lowering a relevance floor will not
+        help, and the wording or the scope is what to look at.
+
+        ``arms`` reports how each kind of matching ranked it, with ``None`` for
+        one that never found it. Found by ``keyword`` but not ``semantic``
+        usually means the query shares words with the memory but not meaning.
+
+        The search is replayed, pinned to the instant the original ran, so
+        memories written since do not change the answer. Free, but it does run
+        a real search, so it counts against your rate limit.
+        """
+        resp = self._get_client().get(
+            f"{self._base_url}/v1/receipts/{_seg(request_id)}/explain",
+            params={"memory_id": memory_id},
+        )
+        self._raise(resp)
+        return resp.json()
 
     def get_context(
         self,
@@ -952,6 +1092,70 @@ class AnonaClient:
         )
         self._raise(resp)
         return resp.json().get("results", [])
+
+    async def async_retrieve_receipt(
+        self,
+        space_id: str,
+        query: str,
+        limit: int = 10,
+        mode: str = "accurate",
+        receipt_detail: str = "basic",
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+        as_of: str | None = None,
+        query_timestamp: str | None = None,
+        occurred_after: str | None = None,
+        occurred_before: str | None = None,
+    ) -> RetrieveWithReceipt:
+        """Async (asyncio) variant of :meth:`retrieve_receipt`."""
+        body: dict = {
+            "space_id": space_id,
+            "query": query,
+            "limit": limit,
+            "mode": mode,
+            "receipt": True,
+        }
+        if receipt_detail != "basic":
+            body["receipt_detail"] = receipt_detail
+        for key, value in (
+            ("user_id", user_id),
+            ("agent_id", agent_id),
+            ("session_id", session_id),
+            ("as_of", as_of),
+            ("query_timestamp", query_timestamp),
+            ("occurred_after", occurred_after),
+            ("occurred_before", occurred_before),
+        ):
+            if value:
+                body[key] = value
+        resp = await self._get_async_client().post(
+            f"{self._base_url}/v1/retrieve",
+            json=body,
+        )
+        self._raise(resp)
+        data = resp.json()
+        return RetrieveWithReceipt(
+            memories=data.get("results", []),
+            receipt_id=data.get("receipt_id") or resp.headers.get("x-request-id"),
+        )
+
+    async def async_get_receipt(self, request_id: str) -> dict:
+        """Async (asyncio) variant of :meth:`get_receipt`."""
+        resp = await self._get_async_client().get(
+            f"{self._base_url}/v1/receipts/{_seg(request_id)}"
+        )
+        self._raise(resp)
+        return resp.json()
+
+    async def async_explain(self, request_id: str, memory_id: str) -> dict:
+        """Async (asyncio) variant of :meth:`explain`."""
+        resp = await self._get_async_client().get(
+            f"{self._base_url}/v1/receipts/{_seg(request_id)}/explain",
+            params={"memory_id": memory_id},
+        )
+        self._raise(resp)
+        return resp.json()
 
     async def async_get_context(
         self,

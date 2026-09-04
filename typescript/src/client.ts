@@ -11,10 +11,13 @@ import type {
   Graph,
   InsightsResult,
   JobStatus,
+  ContextReceipt,
+  MemoryExplanation,
   MemoryHistory,
   MemoryItem,
   MemoryListPage,
   RecordResult,
+  RetrieveWithReceipt,
   SearchResult,
   Space,
   UploadResult,
@@ -125,6 +128,18 @@ export interface RecordBatchOptions {
 
 /** How multiple `tags` combine when filtering. */
 export type TagsMatch = "any" | "all" | "any_strict" | "all_strict" | "exact";
+
+/** `RetrieveOptions`, plus how deep the receipt for that search should go. */
+export interface RetrieveReceiptOptions extends RetrieveOptions {
+  /**
+   * `"basic"` (default) records the cuts made after the search returned.
+   * `"full"` also records the ones the search made internally, so a memory
+   * that never made it out of ranking is accounted for rather than simply
+   * absent. `"full"` can cost latency on the first call for a given query,
+   * because those decisions are not part of a cached answer.
+   */
+  receiptDetail?: "basic" | "full";
+}
 
 export interface RetrieveOptions {
   spaceId: string;
@@ -397,6 +412,98 @@ export class Anona {
       }),
     });
     return response.results ?? [];
+  }
+
+  /**
+   * `retrieve`, plus the id of the receipt for that search.
+   *
+   * Same search, same results. `retrieve` returns a bare array, which has
+   * nowhere to carry the receipt id, so this returns both. Pass the id to
+   * `getReceipt`, or to `explain` with a memory id to ask about one memory.
+   */
+  async retrieveReceipt(
+    options: RetrieveReceiptOptions,
+  ): Promise<RetrieveWithReceipt> {
+    const response = await this.http.request<{
+      results?: SearchResult[];
+      receipt_id?: string;
+    }>({
+      method: "POST",
+      path: "/v1/retrieve",
+      signal: options.signal,
+      body: compact({
+        space_id: options.spaceId,
+        query: options.query,
+        limit: options.limit,
+        top_k: options.topK,
+        mode: options.mode,
+        memory_type: options.memoryType,
+        user_id: options.userId,
+        agent_id: options.agentId,
+        session_id: options.sessionId,
+        tags: options.tags,
+        tags_match: options.tagsMatch,
+        prefer_observations: options.preferObservations,
+        min_score: options.minScore,
+        query_timestamp: options.queryTimestamp,
+        as_of: options.asOf,
+        occurred_after: options.occurredAfter,
+        occurred_before: options.occurredBefore,
+        receipt: true,
+        receipt_detail:
+          options.receiptDetail === "full" ? "full" : undefined,
+      }),
+    });
+    return {
+      memories: response.results ?? [],
+      // Null only when the receipt could not be built or stored. A receipt is
+      // a debugging aid and never load-bearing, so the search itself still
+      // succeeded and the results above are complete.
+      receipt_id: response.receipt_id ?? null,
+    };
+  }
+
+  /**
+   * The manifest for one earlier search: what came back, what was cut, why.
+   *
+   * `requestId` is what `retrieveReceipt` returned, or the `X-Request-ID` of
+   * any earlier call, which is the same value. Every search builds a receipt
+   * whether or not one was asked for, so this works on a call nobody flagged
+   * in advance. Receipts expire after about an hour; a missing, expired or
+   * foreign one is an ordinary 404.
+   */
+  async getReceipt(requestId: string, signal?: AbortSignal): Promise<ContextReceipt> {
+    return this.http.request<ContextReceipt>({
+      method: "GET",
+      path: `/v1/receipts/${seg(requestId)}`,
+      signal,
+    });
+  }
+
+  /**
+   * Account for one specific memory against an earlier search.
+   *
+   * The receipt says what was cut; this answers why *this* memory is not in
+   * your results, including the case no stage mentions it at all. That comes
+   * back as `outcome: "not_retrieved"` and is the useful one: nothing matched
+   * it, so a bigger `limit` will not help and the wording or scope is what to
+   * check.
+   *
+   * Replays the search pinned to the instant the original ran, so memories
+   * written since do not change the answer. Free, but it runs a real search,
+   * so it counts against your rate limit.
+   */
+  async explain(
+    requestId: string,
+    memoryId: string,
+    signal?: AbortSignal,
+  ): Promise<MemoryExplanation> {
+    return this.http.request<MemoryExplanation>({
+      method: "GET",
+      path: `/v1/receipts/${seg(requestId)}/explain`,
+      query: { memory_id: memoryId },
+      signal,
+    });
   }
 
   /**
