@@ -5,6 +5,7 @@ export type {
   RecordBatchOptions,
   RecordOptions,
   RetrieveOptions,
+  RetrieveReceiptOptions,
   TagsMatch,
   UpdateMemoryOptions,
   UploadFile,

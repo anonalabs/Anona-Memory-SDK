@@ -307,3 +307,85 @@ export interface WebhookDeliveryPage {
   items: WebhookDelivery[];
   next_cursor: string | null;
 }
+
+/**
+ * One memory the pipeline dropped, and the reason it did.
+ *
+ * `reason` is a stable code, not prose. Four of them describe cuts made after
+ * the search returned (`dedup`, `min_score`, `limit`, `budget`); three more
+ * describe cuts the search made internally (`candidate_cap`, `rerank_rank`,
+ * `engine_budget`) and only appear when the call asked for
+ * `receiptDetail: "full"`. The two families never overlap, so a memory is
+ * listed at most once.
+ */
+export interface ReceiptExclusion {
+  memory_id: string;
+  reason: string;
+  /** A short account of the cut. Never memory content. */
+  detail: string;
+}
+
+/** One memory that survived every cut. Ids and scores only, never content. */
+export interface ReceiptInclusion {
+  memory_id: string;
+  relevance_score: number | null;
+  token_estimate: number;
+}
+
+/**
+ * The manifest for one search: what came back, what was cut, and why.
+ *
+ * Carries no memory content by design, which is what makes a receipt id safe
+ * to paste into a support ticket.
+ */
+export interface ContextReceipt {
+  request_id: string;
+  space_id: string;
+  included: ReceiptInclusion[];
+  excluded: ReceiptExclusion[];
+  /**
+   * `{}` when the manifest above is complete. A reason listed here hit the
+   * server's per-reason cap, and the number is how many more were cut than the
+   * list shows, so a truncated manifest never reads as a complete one.
+   */
+  excluded_truncated: Record<string, number>;
+  /**
+   * `{}` unless a prompt-ready block was rendered; otherwise
+   * `{block_tokens, budget}`.
+   */
+  token_accounting: Record<string, unknown>;
+  /**
+   * Whether the call asked the search pipeline to account for its own cuts
+   * (`receiptDetail: "full"`). When false, `excluded` covers only what happened
+   * after the search returned, so its silence about a memory says nothing about
+   * whether the search considered it.
+   */
+  engine_stages: boolean;
+}
+
+/** Where one specific memory left the pipeline, from `explain`. */
+export interface MemoryExplanation {
+  memory_id: string;
+  /**
+   * `not_retrieved` is the one to act on: no stage matched the memory at all,
+   * so a bigger `limit` or a lower relevance floor will not bring it back. The
+   * wording or the scope is what to check.
+   */
+  outcome: "included" | "excluded" | "not_retrieved";
+  /** `retrieval` | `fusion` | `rerank`. Null unless `outcome` is `excluded`. */
+  stage: string | null;
+  detail: string | null;
+  /**
+   * The rank this memory reached in each kind of matching, or null for one
+   * that never found it. Found by `keyword` but not `semantic` usually means
+   * the query shares words with the memory but not meaning.
+   */
+  arms: Record<string, number | null>;
+  scores: Record<string, number | null>;
+}
+
+/** `retrieve` results plus the id of the receipt for that search. */
+export interface RetrieveWithReceipt {
+  memories: SearchResult[];
+  receipt_id: string | null;
+}

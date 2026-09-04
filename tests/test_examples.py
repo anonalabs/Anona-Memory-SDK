@@ -237,7 +237,11 @@ def test_every_example_is_listed_in_the_readme():
     missing = [name for name, _ in EXAMPLES if name not in readme]
     assert not missing, f"examples/README.md does not mention: {missing}"
 
+    # Every script on disk, not just the executable ones. `EXAMPLES` above is
+    # deliberately only the framework examples -- the ones that can be driven
+    # without a live server -- so comparing the directory against it fails the
+    # moment an SDK-only example is added, which is what it had been doing.
+    # The property actually worth holding is that nothing on disk is unlinked.
     on_disk = sorted(p.name for p in _EXAMPLES.glob("*.py"))
-    assert on_disk == sorted(name for name, _ in EXAMPLES), (
-        "examples/ and this test's EXAMPLES list have drifted"
-    )
+    unlinked = [name for name in on_disk if name not in readme]
+    assert not unlinked, f"examples/ scripts nobody links to: {unlinked}"
