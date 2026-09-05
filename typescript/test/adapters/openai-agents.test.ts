@@ -65,6 +65,54 @@ describe("anonaTools", () => {
     expect(output).toMatch(/stored/i);
   });
 
+  it("confines recall to the configured scope", async () => {
+    const anona = client();
+    const recall = anonaTools({
+      client: anona,
+      spaceId: "s",
+      userId: "alice",
+      agentId: "triage",
+      sessionId: "sess-1",
+    }).find((t) => t.name === "recall")!;
+
+    await recall.execute({ query: "who is Alice" });
+
+    expect(anona.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "alice", agentId: "triage", sessionId: "sess-1" }),
+    );
+  });
+
+  it("records under the configured scope", async () => {
+    const anona = client();
+    const remember = anonaTools({
+      client: anona,
+      spaceId: "s",
+      userId: "alice",
+      sessionId: "sess-1",
+    }).find((t) => t.name === "remember")!;
+
+    await remember.execute({ content: "Alice moved to Berlin" });
+
+    // A shared space that stamps no scope mixes every end user's memories into
+    // one pool — the isolation the scope keys exist to provide.
+    expect(anona.record).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "alice", sessionId: "sess-1" }),
+    );
+  });
+
+  it("passes no scope keys when none are configured", async () => {
+    const anona = client();
+    const recall = anonaTools({ client: anona, spaceId: "s" }).find((t) => t.name === "recall")!;
+
+    await recall.execute({ query: "q" });
+
+    // Unscoped stays unscoped: the spread of an empty scope leaves the keys
+    // `undefined`, which the client drops before the wire.
+    expect(anona.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: undefined, agentId: undefined, sessionId: undefined }),
+    );
+  });
+
   it("returns the error text instead of throwing into the agent loop", async () => {
     const anona = new Anona({ apiKey: "k" });
     vi.spyOn(anona, "retrieve").mockRejectedValue(new Error("memory down"));

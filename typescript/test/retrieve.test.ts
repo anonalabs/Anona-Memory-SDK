@@ -166,15 +166,14 @@ describe("reason", () => {
     expect(result.insights).toBe("Alice prefers email.");
   });
 
-  it("is never auto-replayed", async () => {
-    // A synthesis pass is a multi-iteration agent loop that routinely runs the
-    // better part of two minutes. Replaying it on a 5xx puts two or three
-    // overlapping runs on a space already under load, which is why it opts out
-    // of retries — and what makes its own ~90s attempt budget safe to grant.
-    const fetchImpl = vi.fn(async () => new Response("", { status: 500 }));
-    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never, maxRetries: 2 });
+  it("is not auto-retried on a 5xx", async () => {
+    const fetchImpl = vi.fn(async () => new Response("boom", { status: 503 }));
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
 
-    await expect(anona.reason({ spaceId: "s", query: "q" })).rejects.toThrow();
+    await expect(anona.reason({ spaceId: "s", query: "q" })).rejects.toBeDefined();
+
+    // A synthesis pass is a ~80s agent loop; replaying it would stack two or three
+    // overlapping runs at a space already under load. One attempt, no retry.
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

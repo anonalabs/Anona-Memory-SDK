@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { HttpClient, seg } from "../src/http.js";
+import { HttpClient, seg, backoffMs, serverRetryHint } from "../src/http.js";
 import { AnonaError } from "../src/errors.js";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -204,5 +204,98 @@ describe("HttpClient.request", () => {
 
     expect(result).toEqual({ memory_id: "m" });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops retrying when the caller aborts during a backoff sleep", async () => {
+    const controller = new AbortController();
+    const fetchImpl = vi.fn(async () => new Response("boom", { status: 503 }));
+
+    const promise = makeClient(fetchImpl as never, { maxRetries: 3 })
+      .request({ method: "GET", path: "/v1/spaces/", signal: controller.signal })
+      .catch((e: unknown) => e);
+
+    // Attempt 1 returns 503 immediately; the client is now in its backoff
+    // sleep (>=250ms). Cancel well inside that window.
+    await new Promise((r) => setTimeout(r, 20));
+    controller.abort();
+
+    const err = (await promise) as AnonaError;
+    expect(err).toBeInstanceOf(AnonaError);
+    // The abort is observed by the sleep, so no second network attempt fires —
+    // without that, one more full request goes out after the caller cancelled.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("honours a per-request timeout override over the client default", async () => {
+    const fetchImpl = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+          );
+        }),
+    );
+
+    // Client default is 1000ms, but this request caps itself at 10ms — so it
+    // aborts fast rather than waiting out the client budget (reason inverts
+    // this: a long override so a slow `reason` is not cut off at the default).
+    const start = Date.now();
+    const err = (await makeClient(fetchImpl as never, { timeoutMs: 1000, maxRetries: 0 })
+      .request({ method: "GET", path: "/v1/reason", timeoutMs: 10 })
+      .catch((e: unknown) => e)) as AnonaError;
+
+    expect(err.statusCode).toBe(408);
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+});
+
+describe("backoffMs", () => {
+  it("caps an absurd Retry-After at 60s instead of honouring it verbatim", () => {
+    // A server naming a one-hour wait must not park the client for an hour.
+    expect(backoffMs(0, 3600)).toBe(60_000);
+    expect(backoffMs(0, 999999)).toBe(60_000);
+  });
+
+  it("honours a sane Retry-After exactly", () => {
+    expect(backoffMs(5, 12)).toBe(12_000);
+    expect(backoffMs(5, 0)).toBe(0);
+  });
+
+  it("falls back to jittered exponential backoff without a Retry-After", () => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const base = 250 * 2 ** attempt;
+      const ms = backoffMs(attempt);
+      expect(ms).toBeGreaterThanOrEqual(base);
+      expect(ms).toBeLessThan(base * 2);
+    }
+  });
+});
+
+describe("serverRetryHint", () => {
+  it("reads the Retry-After header", () => {
+    expect(serverRetryHint("17", null)).toBe(17);
+    expect(serverRetryHint("0", null)).toBe(0);
+  });
+
+  it("ignores a non-numeric Retry-After", () => {
+    // An HTTP-date is legal but the API never emits one.
+    expect(serverRetryHint("Wed, 21 Oct 2026 07:28:00 GMT", null)).toBeUndefined();
+  });
+
+  it("falls back to the rate-limit body when there is no header", () => {
+    // The deployed API carried window_seconds before it grew the header, so a
+    // header-only client backs off ~1.5s against a 60s window and fails.
+    expect(serverRetryHint(null, { error: { window_seconds: 60 } })).toBe(60);
+    expect(serverRetryHint(null, { error: { retry_after: 12, window_seconds: 60 } })).toBe(12);
+  });
+
+  it("prefers the header over the body", () => {
+    expect(serverRetryHint("5", { error: { window_seconds: 60 } })).toBe(5);
+  });
+
+  it("returns undefined for a body that is not the error envelope", () => {
+    expect(serverRetryHint(null, "error code: 502")).toBeUndefined();
+    expect(serverRetryHint(null, null)).toBeUndefined();
+    expect(serverRetryHint(null, { error: { code: "rate_limited" } })).toBeUndefined();
   });
 });

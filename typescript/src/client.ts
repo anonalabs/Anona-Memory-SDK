@@ -1,4 +1,5 @@
 import { HttpClient, seg } from "./http.js";
+import type { RateLimitSnapshot } from "./http.js";
 import type {
   AskUserResult,
   BatchRecordResult,
@@ -11,6 +12,15 @@ import type {
   Graph,
   InsightsResult,
   JobStatus,
+  JobCancelResult,
+  CatalogModelList,
+  MemoryModel,
+  MemoryModelHistory,
+  MemoryModelJob,
+  MemoryModelList,
+  MemoryModelTrigger,
+  ReasonSettings,
+  SpaceProfile,
   ContextReceipt,
   MemoryExplanation,
   MemoryHistory,
@@ -199,6 +209,12 @@ export interface RetrieveOptions {
    */
   occurredAfter?: string;
   occurredBefore?: string;
+  /**
+   * Return only what this member wrote; pass `"me"` for your own. Attribution
+   * is stamped server-side and exists only in spaces shared across
+   * organizations, so in a space you alone own this matches nothing extra.
+   */
+  memberId?: string;
   signal?: AbortSignal;
 }
 
@@ -255,6 +271,19 @@ export class Anona {
       maxRetries: options.maxRetries ?? 2,
       fetchImpl: options.fetch ?? globalThis.fetch.bind(globalThis),
     });
+  }
+
+  /**
+   * The budget the API reported on the most recent call.
+   *
+   * Every metered response carries the rate-limit and credit headers; this is
+   * where they land, so a caller can pace itself instead of discovering the
+   * ceiling by hitting it. Fields are `undefined` until a metered call has
+   * been made, and an unmetered one (spaces, settings, webhooks) leaves the
+   * last reading in place rather than blanking it.
+   */
+  get rateLimit(): RateLimitSnapshot {
+    return this.http.rateLimit;
   }
 
   /** Every space this key can reach. */
@@ -344,6 +373,26 @@ export class Anona {
   }
 
   /**
+   * Cancel a queued ingestion job.
+   *
+   * A job is split into parts that run independently, and only a part still
+   * queued can be stopped — one a worker has already picked up runs to
+   * completion. The result says which, so `cancelled: 3, running: 1` means
+   * work is still in flight, not that the cancel failed.
+   */
+  async cancelJob(options: {
+    spaceId: string;
+    jobId: string;
+    signal?: AbortSignal;
+  }): Promise<JobCancelResult> {
+    return this.http.request<JobCancelResult>({
+      method: "DELETE",
+      path: `/v1/spaces/${seg(options.spaceId)}/jobs/${seg(options.jobId)}`,
+      signal: options.signal,
+    });
+  }
+
+  /**
    * The relevant memories as one prompt-ready string.
    *
    * Same search as `retrieve`, returned already formatted so it can go straight
@@ -351,15 +400,29 @@ export class Anona {
    * server-side rather than by a loop that does not have one. Returns `""` when
    * nothing matched.
    */
-  async getContext(options: RetrieveOptions & { maxTokens?: number }): Promise<string> {
+  async getContext(
+    options: RetrieveOptions & {
+      maxTokens?: number;
+      /**
+       * `"stable"` orders the block by when each memory was recorded, so the
+       * part of the prompt this SDK wrote stays byte-identical between turns
+       * and a provider's prompt cache can hit on it. The discount matches an
+       * unchanged *prefix*, so it ends at the first byte that differs from
+       * last turn — which is why this mode also bullets instead of numbering
+       * and drops the relevance scores. `"relevance"` (default) puts the best
+       * match first.
+       */
+      blockOrder?: "relevance" | "stable";
+    },
+  ): Promise<string> {
     const response = await this.http.request<{ context?: string }>({
       method: "POST",
       path: "/v1/retrieve",
       signal: options.signal,
-      // Every RetrieveOptions field is forwarded, not just the scope keys: this
-      // method takes the whole interface, so anything accepted by the type and
-      // dropped here would typecheck and then silently not apply. It is the
-      // same search as `retrieve` with `format: "block"` on top.
+      // Same search as `retrieve`, only rendered as a block — so it takes the
+      // same filters. Sending only space_id/query/limit dropped tags, scope,
+      // mode and the point-in-time cutoff, building the block from the whole
+      // unfiltered space while the types promised those knobs applied.
       body: compact({
         space_id: options.spaceId,
         query: options.query,
@@ -367,8 +430,6 @@ export class Anona {
         top_k: options.topK,
         mode: options.mode,
         memory_type: options.memoryType,
-        format: "block",
-        context_max_tokens: options.maxTokens,
         user_id: options.userId,
         agent_id: options.agentId,
         session_id: options.sessionId,
@@ -380,6 +441,10 @@ export class Anona {
         as_of: options.asOf,
         occurred_after: options.occurredAfter,
         occurred_before: options.occurredBefore,
+        member_id: options.memberId,
+        format: "block",
+        context_max_tokens: options.maxTokens,
+        block_order: options.blockOrder,
       }),
     });
     return response.context ?? "";
@@ -409,6 +474,7 @@ export class Anona {
         as_of: options.asOf,
         occurred_after: options.occurredAfter,
         occurred_before: options.occurredBefore,
+        member_id: options.memberId,
       }),
     });
     return response.results ?? [];
@@ -449,6 +515,7 @@ export class Anona {
         as_of: options.asOf,
         occurred_after: options.occurredAfter,
         occurred_before: options.occurredBefore,
+        member_id: options.memberId,
         receipt: true,
         receipt_detail:
           options.receiptDetail === "full" ? "full" : undefined,
@@ -509,11 +576,11 @@ export class Anona {
   /**
    * Ask a question across a space and get a synthesised answer.
    *
-   * A synthesis pass is a multi-iteration agent loop — a single call routinely
-   * runs the better part of two minutes. So this is `idempotent: false` (a slow
-   * run must never be auto-replayed into two or three overlapping ones at a
-   * space already under load) and carries its own ~90s per-attempt timeout to
-   * match the API's own budget, rather than being cut off at the 30s default.
+   * `reason` is a multi-iteration agent loop — a single call routinely runs the
+   * better part of two minutes. So this is `idempotent: false` (a slow `reason`
+   * must never be auto-replayed into two or three overlapping runs at a space
+   * already under load) and carries its own ~90s per-attempt timeout to match
+   * the API's own synthesis budget, rather than being cut off at the 30s default.
    * The two go together: the long attempt is only safe because it is never
    * retried.
    */
@@ -630,6 +697,11 @@ export class Anona {
     return this.http.request<Space>({
       method: "POST",
       path: "/v1/spaces/",
+      // A space's id is its name, so the create itself is idempotent, but a
+      // replay after a landed-but-unacknowledged create can trip a uniqueness
+      // check server-side and surface a 500 for a space that already exists.
+      // Don't auto-retry it.
+      idempotent: false,
       signal: options.signal,
       body: compact({ name: options.name, description: options.description }),
     });
@@ -651,12 +723,32 @@ export class Anona {
    * A synthesized memory and the raw facts behind it are the same knowledge in
    * two layers, so the listing returns only the synthesis by default. Pass
    * `includeSources: true` to page through the underlying evidence as well.
+   *
+   * This is browsing, not searching: `retrieve` ranks by relevance to a query,
+   * this walks the space in order with a `total`. `query` here is a plain
+   * substring filter, not a search.
    */
   async listMemories(options: {
     spaceId: string;
     limit?: number;
     offset?: number;
     includeSources?: boolean;
+    /** Plain substring filter over the memory text. Not a ranked search. */
+    query?: string;
+    /** One memory type: fact / note / experience / summary. */
+    memoryType?: string;
+    /**
+     * `"active"` (default) or `"invalidated"` to list what has been superseded
+     * or retired — the memories `updateMemory({ state: "invalidated" })` put
+     * aside, which are otherwise invisible.
+     */
+    state?: "active" | "invalidated";
+    /** Hierarchical scope, exactly as on `record` and `retrieve`. */
+    userId?: string;
+    agentId?: string;
+    sessionId?: string;
+    /** Only what this member wrote; `"me"` for your own. */
+    memberId?: string;
     signal?: AbortSignal;
   }): Promise<MemoryListPage> {
     return this.http.request<MemoryListPage>({
@@ -666,6 +758,15 @@ export class Anona {
         limit: options.limit,
         offset: options.offset,
         prefer_observations: options.includeSources ? "false" : undefined,
+        q: options.query,
+        // The API's query parameter is `type`; `memoryType` is the name the
+        // rest of this client uses for the same thing.
+        type: options.memoryType,
+        state: options.state,
+        user_id: options.userId,
+        agent_id: options.agentId,
+        session_id: options.sessionId,
+        member_id: options.memberId,
       },
       signal: options.signal,
     });
@@ -733,9 +834,10 @@ export class Anona {
   /**
    * Upload files into a space so retrieval can draw on their content.
    *
-   * Supports PDF, DOCX, PPTX, XLSX, images (OCR), HTML, TXT/MD, CSV and audio
-   * (transcription). Ingestion is asynchronous — poll each returned job id with
-   * `getJob`.
+   * Supports PDF, DOCX, DOC, PPTX, PPT, XLSX, XLS, HTML, TXT/MD, CSV,
+   * JPEG/PNG images, MP3/WAV audio and MP4/MOV/WEBM/MKV video; images, audio
+   * and video are read into text.
+   * Ingestion is asynchronous — poll each returned job id with `getJob`.
    */
   async uploadFiles(options: UploadOptions): Promise<UploadResult> {
     const { files } = options;
@@ -990,6 +1092,11 @@ export class Anona {
     return this.http.request<Webhook>({
       method: "POST",
       path: `/v1/spaces/${seg(options.spaceId)}/webhooks`,
+      // A create that mints a fresh signing secret each time: a 5xx/timeout
+      // after the server registered the webhook would, on replay, register a
+      // second one whose secret the caller never sees — every event then
+      // delivered twice, verifiable against only the second secret.
+      idempotent: false,
       signal: options.signal,
       body: {
         url: options.url,
@@ -1065,6 +1172,243 @@ export class Anona {
       path: `/v1/spaces/${seg(options.spaceId)}/webhooks/${seg(options.webhookId)}/deliveries`,
       query: { limit: options.limit, cursor: options.cursor },
       signal: options.signal,
+    });
+  }
+
+  // ── Reason settings ─────────────────────────────────────────────────────────
+
+  /** The model this space uses for `reason`, or null for the platform default. */
+  async getReasonSettings(spaceId: string, signal?: AbortSignal): Promise<ReasonSettings> {
+    return this.http.request<ReasonSettings>({
+      method: "GET",
+      path: `/v1/spaces/${seg(spaceId)}/reason-settings`,
+      signal,
+    });
+  }
+
+  /**
+   * Pin the model `reason` uses for this space.
+   *
+   * Takes a model id from `listCatalogModels`, or a tier name (`"fast"`,
+   * `"balanced"`). It is stored **resolved**, so re-pointing a tier later never
+   * moves a space that already chose one. `model: null` clears the override.
+   *
+   * A full replace, and owner-only.
+   */
+  async setReasonSettings(options: {
+    spaceId: string;
+    model: string | null;
+    signal?: AbortSignal;
+  }): Promise<ReasonSettings> {
+    return this.http.request<ReasonSettings>({
+      method: "PUT",
+      path: `/v1/spaces/${seg(options.spaceId)}/reason-settings`,
+      signal: options.signal,
+      body: { model: options.model },
+    });
+  }
+
+  /** Clear the space's reason-model override. Owner-only. */
+  async resetReasonSettings(spaceId: string, signal?: AbortSignal): Promise<void> {
+    await this.http.request<void>({
+      method: "DELETE",
+      path: `/v1/spaces/${seg(spaceId)}/reason-settings`,
+      expectNoContent: true,
+      signal,
+    });
+  }
+
+  // ── Memory models and the space profile ─────────────────────────────────────
+
+  /**
+   * The memory models defined on a space, with their current content.
+   *
+   * A memory model is a standing question the space keeps an answer to,
+   * refreshed as memories arrive rather than computed per call. Not to be
+   * confused with `listCatalogModels`, which lists the LLMs.
+   */
+  async listMemoryModels(options: {
+    spaceId: string;
+    limit?: number;
+    offset?: number;
+    tags?: string[];
+    signal?: AbortSignal;
+  }): Promise<MemoryModelList> {
+    return this.http.request<MemoryModelList>({
+      method: "GET",
+      path: `/v1/spaces/${seg(options.spaceId)}/models`,
+      query: { limit: options.limit, offset: options.offset, tags: options.tags },
+      signal: options.signal,
+    });
+  }
+
+  /**
+   * Define a memory model.
+   *
+   * Content is generated asynchronously, so the model comes back before it has
+   * an answer — its `content` is null until the first refresh lands. Billed
+   * flat at creation.
+   */
+  async createMemoryModel(options: {
+    spaceId: string;
+    name: string;
+    query: string;
+    /** Stable id — lowercase alphanumeric and hyphens. Generated if omitted. */
+    modelId?: string;
+    tags?: string[];
+    maxTokens?: number;
+    trigger?: MemoryModelTrigger;
+    signal?: AbortSignal;
+  }): Promise<MemoryModel> {
+    return this.http.request<MemoryModel>({
+      method: "POST",
+      path: `/v1/spaces/${seg(options.spaceId)}/models`,
+      // A create, and one that costs credits at submit time.
+      idempotent: false,
+      signal: options.signal,
+      body: compact({
+        name: options.name,
+        query: options.query,
+        model_id: options.modelId,
+        tags: options.tags,
+        max_tokens: options.maxTokens,
+        trigger: options.trigger,
+      }),
+    });
+  }
+
+  /** One memory model, with its current content. */
+  async getMemoryModel(options: {
+    spaceId: string;
+    modelId: string;
+    signal?: AbortSignal;
+  }): Promise<MemoryModel> {
+    return this.http.request<MemoryModel>({
+      method: "GET",
+      path: `/v1/spaces/${seg(options.spaceId)}/models/${seg(options.modelId)}`,
+      signal: options.signal,
+    });
+  }
+
+  /**
+   * Edit a memory model's definition.
+   *
+   * Deliberately does not re-answer it: a rewrite costs credits and an edit is
+   * often a typo fix. Call `refreshMemoryModel` to regenerate the content.
+   */
+  async updateMemoryModel(options: {
+    spaceId: string;
+    modelId: string;
+    name?: string;
+    query?: string;
+    tags?: string[];
+    maxTokens?: number;
+    trigger?: MemoryModelTrigger;
+    signal?: AbortSignal;
+  }): Promise<MemoryModel> {
+    return this.http.request<MemoryModel>({
+      method: "PATCH",
+      path: `/v1/spaces/${seg(options.spaceId)}/models/${seg(options.modelId)}`,
+      signal: options.signal,
+      body: compact({
+        name: options.name,
+        query: options.query,
+        tags: options.tags,
+        max_tokens: options.maxTokens,
+        trigger: options.trigger,
+      }),
+    });
+  }
+
+  /**
+   * Delete a memory model and its content. This really deletes — to keep the
+   * definition and drop only the answer, use `clearMemoryModel`.
+   */
+  async deleteMemoryModel(options: {
+    spaceId: string;
+    modelId: string;
+    signal?: AbortSignal;
+  }): Promise<void> {
+    await this.http.request<void>({
+      method: "DELETE",
+      path: `/v1/spaces/${seg(options.spaceId)}/models/${seg(options.modelId)}`,
+      expectNoContent: true,
+      signal: options.signal,
+    });
+  }
+
+  /**
+   * Re-answer a memory model from the space's current memories.
+   *
+   * Asynchronous and billed flat — returns a `job_id` to poll with `getJob`.
+   */
+  async refreshMemoryModel(options: {
+    spaceId: string;
+    modelId: string;
+    signal?: AbortSignal;
+  }): Promise<MemoryModelJob> {
+    return this.http.request<MemoryModelJob>({
+      method: "POST",
+      path: `/v1/spaces/${seg(options.spaceId)}/models/${seg(options.modelId)}/refresh`,
+      // Costs credits at submit time; a replay pays twice for one answer.
+      idempotent: false,
+      signal: options.signal,
+    });
+  }
+
+  /** Wipe a memory model's content, keeping its definition. */
+  async clearMemoryModel(options: {
+    spaceId: string;
+    modelId: string;
+    signal?: AbortSignal;
+  }): Promise<MemoryModel> {
+    return this.http.request<MemoryModel>({
+      method: "POST",
+      path: `/v1/spaces/${seg(options.spaceId)}/models/${seg(options.modelId)}/clear`,
+      signal: options.signal,
+    });
+  }
+
+  /** Earlier versions of a memory model's content. */
+  async getMemoryModelHistory(options: {
+    spaceId: string;
+    modelId: string;
+    signal?: AbortSignal;
+  }): Promise<MemoryModelHistory> {
+    return this.http.request<MemoryModelHistory>({
+      method: "GET",
+      path: `/v1/spaces/${seg(options.spaceId)}/models/${seg(options.modelId)}/history`,
+      signal: options.signal,
+    });
+  }
+
+  /** A space's profile — its mission and disposition. */
+  async getSpaceProfile(spaceId: string, signal?: AbortSignal): Promise<SpaceProfile> {
+    return this.http.request<SpaceProfile>({
+      method: "GET",
+      path: `/v1/spaces/${seg(spaceId)}/profile`,
+      signal,
+    });
+  }
+
+  // ── LLM catalog ─────────────────────────────────────────────────────────────
+
+  /**
+   * Every LLM this deployment will answer with, and what each costs.
+   *
+   * Selectable on any plan: credits are derived from real cost, so a credit
+   * balance is already the spend cap and the model choice cannot move it. Pass
+   * an `id` (or a short name) from here to `askAboutUser`, or pin one per space
+   * with `setReasonSettings`.
+   *
+   * Named `catalog` to keep it apart from `listMemoryModels`, which is the
+   * *memory* models on one space.
+   */
+  async listCatalogModels(signal?: AbortSignal): Promise<CatalogModelList> {
+    return this.http.request<CatalogModelList>({
+      method: "GET",
+      path: "/v1/models",
+      signal,
     });
   }
 }

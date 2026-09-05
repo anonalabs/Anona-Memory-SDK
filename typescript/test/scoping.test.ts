@@ -4,10 +4,10 @@ import { Anona } from "../src/client.js";
 // Coverage for four parts of the public surface that had none: hierarchical
 // scoping, point-in-time recall, the context-block helper, and `source_ids`.
 //
-// The absence was the real defect. All four shipped in the API and were
-// documented, while this package went without them for several releases, and
-// nothing failed - because nothing asserted they were sent. These tests pin
-// the wire field names, which is the thing that gets silently missed.
+// The absence was the real defect. The public SDK mirror ships without all
+// four, and nothing here failed when they were missing there, because nothing
+// here asserted they were sent. These tests pin the wire field names, which is
+// the thing a port can silently get wrong.
 
 function stub(body: unknown, status = 200) {
   return vi.fn(
@@ -157,6 +157,47 @@ describe("getContext", () => {
     // Empty, not undefined: the return value goes straight into a prompt, and
     // "undefined" rendered into a system message is worse than nothing.
     await expect(anona.getContext({ spaceId: "s", query: "q" })).resolves.toBe("");
+  });
+
+  it("forwards every filter its type accepts, not just space_id/query", async () => {
+    const fetchImpl = stub({ context: "" });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.getContext({
+      spaceId: "s",
+      query: "q",
+      limit: 5,
+      topK: 7,
+      mode: "fast",
+      memoryType: ["fact"],
+      tags: ["agent:triage"],
+      tagsMatch: "all",
+      preferObservations: false,
+      minScore: 0.4,
+      queryTimestamp: "2026-01-01T00:00:00Z",
+      asOf: "2026-06-01T00:00:00Z",
+      maxTokens: 500,
+    });
+
+    // These compiled against getContext's type but were silently dropped, so
+    // the prompt block was built from the whole unfiltered space — scope,
+    // tags, mode and the point-in-time cutoff all ignored.
+    expect(bodyOf(fetchImpl)).toEqual({
+      space_id: "s",
+      query: "q",
+      limit: 5,
+      top_k: 7,
+      mode: "fast",
+      memory_type: ["fact"],
+      tags: ["agent:triage"],
+      tags_match: "all",
+      prefer_observations: false,
+      min_score: 0.4,
+      query_timestamp: "2026-01-01T00:00:00Z",
+      as_of: "2026-06-01T00:00:00Z",
+      format: "block",
+      context_max_tokens: 500,
+    });
   });
 });
 
