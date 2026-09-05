@@ -25,6 +25,17 @@ describe("createSpace", () => {
     });
     expect(space.space_id).toBe("docs");
   });
+
+  it("is not auto-retried on a 5xx", async () => {
+    const fetchImpl = vi.fn(async () => new Response("boom", { status: 503 }));
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await expect(anona.createSpace({ name: "docs" })).rejects.toBeDefined();
+
+    // A replay after a landed-but-unacknowledged create can trip a uniqueness
+    // check server-side and surface a 500 for a space that exists. One attempt.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("deleteSpace", () => {

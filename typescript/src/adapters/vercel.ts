@@ -26,6 +26,16 @@ interface CallParams {
 export interface AnonaMemoryConfig {
   client: Anona;
   spaceId: string;
+  /**
+   * Hierarchical scope inside the space. A memory recalled or recorded through
+   * this middleware is confined to whichever of these is set, so one space can
+   * serve many end users without user A's turns surfacing in user B's prompt.
+   * In a multi-user app, construct the middleware per request with the current
+   * `userId`.
+   */
+  userId?: string;
+  agentId?: string;
+  sessionId?: string;
   /** How many memories to inject. Default 8. */
   limit?: number;
   /** Recall mode. "fast" trades some relevance for latency. */
@@ -83,6 +93,9 @@ export function anonaMemory(config: AnonaMemoryConfig) {
         query,
         limit: config.limit ?? 8,
         mode: config.mode,
+        userId: config.userId,
+        agentId: config.agentId,
+        sessionId: config.sessionId,
       });
     } catch {
       // Memory is an enhancement, never a hard dependency of the model call.
@@ -111,6 +124,9 @@ export function anonaMemory(config: AnonaMemoryConfig) {
         spaceId: config.spaceId,
         content: `User: ${question}\nAssistant: ${answer}`,
         background: true,
+        userId: config.userId,
+        agentId: config.agentId,
+        sessionId: config.sessionId,
       })
       .catch(() => {
         // Same reasoning as recall: a failed write must not surface as a

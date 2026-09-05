@@ -15,6 +15,13 @@ export class AnonaError extends Error {
   readonly code?: string;
   readonly requestId?: string;
   readonly detail: unknown;
+  /**
+   * On a 429, seconds to wait before retrying — from `Retry-After` if the
+   * server sent one, else the `retry_after` / `window_seconds` the rate-limit
+   * body carries. The client already waits this out on your behalf; it is
+   * exposed for a caller doing its own scheduling above the SDK.
+   */
+  readonly retryAfter?: number;
 
   constructor(args: {
     statusCode: number;
@@ -22,6 +29,7 @@ export class AnonaError extends Error {
     code?: string;
     requestId?: string;
     detail?: unknown;
+    retryAfter?: number;
   }) {
     super(`Anona API error ${args.statusCode}: ${args.message}`);
     this.name = "AnonaError";
@@ -29,5 +37,6 @@ export class AnonaError extends Error {
     this.code = args.code;
     this.requestId = args.requestId;
     this.detail = args.detail;
+    this.retryAfter = args.retryAfter;
   }
 }

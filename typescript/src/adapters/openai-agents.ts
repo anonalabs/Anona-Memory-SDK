@@ -19,12 +19,26 @@ export interface AgentTool {
 export interface AnonaToolsConfig {
   client: Anona;
   spaceId: string;
+  /**
+   * Hierarchical scope inside the space. The `remember` and `recall` tools are
+   * confined to whichever of these is set, so one space can serve many end
+   * users without one user's memories being recalled for another. In a
+   * multi-user app, build the tools per run with the current `userId`.
+   */
+  userId?: string;
+  agentId?: string;
+  sessionId?: string;
   /** How many memories `recall` returns. Default 8. */
   limit?: number;
 }
 
 export function anonaTools(config: AnonaToolsConfig): AgentTool[] {
   const limit = config.limit ?? 8;
+  const scope = {
+    userId: config.userId,
+    agentId: config.agentId,
+    sessionId: config.sessionId,
+  };
 
   return [
     {
@@ -46,6 +60,7 @@ export function anonaTools(config: AnonaToolsConfig): AgentTool[] {
           await config.client.record({
             spaceId: config.spaceId,
             content: String(args.content ?? ""),
+            ...scope,
           });
           return "Stored.";
         } catch (error) {
@@ -75,6 +90,7 @@ export function anonaTools(config: AnonaToolsConfig): AgentTool[] {
             spaceId: config.spaceId,
             query: String(args.query ?? ""),
             limit,
+            ...scope,
           });
           if (memories.length === 0) return "No relevant memories found.";
           return memories

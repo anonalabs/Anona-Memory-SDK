@@ -152,18 +152,45 @@ try {
   await anona.retrieve({ spaceId: "nope", query: "x" });
 } catch (error) {
   if (error instanceof AnonaError) {
-    console.error(error.statusCode, error.code, error.requestId);
+    console.error(error.statusCode, error.code, error.requestId, error.retryAfter);
   }
 }
 ```
 
-429 and 5xx are retried twice by default with jittered backoff. 4xx is never
-retried.
+429 and 5xx are retried twice by default. 4xx is never retried, and neither is a
+5xx on a write (`record`, `recordBatch`, `uploadFiles`, `createSpace`,
+`createWebhook`, `reason`) — a 5xx can arrive after the work landed, so
+replaying it would store the memory twice.
+
+**A 429 waits as long as the server says to.** The rate-limit window is a whole
+minute, so a client backing off on its own schedule tops out in the low seconds,
+spends both retries landing on the same full bucket, and fails anyway. The
+client reads `Retry-After`, falling back to the `window_seconds` the rate-limit
+body carries, and waits that out (capped at 60s). `error.retryAfter` carries the
+same number if you would rather schedule it yourself.
 
 **A 503 with no `requestId` may be a Cloudflare-mangled 502 or 504.** The edge
 strips the body of those two statuses, so the API rewrites them to 503 before
 they leave. Report such a failure with a timestamp rather than treating it as a
 malformed response.
+
+## Staying inside the rate limit
+
+Every metered response reports the budget it left you, so you can pace a bulk
+job instead of discovering the ceiling by hitting it.
+
+```ts
+await anona.retrieve({ spaceId: "support", query: "billing" });
+const { remaining, limit, windowSeconds, creditsRemaining } = anona.rateLimit;
+if (remaining !== undefined && remaining < 5) {
+  await new Promise((r) => setTimeout(r, (windowSeconds ?? 60) * 1000));
+}
+```
+
+Fields are `undefined` until a metered call has been made. The unmetered routes
+— spaces, settings, webhooks — report no budget and leave the last reading in
+place rather than blanking it. `getUsage()` asks the API directly instead, which
+costs a request but does not need one to have happened first.
 
 ## Notes that save debugging time
 
@@ -266,6 +293,13 @@ produces no error; extraction simply keeps different things.
 | `createWebhook` / `listWebhooks` / `updateWebhook` / `deleteWebhook` | Webhook management |
 | `listWebhookDeliveries` | Recent delivery attempts, for debugging a receiver |
 | `getUsage` | Credits and rate limit for this key |
+| `cancelJob` | Stop the parts of a queued job that have not started |
+| `getReasonSettings` / `setReasonSettings` / `resetReasonSettings` | The model `reason` uses for a space |
+| `listMemoryModels` / `createMemoryModel` / `getMemoryModel` / `updateMemoryModel` / `deleteMemoryModel` | Standing questions a space keeps an answer to |
+| `refreshMemoryModel` / `clearMemoryModel` / `getMemoryModelHistory` | Re-answer, wipe, or read earlier versions |
+| `getSpaceProfile` | A space's mission and disposition |
+| `listCatalogModels` | The LLMs this deployment will answer with, and what each costs |
+| `getReceipt` / `explain` | Why a search returned what it did |
 
 ## Documentation
 

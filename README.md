@@ -100,12 +100,12 @@ async with AnonaClient(api_key="...") as client:
 
 ## API
 
-### `AnonaClient(api_key, base_url="https://api.anonalabs.com")`
+### `AnonaClient(api_key: str, base_url: str = "https://api.anonalabs.com", timeout: float = 120.0, max_retries: int = 2, retry_max_wait: float = 60.0)`
 
-- `record(space_id, content, metadata=None, background=False, timestamp=None) -> dict` — store a memory; `background=True` queues it and returns a `job_id`; `timestamp` (ISO 8601) is when the *event* happened, for importing history
+- `record(space_id: str, content: str, metadata: dict | None = None, tags: list[str] | None = None, background: bool = False, user_id: str | None = None, agent_id: str | None = None, session_id: str | None = None, timestamp: str | None = None, context: str | None = None) -> dict` — store a memory; `context` is extra framing stored alongside the content (where it came from, who said it) without becoming the memory's text; `background=True` queues it and returns a `job_id`; `timestamp` (ISO 8601) is when the *event* happened, for importing history; `user_id` / `agent_id` / `session_id` scope it inside the space
 - `record_batch(space_id, items) -> dict` — bulk-ingest up to 100 items (always queued); returns a `job_id`
 - `get_job(space_id, job_id) -> dict` — poll a queued job's status (free); `status` is one of pending / processing / completed / failed / cancelled / not_found
-- `retrieve(space_id, query, limit=10, as_of=None, query_timestamp=None, occurred_after=None, occurred_before=None) -> list[dict]` — see [Time travel](#time-travel) for the temporal arguments
+- `retrieve(space_id: str, query: str, limit: int = 10, mode: str = "accurate", user_id: str | None = None, agent_id: str | None = None, session_id: str | None = None, as_of: str | None = None, query_timestamp: str | None = None, occurred_after: str | None = None, occurred_before: str | None = None, top_k: int | None = None, memory_type: list[str] | None = None, tags: list[str] | None = None, tags_match: str | None = None, prefer_observations: bool | None = None, min_score: float | None = None, member_id: str | None = None) -> list[dict]` — search; `tags` / `tags_match` filter on the scope tags a memory was written with, `memory_type` narrows the kind, `min_score` floors relevance, `top_k` bounds the candidates considered before ranking, `prefer_observations=False` also returns the raw evidence behind a synthesised memory, `member_id="me"` returns only what you wrote in a shared space; see [Time travel](#time-travel) for the temporal arguments
 - `reason(space_id, query) -> str | None`
 - `list_spaces() -> list[dict]`
 - `get_user_profile(space_id, user_id, *, limit=None, offset=None, memory_type=None, format=None, context_max_tokens=None) -> dict` — everything the space has learned about one end user; see [User profiles](#user-profiles)
@@ -121,10 +121,73 @@ async with AnonaClient(api_key="...") as client:
 - `create_webhook(space_id, url, event_types=None, enabled=True) -> dict` — the response carries `secret`, returned only on create
 - `list_webhooks(space_id) -> list[dict]`, `update_webhook(space_id, webhook_id, url=None, event_types=None, enabled=None) -> dict`, `delete_webhook(space_id, webhook_id) -> None`
 - `list_webhook_deliveries(space_id, webhook_id, limit=50, cursor=None) -> dict` — recent attempts, for debugging a receiver
-- `async_record(...)`, `async_record_batch(...)`, `async_get_job(...)`, `async_retrieve(...)`, `async_reason(...)`, `async_get_user_profile(...)`, `async_ask_about_user(...)`, `async_list_spaces(...)`, `async_upload_file(...)`, `async_list_documents(...)`, `async_delete_document(...)`, `async_get_graph(...)`, `async_list_entities(...)`, `async_get_entity(...)`, `async_get_extraction_settings(...)`, `async_set_extraction_settings(...)`, `async_reset_extraction_settings(...)`, `async_get_chat_settings(...)`, `async_set_chat_settings(...)`, `async_reset_chat_settings(...)`, `async_create_webhook(...)`, `async_list_webhooks(...)`, `async_update_webhook(...)`, `async_delete_webhook(...)`, `async_list_webhook_deliveries(...)` — async equivalents
+- `get_space(space_id: str) -> dict` — One space by id
+- `list_memories(space_id: str, *, limit: int = 50, offset: int = 0, q: str | None = None, memory_type: str | None = None, state: str | None = None, prefer_observations: bool | None = None, user_id: str | None = None, agent_id: str | None = None, session_id: str | None = None, member_id: str | None = None) -> dict` — Page through the memories stored in a space
+- `get_memory_history(space_id: str, memory_id: str) -> dict` — Every recorded version of one memory, newest first
+- `update_memory(space_id: str, memory_id: str, *, text: str | None = None, context: str | None = None, occurred_start: str | None = None, occurred_end: str | None = None, memory_type: str | None = None, entities: list[str] | None = None, state: str | None = None, reason: str | None = None) -> dict` — Correct one memory in place
+- `get_usage() -> dict` — Credits and rate limit for the organization this key belongs to
+- `get_document(space_id: str, document_id: str) -> dict` — One document by id, with its source and memory count
+- `cancel_job(space_id: str, job_id: str) -> dict` — Cancel a queued ingestion job
+- `get_reason_settings(space_id: str) -> dict` — The model this space uses for `reason`, or null for the default
+- `set_reason_settings(space_id: str, *, model: str | None = None) -> dict` — Pin the model `reason` uses for this space
+- `reset_reason_settings(space_id: str) -> None` — Clear the space's reason-model override. Owner-only
+- `list_memory_models(space_id: str, *, limit: int = 50, offset: int = 0, tags: list[str] | None = None) -> dict` — The memory models defined on a space, with their current content
+- `create_memory_model(space_id: str, *, name: str, query: str, model_id: str | None = None, tags: list[str] | None = None, max_tokens: int | None = None, trigger: dict | None = None) -> dict` — Define a memory model
+- `get_memory_model(space_id: str, model_id: str) -> dict` — One memory model, with its current content
+- `update_memory_model(space_id: str, model_id: str, *, name: str | None = None, query: str | None = None, tags: list[str] | None = None, max_tokens: int | None = None, trigger: dict | None = None) -> dict` — Edit a memory model's definition
+- `delete_memory_model(space_id: str, model_id: str) -> None` — Delete a memory model and its content
+- `refresh_memory_model(space_id: str, model_id: str) -> dict` — Re-answer a memory model from the space's current memories
+- `clear_memory_model(space_id: str, model_id: str) -> dict` — Wipe a memory model's content, keeping its definition
+- `get_memory_model_history(space_id: str, model_id: str) -> dict` — Earlier versions of a memory model's content
+- `get_space_profile(space_id: str) -> dict` — A space's profile — its mission and disposition
+- `list_catalog_models() -> dict` — Every LLM this deployment will answer with, and what each costs
+- Every method has an `async_` twin (`async_record`, `async_retrieve`, …) taking the same arguments
 - `close()` / `aclose()` — release underlying HTTP clients
 
-Errors raise `AnonaError(status_code, detail)`.
+`Anona` is an alias for `AnonaClient`, matching the TypeScript package's class name.
+
+### Errors
+
+Errors raise `AnonaError(status_code, detail)`. The exception also carries `code`
+(the API's stable machine-readable handle, e.g. `space_not_found`), `request_id`
+(what support needs to find the call in the logs) and, on a 429, `retry_after`
+in seconds. A 503 with no `request_id` may be a Cloudflare-mangled 502 or 504:
+the edge strips the body of those two statuses, so the API rewrites them to 503
+before they leave. Report such a failure with a timestamp rather than treating
+it as a malformed response.
+
+### Retries
+
+A 429 is retried for every method, `record` included: the limiter refuses the
+request before anything runs, so re-sending cannot double-write. A 5xx is
+retried only for idempotent methods (GET, PUT, DELETE), because a 5xx on a write
+may arrive after the work landed, and replaying it would store the memory
+twice. Uploads are never retried. `max_retries=0` turns it off.
+
+**A 429 waits as long as the server says to.** The rate-limit window is a whole
+minute, so a client backing off on its own schedule tops out in the low seconds,
+spends its retries landing on the same full bucket, and fails anyway. The client
+reads `Retry-After`, falling back to the `window_seconds` the rate-limit body
+carries, and waits that out, capped at `retry_max_wait` (60s by default). A 5xx
+with no hint backs off briefly with jitter. `AnonaError.retry_after` carries the
+same number if you would rather schedule it yourself.
+
+### Staying inside the rate limit
+
+Every metered response reports the budget it left you, so a bulk job can pace
+itself instead of discovering the ceiling by hitting it. `client.rate_limit` is
+updated in place on every call (`limit`, `remaining`, `window_seconds`, `credits_remaining`, `retry_after`):
+
+```python
+client.retrieve("support", "billing")
+rl = client.rate_limit
+if rl.remaining is not None and rl.remaining < 5:
+    time.sleep(rl.window_seconds or 60)
+```
+
+Fields are `None` until a metered call has been made. The unmetered routes
+(spaces, settings, webhooks) report no budget and leave the last reading in
+place rather than blanking it.
 
 ## Time travel
 

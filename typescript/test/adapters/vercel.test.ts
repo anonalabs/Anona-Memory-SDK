@@ -29,6 +29,25 @@ describe("anonaMemory.transformParams", () => {
     );
   });
 
+  it("confines recall to the configured scope", async () => {
+    const client = clientWith([]);
+    const middleware = anonaMemory({
+      client,
+      spaceId: "support",
+      userId: "alice",
+      agentId: "triage",
+      sessionId: "sess-1",
+    });
+
+    await middleware.transformParams!({ type: "generate", params: { prompt } } as never);
+
+    // Without this the middleware recalls unscoped — user A's turns surface in
+    // user B's prompt, defeating the whole point of a per-user space.
+    expect(client.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "alice", agentId: "triage", sessionId: "sess-1" }),
+    );
+  });
+
   it("leaves the prompt untouched when nothing is recalled", async () => {
     const client = clientWith([]);
     const middleware = anonaMemory({ client, spaceId: "support" });
@@ -72,6 +91,29 @@ describe("anonaMemory.wrapGenerate", () => {
         spaceId: "support",
         content: expect.stringContaining("Alice prefers email."),
       }),
+    );
+  });
+
+  it("records the turn under the configured scope", async () => {
+    const recordSpy = vi.fn().mockResolvedValue({});
+    const client = clientWith([], recordSpy);
+    const middleware = anonaMemory({
+      client,
+      spaceId: "support",
+      userId: "alice",
+      sessionId: "sess-1",
+      await: true,
+    });
+
+    await middleware.wrapGenerate!({
+      doGenerate: async () => ({ content: [{ type: "text", text: "noted." }] }),
+      params: { prompt },
+    } as never);
+
+    // The write must land in the same scope it will later be recalled from,
+    // or a scoped recall would never see it.
+    expect(recordSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "alice", sessionId: "sess-1" }),
     );
   });
 
