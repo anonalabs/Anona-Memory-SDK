@@ -61,13 +61,32 @@ export interface SearchResult {
    */
   relevance_score: number | null;
   memory_type: string | null;
+  /** Extra framing stored alongside the content when the memory was written. */
+  context: string | null;
   /** Entities this memory is about — the graph layer. */
   entities: string[];
   /** When the underlying event happened, as distinct from when it was recorded. */
   occurred_start: string | null;
   occurred_end: string | null;
   metadata: Record<string, unknown> | null;
+  /** The uploaded document this memory was extracted from, if any. */
+  document_id: string | null;
   created_at: string | null;
+  /**
+   * The event time the memory was recorded with, as distinct from
+   * `created_at` (when the API stored it) and from `occurred_start`/`_end`
+   * (the window the memory's own text described).
+   */
+  timestamp: string | null;
+  /** The scope this memory was written under, mapped back from its tags. */
+  user_id: string | null;
+  agent_id: string | null;
+  session_id: string | null;
+  /**
+   * Stamped by the API, and only in a space shared across organizations — in a
+   * space you alone own every memory is yours, so it stays null.
+   */
+  member_id: string | null;
 }
 
 export interface InsightsResult {
@@ -91,6 +110,12 @@ export interface MemoryItem {
   date: string | null;
   type: string | null;
   entities: string | null;
+  /**
+   * Curation state. `invalidated` is a memory that has been superseded or
+   * retired rather than deleted — `listMemories({ state: "invalidated" })`
+   * is how you see them.
+   */
+  state?: "active" | "invalidated" | null;
   metadata: Record<string, unknown> | null;
   /** Memories this one was synthesized from. Empty on a raw fact. */
   source_ids?: string[];
@@ -388,4 +413,133 @@ export interface MemoryExplanation {
 export interface RetrieveWithReceipt {
   memories: SearchResult[];
   receipt_id: string | null;
+}
+
+/**
+ * The model `reason` uses for one space.
+ *
+ * Always a resolved model id, even when a tier alias was sent: the stored
+ * choice must not move under the space when an alias is re-pointed.
+ */
+export interface ReasonSettings {
+  space_id: string;
+  model: string | null;
+}
+
+/** When and how a memory model re-answers itself. */
+export interface MemoryModelTrigger {
+  /**
+   * `"full"` regenerates the content from scratch. `"delta"` edits in place —
+   * untouched sections are preserved verbatim, stale parts dropped, new
+   * material added. A model with no content yet, or whose query changed, falls
+   * back to `"full"`.
+   */
+  mode?: "full" | "delta";
+  refresh_on_new_memories?: boolean;
+  memory_type?: string[] | null;
+}
+
+/**
+ * A standing question a space keeps an answer to, refreshed as memories arrive
+ * rather than computed per call.
+ */
+export interface MemoryModel {
+  id: string;
+  space_id: string;
+  name: string;
+  query: string | null;
+  /**
+   * The current answer, as markdown. **Null until the first refresh lands** —
+   * a model created a moment ago has no content yet, which is not an error.
+   */
+  content: string | null;
+  tags: string[];
+  max_tokens: number | null;
+  trigger: MemoryModelTrigger | null;
+  last_refreshed_at: string | null;
+  created_at: string | null;
+  /** Whether memories have arrived since the content was last written. */
+  is_stale: boolean | null;
+}
+
+export interface MemoryModelList {
+  items: MemoryModel[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** What the two background memory-model operations hand back. */
+export interface MemoryModelJob {
+  model_id: string | null;
+  /** Poll with `getJob`. */
+  job_id: string | null;
+  status: string;
+}
+
+export interface MemoryModelHistoryEntry {
+  previous_content: string | null;
+  changed_at: string | null;
+}
+
+export interface MemoryModelHistory {
+  entries: MemoryModelHistoryEntry[];
+  total: number;
+}
+
+/** How a space is disposed to read its own memories. 1–5 on each axis. */
+export interface Disposition {
+  skepticism: number | null;
+  literalism: number | null;
+  empathy: number | null;
+}
+
+export interface SpaceProfile {
+  space_id: string;
+  name: string | null;
+  /** What this space is for, in its own words. Empty string when unset. */
+  mission: string;
+  disposition: Disposition;
+}
+
+/** One LLM this deployment will answer with, and what it costs. */
+export interface CatalogModel {
+  id: string;
+  object: "model";
+  created: number;
+  owned_by: string;
+  /** Always names this exact model and never moves. */
+  short_name: string | null;
+  display_name: string | null;
+  /** Names a tier (`"fast"`, `"balanced"`) and may be re-pointed. */
+  alias: string | null;
+  credits_per_1k_input: number;
+  credits_per_1k_output: number;
+  requests_per_minute: number | null;
+  /**
+   * A shopping aid, not a billing figure — the credit rates above are what
+   * bill. Blended 10:1 input:output, so it is comparable across models.
+   */
+  relative_cost: number;
+}
+
+export interface CatalogModelList {
+  object: "list";
+  /** Cheapest first, by `relative_cost`. */
+  data: CatalogModel[];
+}
+
+/**
+ * What a cancel actually stopped.
+ *
+ * A job is split into parts that run independently, and only a part still
+ * queued can be stopped — one a worker has already picked up runs to
+ * completion. So a cancel is not all-or-nothing, and reading it as if it were
+ * is how an operator concludes a runaway import has stopped when it has not.
+ */
+export interface JobCancelResult {
+  job_id: string;
+  status: string;
+  cancelled: number;
+  running: number;
 }
