@@ -16,6 +16,20 @@ npm i @anona-labs/memory
 Looking for Python? `pip install anona` — see
 [docs.anonalabs.com/sdk/python](https://docs.anonalabs.com/sdk/python).
 
+## Agent Skills
+
+Two installable [Agent Skills](https://docs.anonalabs.com/integrations/skills)
+that teach a coding agent to use Anona without being told to — recall before a
+task, record after it — in Claude Code, Codex, Hermes, OpenCode or Cursor.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/anonalabs/Anona-Memory-SDK/main/skills/install.sh | bash
+```
+
+Or `npx skills add anonalabs/Anona-Memory-SDK`, or the Claude Code plugin
+marketplace (`/plugin marketplace add anonalabs/Anona-Memory-SDK`). Source and
+options: [`skills/`](skills/).
+
 ## Quickstart
 
 ```ts
