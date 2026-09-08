@@ -1,6 +1,6 @@
 ---
 name: anona-memory
-description: Persistent memory across sessions, backed by Anona Memory. Use at the start of a task to recall what is already known about this project, this user, or this system, and at the end to record decisions, preferences, fixes, constraints and outcomes worth keeping. Also use whenever the user says remember, recall, forget, what do you know about, we decided, or refers to something from an earlier session.
+description: Persistent memory across sessions. Recall what is known before a task, record decisions, preferences, fixes and constraints after. Use when the user says remember, recall, or what do you know about.
 license: MIT
 ---
 

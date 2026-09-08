@@ -35,6 +35,8 @@ SPACE_ID="${ANONA_SPACE_ID:-}"
 WITH_MCP=1
 FORCE=0
 UNINSTALL=0
+ZIP_MODE=0
+ZIP_DIR=""
 
 say()  { printf '%s\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
@@ -61,6 +63,9 @@ Options:
   --ref <git-ref>      Branch or tag to install from. Default: main.
   --force              Overwrite an existing install without backing it up.
   --uninstall          Remove the skills instead of installing them.
+  --zip [dir]          Build one .zip per skill instead of installing, for
+                       upload to Claude Desktop or claude.ai under
+                       Customize > Skills. Default dir: the current one.
   -h, --help           This text.
 
 Other harnesses are covered by the community CLI:
@@ -80,6 +85,8 @@ while [ $# -gt 0 ]; do
     --ref)       REF="${2:-}"; shift 2 ;;
     --force)     FORCE=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
+    --zip)       ZIP_MODE=1
+                 case "${2:-}" in ""|-*) shift ;; *) ZIP_DIR="$2"; shift 2 ;; esac ;;
     -h|--help)   usage; exit 0 ;;
     *)           die "unknown option: $1 (try --help)" ;;
   esac
@@ -101,11 +108,21 @@ command -v tar  >/dev/null 2>&1 || die "tar is required"
 
 targets=""
 
+if [ "$ZIP_MODE" = "1" ]; then
+  # A zip is not installed anywhere, so nothing below about agents applies.
+  ZIP_DIR="${ZIP_DIR:-$(pwd)}"
+  case "$ZIP_DIR" in
+    *[[:space:]]*) die "--zip directory cannot contain whitespace" ;;
+  esac
+fi
+
 add_target() {
   case " $targets " in *" $1 "*) ;; *) targets="${targets} $1" ;; esac
 }
 
-if [ -n "$TARGET_DIR" ]; then
+if [ "$ZIP_MODE" = "1" ]; then
+  :
+elif [ -n "$TARGET_DIR" ]; then
   add_target "$TARGET_DIR"
 elif [ "$SCOPE" = "project" ]; then
   add_target "$(pwd)/.claude/skills"
@@ -122,7 +139,7 @@ else
   done
 fi
 
-if [ -z "${targets// /}" ]; then
+if [ -z "${targets// /}" ] && [ "$ZIP_MODE" != "1" ]; then
   say "No supported agent found on this machine."
   say "Name one explicitly, for example:  install.sh --app claude"
   say "Or install anywhere with:          install.sh --dir /path/to/skills"
@@ -171,6 +188,39 @@ fi
 for s in $SKILLS; do
   [ -f "${src}/${s}/SKILL.md" ] || die "${s} is missing from ${REPO}@${REF}"
 done
+
+# ── zip ──────────────────────────────────────────────────────────────────────
+
+if [ "$ZIP_MODE" = "1" ]; then
+  mkdir -p "$ZIP_DIR"
+  for s in $SKILLS; do
+    out="${ZIP_DIR}/${s}.zip"
+    rm -f "$out"
+    # The archive root must be the skill folder itself, not a parent, or the
+    # upload rejects it.
+    if command -v zip >/dev/null 2>&1; then
+      ( cd "$src" && zip -qr "$out" "$s" )
+    elif command -v python3 >/dev/null 2>&1; then
+      python3 - "$src" "$out" "$s" <<'PYZIP'
+import pathlib, sys, zipfile
+src, out, name = sys.argv[1:4]
+root = pathlib.Path(src) / name
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    for f in sorted(root.rglob("*")):
+        if f.is_file():
+            z.write(f, pathlib.Path(name) / f.relative_to(root))
+PYZIP
+    else
+      die "either zip or python3 is required to build a zip"
+    fi
+    info "wrote ${out}"
+  done
+  say ""
+  say "Upload these under Customize > Skills in Claude Desktop or claude.ai."
+  say "For the tools they call, add the Anona connector in Settings > Connectors:"
+  say "  ${MCP_URL}"
+  exit 0
+fi
 
 # ── install ──────────────────────────────────────────────────────────────────
 
