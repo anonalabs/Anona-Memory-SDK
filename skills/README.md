@@ -24,6 +24,7 @@ and writes nothing outside the directories it prints.
 install.sh --app claude --api-key anona_live_... --space my-project
 install.sh --skill anona-memory --project     # into ./.claude/skills
 install.sh --dir /somewhere/else/skills
+install.sh --zip                              # build uploadable .zip files
 install.sh --uninstall
 install.sh --help
 ```
@@ -47,6 +48,32 @@ By hand:
 git clone https://github.com/anonalabs/Anona-Memory-SDK
 cp -R Anona-Memory-SDK/skills/anona-memory ~/.claude/skills/
 ```
+
+## Claude Desktop and claude.ai
+
+Those two do not read a skills directory. They take a **ZIP upload** under
+Customize > Skills, so build one:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/anonalabs/Anona-Memory-SDK/main/skills/install.sh | bash -s -- --zip
+```
+
+That writes `anona-memory.zip` and `anona-memory-sdk.zip` into the current
+directory, with the skill folder as the archive root, which is what the upload
+expects. Both `name` and `description` are inside the caps the upload enforces
+(64 and 200 characters).
+
+There is no shell in that surface, so the skill's `curl` fallback cannot run
+there. Give it tools by adding Anona as a **custom connector** under
+Settings > Connectors:
+
+```
+https://memory.anonalabs.com/mcp
+```
+
+Sign in with OAuth when prompted. The Claude Code that runs *inside* Claude
+Desktop is a different surface and reads `~/.claude/skills/` normally, so the
+installer above already covers it.
 
 ## What the skill calls
 

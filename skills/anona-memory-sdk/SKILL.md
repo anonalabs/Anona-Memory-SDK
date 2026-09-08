@@ -1,6 +1,6 @@
 ---
 name: anona-memory-sdk
-description: Build on Anona Memory. Use when writing or reviewing code that calls the Anona API or SDK, adds memory to an agent, or wires Anona into LangChain, CrewAI, LlamaIndex, Google ADK, Microsoft Agent Framework, Strands, the Vercel AI SDK or OpenAI Agents. Also use for space setup, per-user scoping, background ingestion, file upload, context receipts, the drop-in LLM proxy, and Anona error codes.
+description: Building on Anona Memory: the SDK and REST surface, spaces, per-user scoping, error codes and framework adapters. Use when writing or reviewing code that calls Anona or adds memory to an agent.
 license: MIT
 ---
 
