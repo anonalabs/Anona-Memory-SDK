@@ -1,0 +1,25 @@
+{
+  "name": "anona",
+  "owner": {
+    "name": "Anona Labs",
+    "url": "https://anonalabs.com",
+    "email": "support@anonalabs.com"
+  },
+  "metadata": {
+    "description": "Agent skills for Anona Memory, the managed memory layer for AI agents.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "anona-memory",
+      "source": "./",
+      "description": "Persistent memory across sessions, plus the Anona SDK and API surface for building on it.",
+      "version": "0.1.0",
+      "author": { "name": "Anona Labs", "email": "support@anonalabs.com" },
+      "homepage": "https://docs.anonalabs.com/integrations/skills",
+      "repository": "https://github.com/anonalabs/Anona-Memory-SDK",
+      "license": "MIT",
+      "keywords": ["memory", "anona", "mcp", "agents", "recall"]
+    }
+  ]
+}

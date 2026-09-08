@@ -1,0 +1,10 @@
+{
+  "name": "anona-memory",
+  "version": "0.1.0",
+  "description": "Persistent memory across sessions, plus the Anona SDK and API surface for building on it.",
+  "author": { "name": "Anona Labs", "email": "support@anonalabs.com" },
+  "homepage": "https://docs.anonalabs.com/integrations/skills",
+  "repository": "https://github.com/anonalabs/Anona-Memory-SDK",
+  "license": "MIT",
+  "keywords": ["memory", "anona", "mcp", "agents", "recall"]
+}
