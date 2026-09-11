@@ -313,7 +313,7 @@ produces no error; extraction simply keeps different things.
 | `refreshMemoryModel` / `clearMemoryModel` / `getMemoryModelHistory` | Re-answer, wipe, or read earlier versions |
 | `getSpaceProfile` | A space's mission and disposition |
 | `listCatalogModels` | The LLMs this deployment will answer with, and what each costs |
-| `getReceipt` / `explain` | Why a search returned what it did |
+| `retrieveReceipt` / `getReceipt` / `explain` | A search plus the receipt id for it, and why it returned what it did |
 
 ## Documentation
 
