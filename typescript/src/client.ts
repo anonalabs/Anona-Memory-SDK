@@ -9,6 +9,7 @@ import type {
   EntityDetail,
   EntityListPage,
   ExtractionSettings,
+  LabelGroup,
   Graph,
   InsightsResult,
   JobStatus,
@@ -139,6 +140,26 @@ export interface RecordBatchOptions {
 /** How multiple `tags` combine when filtering. */
 export type TagsMatch = "any" | "all" | "any_strict" | "all_strict" | "exact";
 
+/**
+ * One node of a compound tag filter. Groups in a {@link RetrieveOptions.tagGroups}
+ * list are AND-ed; each is a leaf or one of `and` / `or` / `not`, nested freely.
+ *
+ * Modelled as a union rather than passed through as `unknown`, because a
+ * malformed filter is otherwise a 422 at runtime when it could be a compile
+ * error here. The *rules* still live server-side — the reserved-prefix check at
+ * every nesting level, how scope composes, the size and depth caps — so this
+ * describes the shape and deliberately not the constraints.
+ *
+ * Note `match` on a leaf defaults to `any_strict` server-side, and `any` / `all`
+ * are rejected inside a `not`: they treat an untagged memory as matching, so
+ * negating one would exclude every untagged memory in the space.
+ */
+export type TagGroup =
+  | { tags: string[]; match?: TagsMatch }
+  | { and: TagGroup[] }
+  | { or: TagGroup[] }
+  | { not: TagGroup };
+
 /** `RetrieveOptions`, plus how deep the receipt for that search should go. */
 export interface RetrieveReceiptOptions extends RetrieveOptions {
   /**
@@ -175,6 +196,22 @@ export interface RetrieveOptions {
   sessionId?: string;
   tags?: string[];
   tagsMatch?: TagsMatch;
+  /**
+   * Boolean tag filter, for what `tags` plus a single `tagsMatch` cannot say:
+   * an OR of groups, or a negation.
+   *
+   * ```ts
+   * tagGroups: [
+   *   { or: [{ tags: ["project:alpha"] }, { tags: ["project:beta"] }] },
+   *   { not: { tags: ["status:archived"] } },
+   * ]
+   * ```
+   *
+   * Composes with everything else rather than replacing it: `tags`, `userId`,
+   * `agentId` and `sessionId` are all AND-ed onto the expression server-side,
+   * so a scoped query stays scoped when a filter is added.
+   */
+  tagGroups?: TagGroup[];
   /**
    * Default true: collapse a consolidated memory and the raw facts it was
    * derived from into just the consolidation. Both layers exist by design, so
@@ -435,6 +472,7 @@ export class Anona {
         session_id: options.sessionId,
         tags: options.tags,
         tags_match: options.tagsMatch,
+        tag_groups: options.tagGroups,
         prefer_observations: options.preferObservations,
         min_score: options.minScore,
         query_timestamp: options.queryTimestamp,
@@ -468,6 +506,7 @@ export class Anona {
         session_id: options.sessionId,
         tags: options.tags,
         tags_match: options.tagsMatch,
+        tag_groups: options.tagGroups,
         prefer_observations: options.preferObservations,
         min_score: options.minScore,
         query_timestamp: options.queryTimestamp,
@@ -509,6 +548,7 @@ export class Anona {
         session_id: options.sessionId,
         tags: options.tags,
         tags_match: options.tagsMatch,
+        tag_groups: options.tagGroups,
         prefer_observations: options.preferObservations,
         min_score: options.minScore,
         query_timestamp: options.queryTimestamp,
@@ -587,6 +627,22 @@ export class Anona {
   async reason(options: {
     spaceId: string;
     query: string;
+    /**
+     * Narrow the synthesis to one scope, exactly as on `retrieve`. Omit to
+     * reason over the whole space.
+     */
+    userId?: string;
+    agentId?: string;
+    sessionId?: string;
+    /** Which LLM answers: a tier name such as `"fast"`, or a model id. */
+    model?: string;
+    /**
+     * The same boolean expression `retrieve` takes, narrowing what the
+     * reasoning agent is allowed to look at rather than filtering an answer
+     * after the fact. Worth more here than there: the predicate rides every
+     * iteration of the agent loop, not one query.
+     */
+    tagGroups?: TagGroup[];
     signal?: AbortSignal;
   }): Promise<InsightsResult> {
     return this.http.request<InsightsResult>({
@@ -595,7 +651,15 @@ export class Anona {
       idempotent: false,
       timeoutMs: 90_000,
       signal: options.signal,
-      body: { space_id: options.spaceId, query: options.query },
+      body: {
+        space_id: options.spaceId,
+        query: options.query,
+        ...(options.userId !== undefined && { user_id: options.userId }),
+        ...(options.agentId !== undefined && { agent_id: options.agentId }),
+        ...(options.sessionId !== undefined && { session_id: options.sessionId }),
+        ...(options.model !== undefined && { model: options.model }),
+        ...(options.tagGroups !== undefined && { tag_groups: options.tagGroups }),
+      },
     });
   }
 
@@ -994,6 +1058,26 @@ export class Anona {
    * the terms your team uses and the fields that always matter. `customPrompt`
    * replaces those rules instead, and only applies while `mode` is `"custom"`.
    *
+   * `labels` defines dimensions the extractor classifies every memory along. A
+   * group with `tag` set is written onto the memory as the tag
+   * `"<key>:<value>"` too, so `retrieve` can filter on it via `tagGroups`:
+   *
+   * ```ts
+   * await client.setExtractionSettings({
+   *   spaceId: "default",
+   *   labels: [{
+   *     key: "name",
+   *     type: "multi-text",
+   *     tag: true,
+   *     description:
+   *       "Every name this thing is known by, including abbreviations.",
+   *   }],
+   * });
+   * ```
+   *
+   * `freeFormEntities: false` keeps only entities belonging to a label group,
+   * and needs `labels` set — without it the extractor would keep none at all.
+   *
    * Note this replaces the record rather than patching it, so anything you
    * leave out is cleared. Settings apply to writes made after the call and
    * never re-extract stored memories.
@@ -1003,6 +1087,8 @@ export class Anona {
     mode?: ExtractionSettings["mode"];
     guidance?: string | null;
     customPrompt?: string | null;
+    labels?: LabelGroup[] | null;
+    freeFormEntities?: boolean | null;
     signal?: AbortSignal;
   }): Promise<ExtractionSettings> {
     return this.http.request<ExtractionSettings>({
@@ -1015,6 +1101,8 @@ export class Anona {
         mode: options.mode ?? null,
         guidance: options.guidance ?? null,
         custom_prompt: options.customPrompt ?? null,
+        labels: options.labels ?? null,
+        free_form_entities: options.freeFormEntities ?? null,
       },
     });
   }

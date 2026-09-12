@@ -347,6 +347,7 @@ def _search_extras(
     memory_type: list[str] | None = None,
     tags: list[str] | None = None,
     tags_match: str | None = None,
+    tag_groups: list[dict] | None = None,
     prefer_observations: bool | None = None,
     min_score: float | None = None,
     member_id: str | None = None,
@@ -365,6 +366,13 @@ def _search_extras(
     copies counting the async twins. That is how the set of arguments each one
     accepted came to differ, so they share one builder now: an argument added
     here reaches all six at once.
+
+    ``tag_groups`` is passed through unmodelled: the API owns every rule in
+    it — the reserved-prefix check at each nesting level, how scope composes
+    with it, the size and depth caps — and a second copy of those rules here
+    could only drift from the first. Each group is a leaf
+    ``{"tags": [...], "match": ...}`` or one of ``{"and": [...]}``,
+    ``{"or": [...]}``, ``{"not": {...}}``; groups in the list are AND-ed.
     """
     return _compact(
         (
@@ -372,6 +380,7 @@ def _search_extras(
             ("memory_type", memory_type),
             ("tags", tags),
             ("tags_match", tags_match),
+            ("tag_groups", tag_groups),
             ("prefer_observations", prefer_observations),
             ("min_score", min_score),
             ("member_id", member_id),
@@ -755,6 +764,7 @@ class AnonaClient:
         memory_type: list[str] | None = None,
         tags: list[str] | None = None,
         tags_match: str | None = None,
+        tag_groups: list[dict] | None = None,
         prefer_observations: bool | None = None,
         min_score: float | None = None,
         member_id: str | None = None,
@@ -818,6 +828,7 @@ class AnonaClient:
             memory_type=memory_type,
             tags=tags,
             tags_match=tags_match,
+            tag_groups=tag_groups,
             prefer_observations=prefer_observations,
             min_score=min_score,
             member_id=member_id,
@@ -854,6 +865,7 @@ class AnonaClient:
         memory_type: list[str] | None = None,
         tags: list[str] | None = None,
         tags_match: str | None = None,
+        tag_groups: list[dict] | None = None,
         prefer_observations: bool | None = None,
         min_score: float | None = None,
         member_id: str | None = None,
@@ -891,6 +903,7 @@ class AnonaClient:
                 memory_type=memory_type,
                 tags=tags,
                 tags_match=tags_match,
+                tag_groups=tag_groups,
                 prefer_observations=prefer_observations,
                 min_score=min_score,
                 member_id=member_id,
@@ -979,6 +992,7 @@ class AnonaClient:
         memory_type: list[str] | None = None,
         tags: list[str] | None = None,
         tags_match: str | None = None,
+        tag_groups: list[dict] | None = None,
         prefer_observations: bool | None = None,
         min_score: float | None = None,
         member_id: str | None = None,
@@ -1017,6 +1031,7 @@ class AnonaClient:
                 memory_type=memory_type,
                 tags=tags,
                 tags_match=tags_match,
+                tag_groups=tag_groups,
                 prefer_observations=prefer_observations,
                 min_score=min_score,
                 member_id=member_id,
@@ -1041,6 +1056,7 @@ class AnonaClient:
         agent_id: str | None = None,
         session_id: str | None = None,
         model: str | None = None,
+        tag_groups: list[dict] | None = None,
     ) -> str | None:
         """Synthesize an answer from everything a space knows about a topic.
 
@@ -1049,6 +1065,11 @@ class AnonaClient:
         the whole space. ``model`` picks the LLM that answers (a tier name such
         as ``"fast"`` / ``"balanced"``, or a model id); omit it to use the
         space's configured default.
+
+        ``tag_groups`` takes the same boolean expression :meth:`retrieve` takes,
+        and narrows what the reasoning agent is allowed to look at rather than
+        filtering an answer after the fact. It is worth more here than there:
+        the predicate rides every iteration of the agent loop, not one query.
         """
         body: dict = {"space_id": space_id, "query": query}
         for key, value in (
@@ -1056,6 +1077,7 @@ class AnonaClient:
             ("agent_id", agent_id),
             ("session_id", session_id),
             ("model", model),
+            ("tag_groups", tag_groups),
         ):
             if value:
                 body[key] = value
@@ -1327,9 +1349,10 @@ class AnonaClient:
     def get_extraction_settings(self, space_id: str) -> dict:
         """How this space turns recorded text into memories.
 
-        Returns ``{"space_id", "mode", "guidance", "custom_prompt"}``. A null
-        field is *unset* — it follows the platform default and keeps following
-        it, which is not the same as being set to that default's current value.
+        Returns ``{"space_id", "mode", "guidance", "custom_prompt", "labels",
+        "free_form_entities"}``. A null field is *unset* — it follows the
+        platform default and keeps following it, which is not the same as being
+        set to that default's current value.
         """
         resp = self._get_client().get(
             f"{self._base_url}/v1/spaces/{_seg(space_id)}/extraction-settings"
@@ -1344,6 +1367,8 @@ class AnonaClient:
         mode: str | None = None,
         guidance: str | None = None,
         custom_prompt: str | None = None,
+        labels: list[dict] | None = None,
+        free_form_entities: bool | None = None,
     ) -> dict:
         """Replace this space's extraction settings.
 
@@ -1353,13 +1378,42 @@ class AnonaClient:
         matter. ``custom_prompt`` replaces those rules instead, and only applies
         while ``mode`` is ``custom``.
 
+        ``labels`` defines dimensions the extractor classifies every memory
+        along. Each entry is ``{"key", "type", "description", "tag", "values"}``
+        where ``type`` is ``value`` or ``multi-values`` (you list the allowed
+        ``values``) or ``text`` or ``multi-text`` (any value the memory
+        supplies, one of them or all of them). A group with ``tag`` set is
+        written onto the memory as the tag ``"<key>:<value>"`` as well, so
+        ``retrieve`` can filter on it through ``tag_groups``::
+
+            client.set_extraction_settings(
+                "default",
+                labels=[{
+                    "key": "name",
+                    "type": "multi-text",
+                    "tag": True,
+                    "description": "Every name this thing is known by, "
+                                   "including abbreviations and short forms.",
+                }],
+            )
+
+        ``free_form_entities=False`` keeps only entities belonging to a label
+        group, and needs ``labels`` set — without it the extractor would keep
+        no entities at all.
+
         This replaces the record: anything you leave out is cleared. Settings
         apply to writes made after the call and never re-extract stored
         memories.
         """
         resp = self._get_client().put(
             f"{self._base_url}/v1/spaces/{_seg(space_id)}/extraction-settings",
-            json={"mode": mode, "guidance": guidance, "custom_prompt": custom_prompt},
+            json={
+                "mode": mode,
+                "guidance": guidance,
+                "custom_prompt": custom_prompt,
+                "labels": labels,
+                "free_form_entities": free_form_entities,
+            },
         )
         self._raise(resp)
         return resp.json()
@@ -1934,6 +1988,7 @@ class AnonaClient:
         memory_type: list[str] | None = None,
         tags: list[str] | None = None,
         tags_match: str | None = None,
+        tag_groups: list[dict] | None = None,
         prefer_observations: bool | None = None,
         min_score: float | None = None,
         member_id: str | None = None,
@@ -1951,6 +2006,7 @@ class AnonaClient:
                 memory_type=memory_type,
                 tags=tags,
                 tags_match=tags_match,
+                tag_groups=tag_groups,
                 prefer_observations=prefer_observations,
                 min_score=min_score,
                 member_id=member_id,
@@ -1988,6 +2044,7 @@ class AnonaClient:
         memory_type: list[str] | None = None,
         tags: list[str] | None = None,
         tags_match: str | None = None,
+        tag_groups: list[dict] | None = None,
         prefer_observations: bool | None = None,
         min_score: float | None = None,
         member_id: str | None = None,
@@ -2008,6 +2065,7 @@ class AnonaClient:
                 memory_type=memory_type,
                 tags=tags,
                 tags_match=tags_match,
+                tag_groups=tag_groups,
                 prefer_observations=prefer_observations,
                 min_score=min_score,
                 member_id=member_id,
@@ -2066,6 +2124,7 @@ class AnonaClient:
         memory_type: list[str] | None = None,
         tags: list[str] | None = None,
         tags_match: str | None = None,
+        tag_groups: list[dict] | None = None,
         prefer_observations: bool | None = None,
         min_score: float | None = None,
         member_id: str | None = None,
@@ -2087,6 +2146,7 @@ class AnonaClient:
                 memory_type=memory_type,
                 tags=tags,
                 tags_match=tags_match,
+                tag_groups=tag_groups,
                 prefer_observations=prefer_observations,
                 min_score=min_score,
                 member_id=member_id,
@@ -2113,6 +2173,7 @@ class AnonaClient:
         agent_id: str | None = None,
         session_id: str | None = None,
         model: str | None = None,
+        tag_groups: list[dict] | None = None,
     ) -> str | None:
         """Async (asyncio) variant of :meth:`reason`."""
         body: dict = {"space_id": space_id, "query": query}
@@ -2121,6 +2182,7 @@ class AnonaClient:
             ("agent_id", agent_id),
             ("session_id", session_id),
             ("model", model),
+            ("tag_groups", tag_groups),
         ):
             if value:
                 body[key] = value

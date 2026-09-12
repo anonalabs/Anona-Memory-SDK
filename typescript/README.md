@@ -287,6 +287,93 @@ cleared. Settings apply to writes made after the call — stored memories are
 never re-extracted, so changing these never rewrites history. Unhelpful guidance
 produces no error; extraction simply keeps different things.
 
+### Labels: tag your memories as they are written
+
+Filtering recall is only as good as the tags a memory carries, and by default
+every one of them has to be supplied by hand on the write that created it. A
+label taxonomy hands that job to extraction: name a dimension once, and every
+memory is classified along it as it is written.
+
+```ts
+await anona.setExtractionSettings({
+  spaceId: "engineering",
+  labels: [{
+    key: "name",
+    type: "multi-text",
+    tag: true,
+    description:
+      "Every name the subject of this memory is known by, including " +
+      "abbreviations, acronyms and short forms. Write them lowercase, words " +
+      "separated by single spaces, with no punctuation.",
+  }],
+});
+```
+
+A group with `tag: true` is written onto the memory as the tag
+`"<key>:<value>"`, so `retrieve` can filter on it through `tagGroups`. A memory
+about Kubernetes then carries `name:kubernetes`, `name:k8s` and `name:kube`, and
+any of the three finds it:
+
+```ts
+await anona.retrieve({
+  spaceId: "engineering",
+  query: "what did we decide about k8s",
+  tagGroups: [{ tags: ["name:k8s"], match: "any_strict" }],
+});
+```
+
+Four group types, in two pairs. `value` and `multi-values` pick from a `values`
+list you supply, one or several. `text` and `multi-text` take whatever the
+memory itself supplies, one value or all of them, for a vocabulary you cannot
+enumerate in advance. `multi-text` is the one identity needs: a thing rarely has
+a single surface form, and `text` would keep only the first.
+
+Tags match as exact strings, so describe the format you want in the group's
+`description` and normalise your query the same way.
+
+Some things are refused rather than stored, because each would look saved and do
+nothing: an enumerated group with no `values`; a `text`/`multi-text` group *with*
+`values`; two groups sharing a `key`; a key that is not already in tag form
+(lowercase letters, digits, `-`, `_`); and `freeFormEntities: false` with no
+labels, which would keep no entities at all rather than only labelled ones.
+Twelve groups maximum, since the taxonomy rides the extraction prompt on every
+write.
+
+## Compound tag filters
+
+`tags` is a flat list under a single match mode, so it can say "any of these" or
+"all of these" and nothing else. `tagGroups` takes a boolean expression instead,
+for the moment a filter has two clauses that combine differently, or a clause
+that excludes.
+
+```ts
+await anona.retrieve({
+  spaceId: "support",
+  query: "what is left to do",
+  tagGroups: [
+    { or: [{ tags: ["project:alpha"] }, { tags: ["project:beta"] }] },
+    { not: { tags: ["status:archived"] } },
+  ],
+});
+```
+
+Groups in the list are AND-ed. Each is either a leaf `{ tags, match }` or one of
+`{ and }`, `{ or }`, `{ not }`, nested as deep as you need. `match` on a leaf
+takes the same values as `tagsMatch` and defaults to `"any_strict"`.
+
+Three things worth knowing:
+
+- **The non-strict modes treat an untagged memory as matching**, so a leaf
+  written with `"any"` or `"all"` widens an expression rather than narrowing it,
+  and both are refused inside a `not` for that reason.
+- **The filter is compiled into the search**, not applied to its output, so an
+  excluded memory never competes for a slot.
+- **It composes rather than replaces.** `tags`, `userId`, `agentId` and
+  `sessionId` are all AND-ed onto your expression.
+
+Limits: 25 leaves and 5 levels of nesting per request. `reason` accepts the same
+argument.
+
 ## API
 
 | Method | Purpose |
@@ -294,7 +381,7 @@ produces no error; extraction simply keeps different things.
 | `record` | Store a memory — pass `background: true` to queue it, which is ~10× faster |
 | `recordBatch` | Up to 100 memories, always queued |
 | `getJob` | Status of a queued job |
-| `retrieve` | Search memories |
+| `retrieve` | Search memories — `tagGroups` filters with a boolean expression, see below |
 | `getContext` | The same search, returned as one prompt-ready string |
 | `reason` | Synthesised answer across a space |
 | `listSpaces` / `getSpace` / `createSpace` / `deleteSpace` | Space management |

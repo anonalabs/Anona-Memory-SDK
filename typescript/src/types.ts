@@ -71,6 +71,18 @@ export interface SearchResult {
   metadata: Record<string, unknown> | null;
   /** The uploaded document this memory was extracted from, if any. */
   document_id: string | null;
+  /**
+   * Memories this one was synthesized from. Empty on a raw fact, and **always
+   * present** — the API never omits the key, because an absent one would make
+   * "this memory has no sources" and "this deployment does not surface
+   * sources" the same answer. Declared required for that reason, like
+   * `entities` above and unlike `MemoryItem.source_ids`, whose optional tail
+   * predates this.
+   *
+   * A consolidated memory carries no `metadata` and no `document_id` of its
+   * own — those belong to the facts behind it, which these ids name.
+   */
+  source_ids: string[];
   created_at: string | null;
   /**
    * The event time the memory was recorded with, as distinct from
@@ -277,11 +289,33 @@ export interface UsageSnapshot {
  * following it, which is not the same as being pinned to that default's
  * current value.
  */
+/**
+ * One dimension the extractor classifies every memory along.
+ *
+ * `value` and `multi-values` pick from `values`, which you list up front;
+ * `text` and `multi-text` take whatever the memory itself supplies, one value
+ * or all of them, for vocabularies that cannot be enumerated in advance.
+ *
+ * With `tag` set, the classification is written onto the memory as the tag
+ * `"<key>:<value>"` as well as an entity, which is what makes it filterable
+ * through `tag_groups` on retrieve.
+ */
+export interface LabelGroup {
+  key: string;
+  description?: string;
+  type?: "value" | "multi-values" | "text" | "multi-text";
+  optional?: boolean;
+  tag?: boolean;
+  values?: Array<{ value: string; description?: string }>;
+}
+
 export interface ExtractionSettings {
   space_id: string;
   mode: "concise" | "verbose" | "verbatim" | "custom" | null;
   guidance: string | null;
   custom_prompt: string | null;
+  labels: LabelGroup[] | null;
+  free_form_entities: boolean | null;
 }
 
 /** A space's defaults for the drop-in LLM proxy endpoints. */
