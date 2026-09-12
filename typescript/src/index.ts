@@ -7,6 +7,7 @@ export type {
   RecordOptions,
   RetrieveOptions,
   RetrieveReceiptOptions,
+  TagGroup,
   TagsMatch,
   UpdateMemoryOptions,
   UploadFile,

@@ -56,6 +56,31 @@ describe("getExtractionSettings", () => {
 });
 
 describe("setExtractionSettings", () => {
+  it("sends a label taxonomy, shape untouched", async () => {
+    const fetchImpl = stub({ space_id: "s1" });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    const labels = [
+      {
+        key: "name",
+        type: "multi-text" as const,
+        tag: true,
+        description: "Every name this thing is known by.",
+      },
+    ];
+    await anona.setExtractionSettings({ spaceId: "s1", labels, freeFormEntities: false });
+
+    // The group travels unmodelled, so the only thing this SDK can get wrong
+    // is dropping it or reshaping it.
+    expect(call(fetchImpl).body).toEqual({
+      mode: null,
+      guidance: null,
+      custom_prompt: null,
+      labels,
+      free_form_entities: false,
+    });
+  });
+
   it("sends every field, because the API replaces the record", async () => {
     const fetchImpl = stub({ space_id: "s1" });
     const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
@@ -67,6 +92,8 @@ describe("setExtractionSettings", () => {
       mode: null,
       guidance: "Capture service names.",
       custom_prompt: null,
+      labels: null,
+      free_form_entities: null,
     });
   });
 });

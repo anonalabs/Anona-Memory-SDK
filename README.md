@@ -119,7 +119,7 @@ async with AnonaClient(api_key="...") as client:
 - `record(space_id: str, content: str, metadata: dict | None = None, tags: list[str] | None = None, background: bool = False, user_id: str | None = None, agent_id: str | None = None, session_id: str | None = None, timestamp: str | None = None, context: str | None = None) -> dict` — store a memory; `context` is extra framing stored alongside the content (where it came from, who said it) without becoming the memory's text; `background=True` queues it and returns a `job_id`; `timestamp` (ISO 8601) is when the *event* happened, for importing history; `user_id` / `agent_id` / `session_id` scope it inside the space
 - `record_batch(space_id, items) -> dict` — bulk-ingest up to 100 items (always queued); returns a `job_id`
 - `get_job(space_id, job_id) -> dict` — poll a queued job's status (free); `status` is one of pending / processing / completed / failed / cancelled / not_found
-- `retrieve(space_id: str, query: str, limit: int = 10, mode: str = "accurate", user_id: str | None = None, agent_id: str | None = None, session_id: str | None = None, as_of: str | None = None, query_timestamp: str | None = None, occurred_after: str | None = None, occurred_before: str | None = None, top_k: int | None = None, memory_type: list[str] | None = None, tags: list[str] | None = None, tags_match: str | None = None, prefer_observations: bool | None = None, min_score: float | None = None, member_id: str | None = None) -> list[dict]` — search; `tags` / `tags_match` filter on the scope tags a memory was written with, `memory_type` narrows the kind, `min_score` floors relevance, `top_k` bounds the candidates considered before ranking, `prefer_observations=False` also returns the raw evidence behind a synthesised memory, `member_id="me"` returns only what you wrote in a shared space; see [Time travel](#time-travel) for the temporal arguments
+- `retrieve(space_id: str, query: str, limit: int = 10, mode: str = "accurate", user_id: str | None = None, agent_id: str | None = None, session_id: str | None = None, as_of: str | None = None, query_timestamp: str | None = None, occurred_after: str | None = None, occurred_before: str | None = None, top_k: int | None = None, memory_type: list[str] | None = None, tags: list[str] | None = None, tags_match: str | None = None, tag_groups: list[dict] | None = None, prefer_observations: bool | None = None, min_score: float | None = None, member_id: str | None = None) -> list[dict]` — search; `tags` / `tags_match` filter on the tags a memory was written with and `tag_groups` does the same as a boolean expression (see [Compound tag filters](#compound-tag-filters)), `memory_type` narrows the kind, `min_score` floors relevance, `top_k` bounds the candidates considered before ranking, `prefer_observations=False` also returns the raw evidence behind a synthesised memory, `member_id="me"` returns only what you wrote in a shared space; see [Time travel](#time-travel) for the temporal arguments
 - `get_context(space_id: str, query: str, limit: int = 10, max_tokens: int | None = None, block_order: str | None = None, …) -> str` — the relevant memories as one prompt-ready string, ready to paste into a system prompt; takes the same filters as `retrieve`, and `block_order="stable"` keeps the block byte-identical between turns so a provider's prompt cache can hit it
 - `retrieve_receipt(space_id: str, query: str, receipt_detail: str = "basic", …) -> RetrieveWithReceipt` — `retrieve`, plus a receipt explaining that search; returns `.memories` and `.receipt_id`, and that id is what `get_receipt` and `explain` take
 - `get_receipt(request_id: str) -> dict` — the manifest for one earlier search: what was returned, what was considered, what was cut
@@ -136,7 +136,7 @@ async with AnonaClient(api_key="...") as client:
 - `get_graph(space_id, limit=500, min_count=1) -> dict` — entity relationship graph (nodes + co-occurrence edges)
 - `list_entities(space_id, limit=100, offset=0) -> list[dict]`
 - `get_entity(space_id, entity_id) -> dict` — one entity + its observations
-- `get_extraction_settings(space_id) -> dict` / `set_extraction_settings(space_id, mode=None, guidance=None, custom_prompt=None) -> dict` / `reset_extraction_settings(space_id) -> None` — steer what a write keeps; see [Extraction settings](#extraction-settings)
+- `get_extraction_settings(space_id) -> dict` / `set_extraction_settings(space_id, mode=None, guidance=None, custom_prompt=None, labels=None, free_form_entities=None) -> dict` / `reset_extraction_settings(space_id) -> None` — steer what a write keeps; see [Extraction settings](#extraction-settings)
 - `get_chat_settings(space_id) -> dict` / `set_chat_settings(space_id, memory_limit=None, memory_token_budget=None, auto_record=None, memory=None) -> dict` / `reset_chat_settings(space_id) -> None` — per-space defaults for the drop-in proxy endpoints
 - `create_webhook(space_id, url, event_types=None, enabled=True) -> dict` — the response carries `secret`, returned only on create
 - `list_webhooks(space_id) -> list[dict]`, `update_webhook(space_id, webhook_id, url=None, event_types=None, enabled=None) -> dict`, `delete_webhook(space_id, webhook_id) -> None`
@@ -208,6 +208,49 @@ if rl.remaining is not None and rl.remaining < 5:
 Fields are `None` until a metered call has been made. The unmetered routes
 (spaces, settings, webhooks) report no budget and leave the last reading in
 place rather than blanking it.
+
+## Compound tag filters
+
+`tags` is a flat list under a single match mode, so it can say "any of these" or
+"all of these" and nothing else. `tag_groups` takes a boolean expression
+instead, for the moment a filter has two clauses that combine differently, or a
+clause that excludes.
+
+```python
+client.retrieve(
+    "support",
+    "what is left to do",
+    tag_groups=[
+        {"or": [{"tags": ["project:alpha"]}, {"tags": ["project:beta"]}]},
+        {"not": {"tags": ["status:archived"]}},
+    ],
+)
+```
+
+Groups in the list are AND-ed. Each is either a leaf `{"tags": [...], "match":
+...}` or one of `{"and": [...]}`, `{"or": [...]}`, `{"not": {...}}`, nested as
+deep as you need. `match` on a leaf takes the same values as `tags_match` and
+defaults to `any_strict`.
+
+Three things worth knowing:
+
+- **The non-strict modes treat an untagged memory as matching**, so a leaf
+  written with `any` or `all` widens an expression rather than narrowing it, and
+  both are refused inside a `not` for that reason. Negating "matches, including
+  untagged" would exclude every untagged memory in the space.
+- **The filter is compiled into the search**, not applied to its output, so an
+  excluded memory never competes for a slot. You get the best *n* matches that
+  passed the filter rather than whatever survived it.
+- **It composes rather than replaces.** `tags`, `user_id`, `agent_id` and
+  `session_id` are all AND-ed onto your expression, so a scoped query stays
+  scoped when you add a filter.
+
+Limits: 25 leaves and 5 levels of nesting per request. `reason` accepts the same
+argument, where it narrows what the reasoning agent may look at.
+
+A filter is only as good as the tags a memory carries. If you are tagging by
+hand on every write, [labels](#labels-tag-your-memories-as-they-are-written) can
+have extraction do it for you.
 
 ## Time travel
 
@@ -324,6 +367,9 @@ client.set_extraction_settings(
   `custom`.
 - **`custom_prompt`** *replaces* the standard rules, and only applies while
   `mode` is `"custom"`. Max 8,000 characters.
+- **`labels`** is different in kind. The three above steer what a write *keeps*;
+  labels ask the same pass to *classify* what it kept, along dimensions you
+  define. See [Labels](#labels-tag-your-memories-as-they-are-written).
 
 Two things worth knowing. `set_extraction_settings` **replaces** the record, so
 anything you leave out is cleared. And settings apply to writes made after the
@@ -332,6 +378,62 @@ and never rewrites history. To see the effect, save, record a representative
 piece of text, and read the memory back.
 
 Unhelpful guidance produces no error; extraction simply keeps different things.
+
+### Labels: tag your memories as they are written
+
+Filtering recall is only as good as the tags a memory carries, and by default
+every one of them has to be supplied by hand on the write that created it.
+A **label taxonomy** hands that job to extraction: name a dimension once, and
+every memory is classified along it as it is written.
+
+```python
+client.set_extraction_settings(
+    "engineering",
+    labels=[{
+        "key": "name",
+        "type": "multi-text",
+        "tag": True,
+        "description": (
+            "Every name the subject of this memory is known by, including "
+            "abbreviations, acronyms and short forms. Write them lowercase, "
+            "words separated by single spaces, with no punctuation."
+        ),
+    }],
+)
+```
+
+A group with `tag: True` is written onto the memory as the tag
+`"<key>:<value>"`, so `retrieve` can filter on it through `tag_groups`. A memory
+about Kubernetes then carries `name:kubernetes`, `name:k8s` and `name:kube`, and
+any of the three finds it:
+
+```python
+client.retrieve(
+    "engineering",
+    "what did we decide about k8s",
+    tag_groups=[{"tags": ["name:k8s"], "match": "any_strict"}],
+)
+```
+
+There are four group types, in two pairs. `value` and `multi-values` pick from a
+`values` list you supply, one or several. `text` and `multi-text` take whatever
+the memory itself supplies, one value or all of them, for a vocabulary you
+cannot enumerate in advance. `multi-text` is the one identity needs: a thing
+rarely has a single surface form, and `text` would keep only the first.
+
+Because tags are matched as exact strings, describe the format you want in the
+group's `description` and normalise your query the same way.
+
+A few things are refused rather than stored, because each would look saved and
+do nothing: an enumerated group with no `values`; a `text`/`multi-text` group
+*with* `values`; two groups sharing a `key`; a key that is not already in tag
+form (lowercase letters, digits, `-`, `_`); and `free_form_entities=False` with
+no labels, which would keep no entities at all rather than only labelled ones.
+Twelve groups maximum, since the taxonomy rides the extraction prompt on every
+write.
+
+Labels apply to writes made after you save them, so turning a taxonomy on never
+retags your history.
 
 ## Framework adapters
 

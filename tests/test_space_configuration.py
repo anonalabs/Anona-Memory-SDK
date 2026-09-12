@@ -67,7 +67,33 @@ def test_set_extraction_settings_sends_every_field(client):
         "mode": None,
         "guidance": "Capture service names.",
         "custom_prompt": None,
+        "labels": None,
+        "free_form_entities": None,
     }
+
+
+@respx.mock
+def test_set_extraction_settings_sends_a_label_taxonomy(client):
+    """A label group is what makes extraction tag a memory for you.
+
+    The dict travels unmodelled, so the only thing this package can get wrong is
+    dropping it, and the only thing worth pinning is that it does not.
+    """
+    route = respx.put(f"{BASE}/v1/spaces/{SPACE}/extraction-settings").mock(
+        return_value=httpx.Response(200, json={"space_id": SPACE})
+    )
+    labels = [
+        {
+            "key": "name",
+            "type": "multi-text",
+            "tag": True,
+            "description": "Every name this thing is known by.",
+        }
+    ]
+    client.set_extraction_settings(SPACE, labels=labels, free_form_entities=False)
+    body = json.loads(route.calls.last.request.content)
+    assert body["labels"] == labels
+    assert body["free_form_entities"] is False
 
 
 @respx.mock

@@ -72,6 +72,42 @@ describe("retrieve", () => {
     });
   });
 
+  it("sends tagGroups as tag_groups, nested structure untouched", async () => {
+    const fetchImpl = stub({ results: [] });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.retrieve({
+      spaceId: "s",
+      query: "q",
+      tagGroups: [
+        { or: [{ tags: ["project:alpha"] }, { tags: ["project:beta"] }] },
+        { not: { tags: ["status:archived"], match: "any_strict" } },
+      ],
+    });
+
+    // Passed through verbatim: the API owns every rule in the expression,
+    // so anything this SDK did to the shape could only be wrong.
+    expect(bodyOf(fetchImpl)).toEqual({
+      space_id: "s",
+      query: "q",
+      tag_groups: [
+        { or: [{ tags: ["project:alpha"] }, { tags: ["project:beta"] }] },
+        { not: { tags: ["status:archived"], match: "any_strict" } },
+      ],
+    });
+  });
+
+  it("omits tag_groups entirely when it is not set", async () => {
+    const fetchImpl = stub({ results: [] });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.retrieve({ spaceId: "s", query: "q", tags: ["a"] });
+
+    // A key present as undefined would change the request body for every
+    // caller who never asked for a filter.
+    expect(bodyOf(fetchImpl)).toEqual({ space_id: "s", query: "q", tags: ["a"] });
+  });
+
   it("sends the event-time window under its API field names", async () => {
     const fetchImpl = stub({ results: [] });
     const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
@@ -175,5 +211,37 @@ describe("reason", () => {
     // A synthesis pass is a ~80s agent loop; replaying it would stack two or three
     // overlapping runs at a space already under load. One attempt, no retry.
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends scope, model and tagGroups", async () => {
+    const fetchImpl = stub({ insights: "ok" });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.reason({
+      spaceId: "s",
+      query: "q",
+      userId: "alice",
+      model: "fast",
+      tagGroups: [{ not: { tags: ["state:historical"], match: "any_strict" } }],
+    });
+
+    expect(bodyOf(fetchImpl)).toEqual({
+      space_id: "s",
+      query: "q",
+      user_id: "alice",
+      model: "fast",
+      tag_groups: [{ not: { tags: ["state:historical"], match: "any_strict" } }],
+    });
+  });
+
+  it("sends nothing but the question when nothing else is asked for", async () => {
+    const fetchImpl = stub({ insights: "ok" });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.reason({ spaceId: "s", query: "q" });
+
+    // A key present as undefined would change the body for every caller who
+    // never asked to narrow anything.
+    expect(bodyOf(fetchImpl)).toEqual({ space_id: "s", query: "q" });
   });
 });
