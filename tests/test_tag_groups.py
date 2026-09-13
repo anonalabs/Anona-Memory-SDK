@@ -121,3 +121,33 @@ async def test_async_reason_sends_the_expression(client):
     await client.async_reason(SPACE, "q", tag_groups=GROUPS)
     assert json.loads(route.calls.last.request.content)["tag_groups"] == GROUPS
     await client.aclose()
+
+
+@respx.mock
+def test_a_fuzzy_leaf_travels_with_its_resolve_key(client):
+    """`resolve` is part of the leaf, and the leaf travels unmodelled.
+
+    The API is what resolves a candidate against the space's tag vocabulary, so
+    the only thing this package can get wrong is dropping the key — which would
+    silently turn a fuzzy filter back into an exact one and return fewer
+    memories than the caller asked for, with nothing to see in the request.
+    """
+    route = respx.post(f"{BASE}/v1/retrieve").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    fuzzy = [{"tags": ["name:typsecript"], "match": "any_strict", "resolve": "fuzzy"}]
+    client.retrieve(SPACE, "typescript strict mode", tag_groups=fuzzy)
+    body = json.loads(route.calls.last.request.content)
+    assert body["tag_groups"] == fuzzy
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_async_retrieve_sends_a_fuzzy_leaf_too(client):
+    route = respx.post(f"{BASE}/v1/retrieve").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    fuzzy = [{"tags": ["name:typsecript"], "resolve": "fuzzy"}]
+    await client.async_retrieve(SPACE, "q", tag_groups=fuzzy)
+    body = json.loads(route.calls.last.request.content)
+    assert body["tag_groups"] == fuzzy

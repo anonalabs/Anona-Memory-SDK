@@ -153,9 +153,15 @@ export type TagsMatch = "any" | "all" | "any_strict" | "all_strict" | "exact";
  * Note `match` on a leaf defaults to `any_strict` server-side, and `any` / `all`
  * are rejected inside a `not`: they treat an untagged memory as matching, so
  * negating one would exclude every untagged memory in the space.
+ *
+ * `resolve: "fuzzy"` turns a leaf's tags from requirements into candidates: the
+ * tags the space already holds that resemble them are matched too, so a name
+ * typed from memory still finds its memory. It only ever widens, it stays
+ * inside the tag's namespace (`name:` resolves only against `name:`), and it is
+ * accepted only alongside `any` / `any_strict` or no `match` at all.
  */
 export type TagGroup =
-  | { tags: string[]; match?: TagsMatch }
+  | { tags: string[]; match?: TagsMatch; resolve?: "exact" | "fuzzy" }
   | { and: TagGroup[] }
   | { or: TagGroup[] }
   | { not: TagGroup };
@@ -206,6 +212,9 @@ export interface RetrieveOptions {
    *   { not: { tags: ["status:archived"] } },
    * ]
    * ```
+   *
+   * Add `resolve: "fuzzy"` to a leaf to match the tags the space already holds
+   * that resemble its candidates, rather than only the ones named exactly.
    *
    * Composes with everything else rather than replacing it: `tags`, `userId`,
    * `agentId` and `sessionId` are all AND-ed onto the expression server-side,
