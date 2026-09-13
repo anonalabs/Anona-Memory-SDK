@@ -373,6 +373,11 @@ def _search_extras(
     could only drift from the first. Each group is a leaf
     ``{"tags": [...], "match": ...}`` or one of ``{"and": [...]}``,
     ``{"or": [...]}``, ``{"not": {...}}``; groups in the list are AND-ed.
+
+    A leaf may also carry ``"resolve": "fuzzy"``, which matches the tags the
+    space already holds that resemble its candidates as well as the ones named
+    exactly — so ``{"tags": ["name:typsecript"], "resolve": "fuzzy"}`` finds the
+    memory tagged ``name:typescript``.
     """
     return _compact(
         (

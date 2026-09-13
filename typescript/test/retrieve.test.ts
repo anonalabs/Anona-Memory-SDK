@@ -97,6 +97,27 @@ describe("retrieve", () => {
     });
   });
 
+  it("sends a fuzzy leaf with its resolve key", async () => {
+    const fetchImpl = stub({ results: [] });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.retrieve({
+      spaceId: "s",
+      query: "typescript strict mode",
+      tagGroups: [{ tags: ["name:typsecript"], resolve: "fuzzy" }],
+    });
+
+    // The API is what resolves a candidate against the space's own tag
+    // vocabulary, so the only thing this SDK can get wrong is dropping the
+    // key — which would quietly turn a fuzzy filter back into an exact one and
+    // return fewer memories than were asked for, with nothing to see.
+    expect(bodyOf(fetchImpl)).toEqual({
+      space_id: "s",
+      query: "typescript strict mode",
+      tag_groups: [{ tags: ["name:typsecript"], resolve: "fuzzy" }],
+    });
+  });
+
   it("omits tag_groups entirely when it is not set", async () => {
     const fetchImpl = stub({ results: [] });
     const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });

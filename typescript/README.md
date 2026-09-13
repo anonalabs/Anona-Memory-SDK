@@ -371,8 +371,57 @@ Three things worth knowing:
 - **It composes rather than replaces.** `tags`, `userId`, `agentId` and
   `sessionId` are all AND-ed onto your expression.
 
-Limits: 25 leaves and 5 levels of nesting per request. `reason` accepts the same
-argument.
+Limits: 25 leaves and 5 levels of nesting per request; 500 tags in any one leaf
+and 1,000 across the whole expression. A leaf naming hundreds of tags is a
+normal shape rather than abuse: one leaf is a single set-containment test, so
+naming every candidate you might mean and letting the filter decide which of
+them the space actually has is cheaper than spreading them over separate
+leaves. `reason` accepts the same argument.
+
+### Matching a name you are not sure of
+
+Tags match as exact strings, which is right when your own code wrote them and
+wrong when it did not. An agent building a filter out of something a user typed
+has to guess the exact string a memory was stamped with, and one typo means the
+memory is unreachable.
+
+Set `resolve` to `"fuzzy"` on a leaf and its tags become candidates instead of
+requirements. Each is compared against the tags the space actually holds, and
+the close ones are added to the filter:
+
+```ts
+await anona.retrieve({
+  spaceId: "support",
+  query: "what did we decide about the checkout rewrite",
+  tagGroups: [{ tags: ["name:typsecript", "name:chekcout"], resolve: "fuzzy" }],
+});
+```
+
+`name:typsecript` matches nothing on its own. Resolved, it also matches
+`name:typescript`.
+
+Five things worth knowing:
+
+- **It widens, it never narrows.** The tags you named are always kept, so a
+  fuzzy leaf matches at least everything the same leaf matched exactly.
+- **Resolution stays inside the tag's namespace.** The part before the first
+  colon must match exactly and only what follows it is compared, so
+  `name:chekcout` can reach `name:checkout` and never `status:checkout`.
+- **Short candidates are matched literally.** Below four characters after the
+  namespace nothing is resolved, because similarity on two or three characters
+  is noise: `api` and `apis` score 0.5 and they are different things.
+- **A word of a longer tag is not a misspelling of it.** A candidate has to be
+  about as long as what it matches, so `name:pipeline` does not resolve to
+  `name:functional pipeline`.
+- **It fixes misspellings, not abbreviations.** `kubernetes` and `k8s` have
+  almost no letters in common, so nothing resolves one to the other. That is
+  what [labels](#labels-tag-your-memories-as-they-are-written) are for: a
+  `multi-text` group records every name a thing is known by, and the exact
+  filter finds them.
+
+`resolve` may only be combined with a `match` of `"any"` or `"any_strict"`, or
+left unset: a resolved leaf is a set of alternatives, so `"all_strict"` would
+ask one memory to carry every alternative at once.
 
 ## API
 
