@@ -275,7 +275,13 @@ class SoftmaxSync:
         if not items:
             return 0
 
-        result = self._anona.record_batch(self.space_id, items[:100])
+        # Scope the write with exactly what compile() reads back with. A scoped
+        # retrieve is strict, so an unscoped batch here is invisible to it and
+        # compile() returns empty with nothing to distinguish that from a space
+        # still extracting.
+        result = self._anona.record_batch(
+            self.space_id, items[:100], user_id=self.policy, agent_id=self.coworld
+        )
         self._last_job = (result or {}).get("job_id")
         return len(items[:100])
 
