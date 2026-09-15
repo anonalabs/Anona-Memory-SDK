@@ -724,17 +724,35 @@ class AnonaClient:
         self._raise(resp)
         return resp.json()
 
-    def record_batch(self, space_id: str, items: list[dict]) -> dict:
+    def record_batch(
+        self,
+        space_id: str,
+        items: list[dict],
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+    ) -> dict:
         """Bulk-ingest up to 100 memories in one call (always queued).
 
         Each item is a dict with ``content`` (required) and optional ``context``,
         ``timestamp``, ``metadata``, and ``tags`` (a list of strings, filterable
         by :meth:`retrieve`). Returns a ``job_id`` — poll :meth:`get_job`.
+
+        ``user_id`` / ``agent_id`` / ``session_id`` scope every item in the
+        batch, exactly as they do on :meth:`record`. Passing them matters more
+        here than it looks: a :meth:`retrieve` carrying a scope is *strict*, so
+        it never returns an unscoped write. A batch ingested without scope and
+        read back with one therefore comes back empty, with nothing to
+        distinguish it from a space that is simply still extracting.
         """
-        resp = self._get_client().post(
-            f"{self._base_url}/v1/record/batch",
-            json={"space_id": space_id, "items": items},
-        )
+        body: dict = {"space_id": space_id, "items": items}
+        if user_id is not None:
+            body["user_id"] = user_id
+        if agent_id is not None:
+            body["agent_id"] = agent_id
+        if session_id is not None:
+            body["session_id"] = session_id
+        resp = self._get_client().post(f"{self._base_url}/v1/record/batch", json=body)
         self._raise(resp)
         return resp.json()
 
@@ -1959,11 +1977,24 @@ class AnonaClient:
         self._raise(resp)
         return resp.json()
 
-    async def async_record_batch(self, space_id: str, items: list[dict]) -> dict:
+    async def async_record_batch(
+        self,
+        space_id: str,
+        items: list[dict],
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+    ) -> dict:
         """Async (asyncio) variant of :meth:`record_batch`."""
+        body: dict = {"space_id": space_id, "items": items}
+        if user_id is not None:
+            body["user_id"] = user_id
+        if agent_id is not None:
+            body["agent_id"] = agent_id
+        if session_id is not None:
+            body["session_id"] = session_id
         resp = await self._get_async_client().post(
-            f"{self._base_url}/v1/record/batch",
-            json={"space_id": space_id, "items": items},
+            f"{self._base_url}/v1/record/batch", json=body
         )
         self._raise(resp)
         return resp.json()
