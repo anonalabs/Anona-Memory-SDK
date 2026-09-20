@@ -8,6 +8,25 @@ current interfaces — verified against the installed package
 ``FunctionAgent`` tool-calling turn, not by reading docstrings. Three things
 about the real orchestration are surprising enough to write down.
 
+**llama-index-workflows 2.24.0 is excluded, and not because of anything
+here**. That release caches per-workflow serializers in a
+``WeakKeyDictionary`` (``workflows/runtime/types/plugin.py``), and a
+``Workflow`` is a pydantic ``BaseModel`` — pydantic sets ``__hash__ = None``
+on any non-frozen model that defines ``__eq__``, so ``FunctionAgent`` has
+never been hashable and every ``.run()`` raises ``TypeError: unhashable
+type: 'FunctionAgent'`` inside ``Context.__init__``, before a single step
+runs. That breaks every llama-index agent user on that version; reproduced
+with none of this module in the loop (a stock ``FunctionAgent``, no
+``Memory``, no memory block). This block itself is unaffected — it works
+against 2.24.0, verified by the 12 of this adapter's 13 tests that still
+pass there, the real-``Memory`` one included; only the tests that drive a
+real agent fail. Upstream is run-llama/llama_index#23131, open and unfixed,
+with 2.24.0 (2026-09-16) still the latest release. The ``llamaindex`` extra
+therefore carries ``llama-index-workflows!=2.24.0`` — an exclusion rather
+than a ceiling, so it lifts itself when upstream ships a fix. Nothing is
+guarded at runtime on purpose: raising here would break the
+``Memory``-without-an-agent use that genuinely works on 2.24.0.
+
 **A turn is read from at least twice, not once.** ``Memory.aget()`` (hence
 every block's ``_aget``) is called once in ``FunctionAgent``'s ``init_run``
 before the first model call of a turn, and once more after ``finalize()`` for
