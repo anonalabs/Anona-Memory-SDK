@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "anona"
-version = "0.13.1"
+version = "0.13.2"
 description = "Anona Memory SDK — managed AI memory for intelligent agents"
 readme = "README.md"
 license = { text = "MIT" }
@@ -72,7 +72,30 @@ crewai = ["crewai>=1.0"]
 # exercised (0.14.23); nobody has verified the true 0.12.35 minimum, so it
 # isn't declared here. See AnonaMemoryBlock's ImportError guard for what a
 # too-old install gets instead of a bare AttributeError.
-llamaindex = ["llama-index-core>=0.14"]
+# llama-index-workflows is a TRANSITIVE dep (llama-index-core pulls it), named
+# here only to exclude 2.24.0, which is broken for every llama-index agent user
+# and not just for us. 2.24.0 caches per-workflow serializers in a
+# WeakKeyDictionary (workflows/runtime/types/plugin.py:603), and a Workflow is a
+# pydantic BaseModel - pydantic sets __hash__ = None on any non-frozen model
+# that defines __eq__, so FunctionAgent has never been hashable and every
+# .run() dies in Context.__init__ with "TypeError: unhashable type:
+# 'FunctionAgent'" before a single step executes. Reproduced with ZERO Anona
+# code in the loop (stock FunctionAgent, no Memory, no memory block), so this
+# adapter is collateral, not cause: AnonaMemoryBlock itself works fine on
+# 2.24.0 - 12 of our 13 adapter tests pass there, the real-Memory one included.
+# Upstream: run-llama/llama_index#23131, open and unfixed; 2.24.0 (2026-09-16)
+# is still the latest release.
+#
+# `!=` and not `<2.24` on purpose. A ceiling would also block the fix release
+# and leave a standing "lift this pin" chore nobody is prompted to do - which is
+# the same failure mode that let this sit unnoticed on main in the first place.
+# An exclusion self-heals the moment upstream ships anything later, and a
+# nightly run of this suite is what would catch a later release re-breaking it,
+# within a day rather than whenever someone next touches this package.
+# Verified: with this exclusion a fresh `pip install
+# 'anona[llamaindex]'` resolves llama-index-workflows 2.23.3 and all 13 adapter
+# tests pass; without it, pip takes 2.24.0 and the FunctionAgent test fails.
+llamaindex = ["llama-index-core>=0.14", "llama-index-workflows!=2.24.0"]
 # Floor raised from >=1.0 (verified against real wheels): everything this
 # adapter's own require() calls import -- base_memory_service.
 # {BaseMemoryService, SearchMemoryResponse}, memory_entry.MemoryEntry,
