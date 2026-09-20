@@ -122,6 +122,40 @@ export interface Space {
   name: string;
   description: string | null;
   created_at: string | null;
+  /**
+   * The space type that was actually applied by `createSpace`.
+   *
+   * Null whenever nothing was applied — no type was asked for, `"blank"` was,
+   * *or* one was asked for and applying it failed. The space is created either
+   * way, so this is how you tell a seeded space from one that was only
+   * created. Always null on `listSpaces` and `getSpace`, which report the
+   * space as it is now rather than how it was born.
+   */
+  space_type?: string | null;
+}
+
+/** One standing question a space type gives a new space. */
+export interface SpaceTypeModel {
+  name: string;
+  question: string;
+}
+
+/** A space type as a picker shows it. */
+export interface SpaceType {
+  /** The value to pass as `createSpace({ spaceType })`. */
+  space_type: string;
+  name: string;
+  summary: string;
+  /** What the space is for. Empty string on `blank`. */
+  mission: string;
+  /** Only the dials this type moves; the rest keep the platform default. */
+  disposition: Record<string, number>;
+  models: SpaceTypeModel[];
+}
+
+export interface SpaceTypeList {
+  items: SpaceType[];
+  total: number;
 }
 
 export interface MemoryItem {

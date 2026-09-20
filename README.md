@@ -126,7 +126,8 @@ async with AnonaClient(api_key="...") as client:
 - `explain(request_id: str, memory_id: str) -> dict` — account for one specific memory against an earlier search
 - `reason(space_id, query) -> str | None`
 - `list_spaces() -> list[dict]`
-- `create_space(name: str, description: str | None = None) -> dict` — create a space; a space's id *is* its name
+- `create_space(name: str, description: str | None = None, *, space_type: str | None = None) -> dict` — create a space; a space's id *is* its name. `space_type` seeds it from a preset (mission, extraction guidance, disposition and a couple of standing questions); the returned `space_type` is null whenever nothing was applied, including when a type was asked for and applying it failed
+- `list_space_types() -> list[dict]` — the types `create_space` accepts, as a picker shows them; free, and worth reading rather than hardcoding
 - `delete_space(space_id: str) -> None` — delete a space and every memory in it; irreversible
 - `get_user_profile(space_id, user_id, *, limit=None, offset=None, memory_type=None, format=None, context_max_tokens=None) -> dict` — everything the space has learned about one end user; see [User profiles](#user-profiles)
 - `ask_about_user(space_id, user_id, query, *, model=None) -> dict` — one synthesised answer, drawn from that user's memories only

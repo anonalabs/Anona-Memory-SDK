@@ -26,6 +26,44 @@ describe("createSpace", () => {
     expect(space.space_id).toBe("docs");
   });
 
+  it("posts a space type when one is asked for", async () => {
+    const fetchImpl = stub({ space_id: "docs", name: "docs", space_type: "coding_agent" }, 201);
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    const space = await anona.createSpace({ name: "docs", spaceType: "coding_agent" });
+
+    expect(JSON.parse(((fetchImpl as any).mock.calls[0]![1] as RequestInit).body as string)).toEqual({
+      name: "docs",
+      space_type: "coding_agent",
+    });
+    expect(space.space_type).toBe("coding_agent");
+  });
+
+  it("omits space_type when none is asked for", async () => {
+    // The API forbids unknown fields and tells an absent field from a null
+    // one, so a caller written before space types must keep sending what it
+    // sent.
+    const fetchImpl = stub({ space_id: "docs", name: "docs" }, 201);
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.createSpace({ name: "docs" });
+
+    expect(JSON.parse(((fetchImpl as any).mock.calls[0]![1] as RequestInit).body as string)).toEqual({
+      name: "docs",
+    });
+  });
+
+  it("reports a type that was asked for but not applied as null", async () => {
+    // Seeding is best-effort server-side: the space is created either way, and
+    // null is how a caller tells "seeded" from "created but not seeded".
+    const fetchImpl = stub({ space_id: "docs", name: "docs", space_type: null }, 201);
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    const space = await anona.createSpace({ name: "docs", spaceType: "coding_agent" });
+
+    expect(space.space_type).toBeNull();
+  });
+
   it("is not auto-retried on a 5xx", async () => {
     const fetchImpl = vi.fn(async () => new Response("boom", { status: 503 }));
     const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
@@ -35,6 +73,34 @@ describe("createSpace", () => {
     // A replay after a landed-but-unacknowledged create can trip a uniqueness
     // check server-side and surface a 500 for a space that exists. One attempt.
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("listSpaceTypes", () => {
+  it("unwraps the items envelope", async () => {
+    const fetchImpl = stub({
+      items: [
+        {
+          space_type: "customer_support",
+          name: "Customer support",
+          summary: "s",
+          mission: "m",
+          disposition: { empathy: 5 },
+          models: [{ name: "Customer profile", question: "who?" }],
+        },
+      ],
+      total: 1,
+    });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    const types = await anona.listSpaceTypes();
+
+    expect((fetchImpl as any).mock.calls[0]![0]).toBe(
+      "https://api.anonalabs.com/v1/space-types",
+    );
+    expect(((fetchImpl as any).mock.calls[0]![1] as RequestInit).method).toBe("GET");
+    expect(types.map((t) => t.space_type)).toEqual(["customer_support"]);
+    expect(types[0]!.models[0]!.question).toBe("who?");
   });
 });
 

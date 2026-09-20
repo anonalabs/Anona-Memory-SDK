@@ -203,6 +203,69 @@ def test_create_space(client):
 
 
 @respx.mock
+def test_create_space_sends_space_type(client):
+    route = respx.post(f"{BASE}/v1/spaces/").mock(
+        return_value=httpx.Response(
+            201, json={"space_id": "sp_1", "name": "Demo", "space_type": "customer_support"}
+        )
+    )
+    out = client.create_space("Demo", space_type="customer_support")
+    assert out["space_type"] == "customer_support"
+    body = json.loads(route.calls.last.request.content)
+    assert body["space_type"] == "customer_support"
+
+
+@respx.mock
+def test_create_space_omits_space_type_when_none(client):
+    # The API forbids unknown fields and tells an absent field from a null one,
+    # so a caller written before space types must keep sending what it sent.
+    route = respx.post(f"{BASE}/v1/spaces/").mock(
+        return_value=httpx.Response(201, json={"space_id": "sp_1", "name": "Demo"})
+    )
+    client.create_space("Demo", description="d")
+    assert json.loads(route.calls.last.request.content) == {"name": "Demo", "description": "d"}
+
+
+@respx.mock
+def test_create_space_reports_an_unapplied_type_as_null(client):
+    # Seeding is best-effort server-side: the space is created either way, and
+    # null is how a caller tells "seeded" from "created but not seeded".
+    respx.post(f"{BASE}/v1/spaces/").mock(
+        return_value=httpx.Response(
+            201, json={"space_id": "sp_1", "name": "Demo", "space_type": None}
+        )
+    )
+    out = client.create_space("Demo", space_type="customer_support")
+    assert out["space_type"] is None
+
+
+@respx.mock
+def test_list_space_types(client):
+    route = respx.get(f"{BASE}/v1/space-types").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "space_type": "coding_agent",
+                        "name": "Coding agent",
+                        "summary": "s",
+                        "mission": "m",
+                        "disposition": {"literalism": 4},
+                        "models": [{"name": "Project context", "question": "q"}],
+                    }
+                ],
+                "total": 1,
+            },
+        )
+    )
+    out = client.list_space_types()
+    assert route.called
+    assert [t["space_type"] for t in out] == ["coding_agent"]
+    assert out[0]["models"][0]["question"] == "q"
+
+
+@respx.mock
 def test_delete_space(client):
     route = respx.delete(f"{BASE}/v1/spaces/sp_9").mock(return_value=httpx.Response(204))
     client.delete_space("sp_9")
@@ -230,6 +293,43 @@ async def test_async_create_and_delete_space():
         assert out["space_id"] == "sp_a"
         await c.async_delete_space("sp_a")
     assert d.called
+
+
+@pytest.mark.anyio
+@respx.mock
+async def test_async_create_space_and_list_space_types():
+    # The async twin is a separate method body, so a sync-only change ships an
+    # async client that silently creates an unseeded space.
+    create = respx.post(f"{BASE}/v1/spaces/").mock(
+        return_value=httpx.Response(
+            201, json={"space_id": "sp_b", "name": "B", "space_type": "sales_account"}
+        )
+    )
+    types = respx.get(f"{BASE}/v1/space-types").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "space_type": "personal_assistant",
+                        "name": "Personal assistant",
+                        "summary": "s",
+                        "mission": "m",
+                        "disposition": {"empathy": 4},
+                        "models": [],
+                    }
+                ],
+                "total": 1,
+            },
+        )
+    )
+    async with AnonaClient(api_key=KEY, base_url=BASE) as c:
+        out = await c.async_create_space("B", space_type="sales_account")
+        assert out["space_type"] == "sales_account"
+        assert json.loads(create.calls.last.request.content)["space_type"] == "sales_account"
+        listed = await c.async_list_space_types()
+    assert types.called
+    assert [t["space_type"] for t in listed] == ["personal_assistant"]
 
 
 # ── documents (file upload → retrieval) ──────────────────────────────────────

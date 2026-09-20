@@ -434,6 +434,7 @@ ask one memory to carry every alternative at once.
 | `getContext` | The same search, returned as one prompt-ready string |
 | `reason` | Synthesised answer across a space |
 | `listSpaces` / `getSpace` / `createSpace` / `deleteSpace` | Space management |
+| `listSpaceTypes` | What a new space can be born knowing — pass one as `createSpace({ spaceType })` |
 | `listMemories` / `getMemoryHistory` / `updateMemory` / `deleteMemory` | Memory management |
 | `uploadFiles` / `listDocuments` / `getDocument` / `deleteDocument` | Documents |
 | `getUserProfile` / `askAboutUser` | What a space knows about one end user |
