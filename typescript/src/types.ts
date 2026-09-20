@@ -65,6 +65,15 @@ export interface SearchResult {
   context: string | null;
   /** Entities this memory is about — the graph layer. */
   entities: string[];
+  /**
+   * The memory's own tags: what was written with it, plus whatever a label
+   * taxonomy stamped during extraction. These are exactly what `tagGroups`
+   * filters on, so this is how you check what a filter will match. Scope is
+   * not among them — `userId` and friends carry that, and the reserved
+   * namespace never leaves the API. Empty rather than null when a memory
+   * carries none.
+   */
+  tags: string[];
   /** When the underlying event happened, as distinct from when it was recorded. */
   occurred_start: string | null;
   occurred_end: string | null;
@@ -122,6 +131,12 @@ export interface MemoryItem {
   date: string | null;
   type: string | null;
   entities: string | null;
+  /**
+   * The memory's own tags, same rule and same shape as `SearchResult.tags`:
+   * what was written with it plus whatever a label taxonomy stamped, never
+   * the reserved scope tags, which arrive as the scope fields instead.
+   */
+  tags: string[];
   /**
    * Curation state. `invalidated` is a memory that has been superseded or
    * retired rather than deleted — `listMemories({ state: "invalidated" })`
