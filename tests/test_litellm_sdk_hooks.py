@@ -5,6 +5,15 @@ names (async_pre_call_hook / async_post_call_success_hook), which plain
 litellm.completion() never fires — so enable() injected and stored nothing — and
 it replaced litellm.callbacks, wiping the caller's other callbacks.
 
+Also covers: a duplicate-registration guard that dropped every space after
+the first (it matched on the callback's class name, which is the same for
+every instance), a system/user message that accumulated a new memories block
+on every turn instead of replacing the last one when a caller reuses one
+`messages` list across a conversation, a TypeError when a message's content is
+a list (multimodal messages) rather than a string, and a synchronous HTTP
+timeout of 10s that blocked litellm.completion() itself rather than only a
+background op.
+
 Runs in an isolated subprocess with a *fake* `litellm` module, so it needs no
 real litellm install and every case starts from a fresh import. The API is
 mocked with respx.
@@ -173,4 +182,120 @@ def test_store_after_false_skips_storage():
                                  _resp_obj('hello'), None, None)
             assert not record_route.called
             print('OK')
+    """))
+
+
+def test_two_instances_both_register_a_callback():
+    """A classname dedup check made every space after the first a
+    silent no-op. Two AnonaMemory objects for two different spaces must each
+    get their own callback in litellm.callbacks — before the fix, the second
+    enable() found the first instance's callback already satisfying
+    `type(c).__name__ == '_Callback'` and registered nothing.
+    """
+    _ok(_run("""
+        litellm.callbacks = []
+        one = AnonaMemory(api_key='k', space_id='space-one', base_url=BASE)
+        two = AnonaMemory(api_key='k', space_id='space-two', base_url=BASE)
+        one.enable()
+        two.enable()
+        cbs = [c for c in litellm.callbacks if type(c).__name__ == '_Callback']
+        assert len(cbs) == 2, len(cbs)
+        print('OK')
+    """))
+
+
+def test_reused_message_list_replaces_block_instead_of_compounding():
+    """`_inject` mutates the caller's own message dict in place. The
+    documented multi-turn pattern is one `messages` list kept across calls
+    (`messages.append(...)` between turns) — so without replacing a prior
+    block, the system message grows a new one on every single turn instead of
+    carrying just the latest search.
+    """
+    _ok(_run("""
+        with respx.mock:
+            calls = {'n': 0}
+            def retrieve_handler(request):
+                calls['n'] += 1
+                content = f'memory from call {calls["n"]}'
+                return httpx.Response(200, json={'results': [{'content': content}]})
+            respx.post(f'{BASE}/v1/retrieve').mock(side_effect=retrieve_handler)
+            respx.post(f'{BASE}/v1/record').mock(
+                return_value=httpx.Response(201, json={'memory_id': 'm1'}))
+            litellm.callbacks = []
+            AnonaMemory(api_key='k', space_id='s1', base_url=BASE).enable()
+            cb = [c for c in litellm.callbacks
+                  if type(c).__name__ == '_Callback'][0]
+
+            messages = [{'role': 'user', 'content': 'first question'}]
+            cb.log_pre_api_call('gpt-x', messages, {})
+            assert 'memory from call 1' in messages[0]['content']
+
+            messages.append({'role': 'assistant', 'content': 'first answer'})
+            messages.append({'role': 'user', 'content': 'second question'})
+            cb.log_pre_api_call('gpt-x', messages, {})
+            sys_content = messages[0]['content']
+            assert 'memory from call 2' in sys_content
+            assert 'memory from call 1' not in sys_content, (
+                'old block was concatenated onto instead of replaced: ' + sys_content)
+            print('OK')
+    """))
+
+
+def test_inject_handles_multimodal_content_without_raising():
+    """`content` is not always a string — a multimodal message
+    carries a list of `{"type": ..., ...}` parts (e.g. an image alongside
+    text), and `block + content` / `content + block` raised TypeError on that
+    shape. The memories must be added as their own text part instead.
+    """
+    _ok(_run("""
+        with respx.mock:
+            respx.post(f'{BASE}/v1/retrieve').mock(return_value=httpx.Response(
+                200, json={'results': [{'content': 'Likes dark mode'}]}))
+            litellm.callbacks = []
+            AnonaMemory(api_key='k', space_id='s1', base_url=BASE,
+                        inject_mode='user').enable()
+            cb = [c for c in litellm.callbacks
+                  if type(c).__name__ == '_Callback'][0]
+
+            messages = [{'role': 'user', 'content': [
+                {'type': 'text', 'text': 'describe this'},
+                {'type': 'image_url', 'image_url': {'url': 'https://x/img.png'}},
+            ]}]
+            cb.log_pre_api_call('gpt-x', messages, {})  # must not raise
+            content = messages[0]['content']
+            assert isinstance(content, list)
+            assert any('dark mode' in (p.get('text') or '') for p in content
+                       if isinstance(p, dict))
+            assert any(p.get('type') == 'image_url' for p in content), (
+                'the original image part was dropped')
+            print('OK')
+    """))
+
+
+def test_search_failure_does_not_raise_or_inject():
+    _ok(_run("""
+        with respx.mock:
+            respx.post(f'{BASE}/v1/retrieve').mock(return_value=httpx.Response(500))
+            litellm.callbacks = []
+            AnonaMemory(api_key='k', space_id='s1', base_url=BASE).enable()
+            cb = [c for c in litellm.callbacks
+                  if type(c).__name__ == '_Callback'][0]
+            messages = [{'role': 'user', 'content': 'q'}]
+            cb.log_pre_api_call('gpt-x', messages, {})  # must not raise
+            assert messages == [{'role': 'user', 'content': 'q'}], messages
+            print('OK')
+    """))
+
+
+def test_default_timeout_is_a_few_seconds_not_ten():
+    """A slow gateway must not turn every chat call into a ~10s stall — the
+    old hardcoded httpx timeout applied on litellm.completion()'s own
+    synchronous call path, not just to a background op.
+    """
+    _ok(_run("""
+        mem = AnonaMemory(api_key='k', space_id='s1', base_url=BASE)
+        assert mem._sync_http.timeout.connect <= 5.0, mem._sync_http.timeout
+        custom = AnonaMemory(api_key='k', space_id='s1', base_url=BASE, timeout=1.0)
+        assert custom._sync_http.timeout.connect == 1.0
+        print('OK')
     """))
