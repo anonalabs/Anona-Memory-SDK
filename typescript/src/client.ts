@@ -21,6 +21,8 @@ import type {
   MemoryModelList,
   MemoryModelTrigger,
   ReasonSettings,
+  Rule,
+  RuleList,
   SpaceProfile,
   ContextReceipt,
   MemoryExplanation,
@@ -1312,6 +1314,113 @@ export class Anona {
       path: `/v1/spaces/${seg(spaceId)}/reason-settings`,
       expectNoContent: true,
       signal,
+    });
+  }
+
+  // ── Rules ───────────────────────────────────────────────────────────────────
+
+  /**
+   * Every rule this space must follow, highest priority first.
+   *
+   * Inactive rules are listed too: they are stored and editable, they are
+   * simply not applied. Owner-only, and free.
+   */
+  async listRules(spaceId: string, signal?: AbortSignal): Promise<Rule[]> {
+    const page = await this.http.request<RuleList>({
+      method: "GET",
+      path: `/v1/spaces/${seg(spaceId)}/rules`,
+      signal,
+    });
+    return page.items ?? [];
+  }
+
+  /**
+   * Add a rule this space must follow.
+   *
+   * A rule is not a preference and not a tone setting — those are the
+   * disposition dials on the space profile. It applies to every answer the
+   * space gives and it overrides what the memories say: "never describe
+   * revenue as committed without a signed document in the memories" holds even
+   * when a memory says the deal is done.
+   *
+   * `priority` orders the rules, highest first, ties broken by recency. `name`
+   * is the label an answer reports back in `rules_applied`, so write it for
+   * whoever reads that answer. A space may have **25 active** rules;
+   * `isActive: false` stores one without applying it and without using up a
+   * slot, so switching a rule off is always the way back under the cap.
+   *
+   * Owner-only, and free.
+   */
+  async createRule(options: {
+    spaceId: string;
+    name: string;
+    content: string;
+    priority?: number;
+    isActive?: boolean;
+    tags?: string[];
+    signal?: AbortSignal;
+  }): Promise<Rule> {
+    return this.http.request<Rule>({
+      method: "POST",
+      path: `/v1/spaces/${seg(options.spaceId)}/rules`,
+      // A 5xx or a timeout can arrive after the rule was stored, and a replay
+      // would then add a second copy of something applied to every answer —
+      // and spend one of the 25 active slots on the duplicate.
+      idempotent: false,
+      signal: options.signal,
+      body: {
+        name: options.name,
+        content: options.content,
+        priority: options.priority ?? 0,
+        is_active: options.isActive ?? true,
+        tags: options.tags ?? [],
+      },
+    });
+  }
+
+  /**
+   * Change one rule — only the fields you pass.
+   *
+   * A patch, unlike the settings PUTs above: switching a rule off and lifting
+   * its priority are the common edits, and neither should mean resending the
+   * text of something enforced on every answer. Naming no field at all is
+   * refused rather than treated as a no-op (`empty_update`).
+   */
+  async updateRule(options: {
+    spaceId: string;
+    ruleId: string;
+    name?: string;
+    content?: string;
+    priority?: number;
+    isActive?: boolean;
+    tags?: string[];
+    signal?: AbortSignal;
+  }): Promise<Rule> {
+    return this.http.request<Rule>({
+      method: "PATCH",
+      path: `/v1/spaces/${seg(options.spaceId)}/rules/${seg(options.ruleId)}`,
+      signal: options.signal,
+      body: compact({
+        name: options.name,
+        content: options.content,
+        priority: options.priority,
+        is_active: options.isActive,
+        tags: options.tags,
+      }),
+    });
+  }
+
+  /** Remove a rule. Answers from here on stop obeying it. */
+  async deleteRule(options: {
+    spaceId: string;
+    ruleId: string;
+    signal?: AbortSignal;
+  }): Promise<void> {
+    await this.http.request<void>({
+      method: "DELETE",
+      path: `/v1/spaces/${seg(options.spaceId)}/rules/${seg(options.ruleId)}`,
+      expectNoContent: true,
+      signal: options.signal,
     });
   }
 
