@@ -360,6 +360,9 @@ await anona.createRule({
 written most recently. `name` is the label an answer reports back, so write it
 for whoever reads that answer.
 
+Rules shape the answers the API synthesises for you — `reason`, `askAboutUser`,
+and the memory models a space keeps. They do not change what `retrieve` returns.
+
 A space may have **25 active** rules at once. A rule that is switched off is
 stored and still editable but never applied, and does not count against the
 cap — so switching one off is always a way back under it without throwing work

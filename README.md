@@ -511,6 +511,11 @@ client.create_rule(
 written most recently. `name` is the label an answer reports back, so write it
 for whoever reads that answer.
 
+Rules shape the answers the API synthesises for you — `reason`,
+`ask_about_user`, and the memory models a space keeps. They do not change what
+`retrieve` returns, and they do not reach a completion you make yourself through
+the LiteLLM integration: that prompt is yours.
+
 A space may have **25 active** rules at once. A rule that is switched off is
 stored and still editable but never applied, and does not count against the
 cap — so switching one off is always a way back under it without throwing work
