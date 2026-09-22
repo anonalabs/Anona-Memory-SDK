@@ -152,6 +152,10 @@ async with AnonaClient(api_key="...") as client:
 - `get_reason_settings(space_id: str) -> dict` — The model this space uses for `reason`, or null for the default
 - `set_reason_settings(space_id: str, *, model: str | None = None) -> dict` — Pin the model `reason` uses for this space
 - `reset_reason_settings(space_id: str) -> None` — Clear the space's reason-model override. Owner-only
+- `list_rules(space_id: str) -> list[dict]` — every rule this space must follow, highest priority first; inactive ones are listed too
+- `create_rule(space_id: str, *, name: str, content: str, priority: int = 0, is_active: bool = True, tags: list[str] | None = None) -> dict` — add a rule every answer must follow; see [Rules](#rules-a-space-must-follow)
+- `update_rule(space_id: str, rule_id: str, *, name=None, content=None, priority=None, is_active=None, tags=None) -> dict` — change one rule, only the fields you pass
+- `delete_rule(space_id: str, rule_id: str) -> None` — remove a rule; later answers stop obeying it
 - `list_memory_models(space_id: str, *, limit: int = 50, offset: int = 0, tags: list[str] | None = None) -> dict` — The memory models defined on a space, with their current content
 - `create_memory_model(space_id: str, *, name: str, query: str, model_id: str | None = None, tags: list[str] | None = None, max_tokens: int | None = None, trigger: dict | None = None) -> dict` — Define a memory model
 - `get_memory_model(space_id: str, model_id: str) -> dict` — One memory model, with its current content
@@ -485,6 +489,62 @@ write.
 
 Labels apply to writes made after you save them, so turning a taxonomy on never
 retags your history.
+
+## Rules a space must follow
+
+A rule is a standing instruction the space obeys whenever it answers. It is not
+a preference and not a tone setting: a rule applies to **every** answer the
+space gives, and it overrides what the memories say.
+
+```python
+client.create_rule(
+    "accounts",
+    name="Never call revenue committed",
+    content=(
+        "Never describe revenue as committed unless a memory records a signed "
+        "document. Name the stage the deal is actually at instead."
+    ),
+    priority=100,
+)
+```
+
+`priority` orders the rules, highest first, with ties broken by whichever was
+written most recently. `name` is the label an answer reports back, so write it
+for whoever reads that answer.
+
+Rules shape the answers the API synthesises for you — `reason`,
+`ask_about_user`, and the memory models a space keeps. They do not change what
+`retrieve` returns, and they do not reach a completion you make yourself through
+the LiteLLM integration: that prompt is yours.
+
+A space may have **25 active** rules at once. A rule that is switched off is
+stored and still editable but never applied, and does not count against the
+cap — so switching one off is always a way back under it without throwing work
+away:
+
+```python
+for rule in client.list_rules("accounts"):
+    state = "active" if rule["is_active"] else "off"
+    print(rule["priority"], rule["name"], state)
+
+client.update_rule("accounts", "rl_1", is_active=False)  # frees a slot
+client.delete_rule("accounts", "rl_1")                   # gone for good
+```
+
+`update_rule` changes only the fields you pass, so switching a rule off or
+lifting its priority never means resending the text of something enforced on
+every answer.
+
+An answer says which rules shaped it. `POST /v1/reason` returns
+`rules_applied` — the id and name of each rule that applied, and deliberately
+not its text, which is your own configuration and already in hand. An empty
+list is the useful finding that no rule applied, which is what separates "the
+memories are wrong" from "a rule said otherwise". `client.reason()` returns the
+synthesised text on its own; read that field from the API response if you need
+it.
+
+Rules are owner-only, and free — an organisation out of credits must still be
+able to switch off a rule that is producing bad answers.
 
 ## Framework adapters
 

@@ -1819,6 +1819,117 @@ class AnonaClient:
             expect_no_content=True,
         )
 
+    # ── Rules ─────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _rule_changes(
+        name: str | None,
+        content: str | None,
+        priority: int | None,
+        is_active: bool | None,
+        tags: list[str] | None,
+    ) -> dict:
+        """Only the fields actually passed.
+
+        Editing a rule is a PATCH, unlike the settings PUTs above: the API
+        changes what it is sent and leaves the rest alone, so an unset argument
+        has to be omitted rather than nulled. ``priority`` is tested against
+        ``None`` rather than for truthiness — 0 is a real priority, and the
+        lowest one.
+        """
+        changes: dict = {}
+        for key, value in (
+            ("name", name),
+            ("content", content),
+            ("priority", priority),
+            ("is_active", is_active),
+            ("tags", tags),
+        ):
+            if value is not None:
+                changes[key] = value
+        return changes
+
+    def list_rules(self, space_id: str) -> list[dict]:
+        """Every rule this space must follow, highest priority first.
+
+        Inactive rules are listed too: they are stored and editable, they are
+        simply not applied. Owner-only, and free.
+        """
+        page = self._call("GET", f"/v1/spaces/{_seg(space_id)}/rules") or {}
+        return page.get("items", [])
+
+    def create_rule(
+        self,
+        space_id: str,
+        *,
+        name: str,
+        content: str,
+        priority: int = 0,
+        is_active: bool = True,
+        tags: list[str] | None = None,
+    ) -> dict:
+        """Add a rule this space must follow.
+
+        A rule is not a preference and not a tone setting — those are the
+        disposition dials on the space profile. It applies to **every** answer
+        the space gives and it overrides what the memories say: "never describe
+        revenue as committed without a signed document in the memories" holds
+        even when a memory says the deal is done.
+
+        ``priority`` orders the rules, highest first, ties broken by recency.
+        ``name`` is the label an answer reports back in ``rules_applied``, so
+        write it for whoever reads that answer. A space may have **25 active**
+        rules; ``is_active=False`` stores one without applying it and without
+        using up a slot, so switching a rule off is always the way back under
+        the cap.
+
+        Owner-only, and free.
+        """
+        return self._call(
+            "POST",
+            f"/v1/spaces/{_seg(space_id)}/rules",
+            json={
+                "name": name,
+                "content": content,
+                "priority": priority,
+                "is_active": is_active,
+                "tags": tags or [],
+            },
+        )
+
+    def update_rule(
+        self,
+        space_id: str,
+        rule_id: str,
+        *,
+        name: str | None = None,
+        content: str | None = None,
+        priority: int | None = None,
+        is_active: bool | None = None,
+        tags: list[str] | None = None,
+    ) -> dict:
+        """Change one rule — only the fields you pass.
+
+        Switching a rule off and lifting its priority are the common edits, and
+        neither should mean resending the text of something enforced on every
+        answer. Naming no field at all is refused rather than treated as a
+        no-op (``empty_update``).
+        """
+        return self._call(
+            "PATCH",
+            f"/v1/spaces/{_seg(space_id)}/rules/{_seg(rule_id)}",
+            json=self._rule_changes(name, content, priority, is_active, tags),
+        )
+
+    def delete_rule(self, space_id: str, rule_id: str) -> None:
+        """Remove a rule. Answers already given are unchanged; later ones stop
+        obeying it."""
+        return self._call(
+            "DELETE",
+            f"/v1/spaces/{_seg(space_id)}/rules/{_seg(rule_id)}",
+            expect_no_content=True,
+        )
+
     def list_memory_models(
         self,
         space_id: str, *, limit: int = 50, offset: int = 0, tags: list[str] | None = None,
@@ -2733,6 +2844,60 @@ class AnonaClient:
         return await self._acall(
             "DELETE",
             f"/v1/spaces/{_seg(space_id)}/reason-settings",
+            expect_no_content=True,
+        )
+
+    async def async_list_rules(self, space_id: str) -> list[dict]:
+        """Async (asyncio) variant of :meth:`list_rules`."""
+        page = (await self._acall("GET", f"/v1/spaces/{_seg(space_id)}/rules")) or {}
+        return page.get("items", [])
+
+    async def async_create_rule(
+        self,
+        space_id: str,
+        *,
+        name: str,
+        content: str,
+        priority: int = 0,
+        is_active: bool = True,
+        tags: list[str] | None = None,
+    ) -> dict:
+        """Async (asyncio) variant of :meth:`create_rule`."""
+        return await self._acall(
+            "POST",
+            f"/v1/spaces/{_seg(space_id)}/rules",
+            json={
+                "name": name,
+                "content": content,
+                "priority": priority,
+                "is_active": is_active,
+                "tags": tags or [],
+            },
+        )
+
+    async def async_update_rule(
+        self,
+        space_id: str,
+        rule_id: str,
+        *,
+        name: str | None = None,
+        content: str | None = None,
+        priority: int | None = None,
+        is_active: bool | None = None,
+        tags: list[str] | None = None,
+    ) -> dict:
+        """Async (asyncio) variant of :meth:`update_rule`."""
+        return await self._acall(
+            "PATCH",
+            f"/v1/spaces/{_seg(space_id)}/rules/{_seg(rule_id)}",
+            json=self._rule_changes(name, content, priority, is_active, tags),
+        )
+
+    async def async_delete_rule(self, space_id: str, rule_id: str) -> None:
+        """Async (asyncio) variant of :meth:`delete_rule`."""
+        return await self._acall(
+            "DELETE",
+            f"/v1/spaces/{_seg(space_id)}/rules/{_seg(rule_id)}",
             expect_no_content=True,
         )
 

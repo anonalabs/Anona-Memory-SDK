@@ -339,6 +339,69 @@ labels, which would keep no entities at all rather than only labelled ones.
 Twelve groups maximum, since the taxonomy rides the extraction prompt on every
 write.
 
+## Rules a space must follow
+
+A rule is a standing instruction the space obeys whenever it answers. It is not
+a preference and not a tone setting: a rule applies to **every** answer the
+space gives, and it overrides what the memories say.
+
+```ts
+await anona.createRule({
+  spaceId: "accounts",
+  name: "Never call revenue committed",
+  content:
+    "Never describe revenue as committed unless a memory records a signed " +
+    "document. Name the stage the deal is actually at instead.",
+  priority: 100,
+});
+```
+
+`priority` orders the rules, highest first, with ties broken by whichever was
+written most recently. `name` is the label an answer reports back, so write it
+for whoever reads that answer.
+
+Rules shape the answers the API synthesises for you — `reason`, `askAboutUser`,
+and the memory models a space keeps. They do not change what `retrieve` returns.
+
+A space may have **25 active** rules at once. A rule that is switched off is
+stored and still editable but never applied, and does not count against the
+cap — so switching one off is always a way back under it without throwing work
+away:
+
+```ts
+for (const rule of await anona.listRules("accounts")) {
+  console.log(rule.priority, rule.name, rule.is_active ? "active" : "off");
+}
+
+await anona.updateRule({ spaceId: "accounts", ruleId: "rl_1", isActive: false });
+await anona.deleteRule({ spaceId: "accounts", ruleId: "rl_1" });
+```
+
+`updateRule` changes only the fields you pass, so switching a rule off or
+lifting its priority never means resending the text of something enforced on
+every answer.
+
+An answer says which rules shaped it:
+
+```ts
+const result = await anona.reason({
+  spaceId: "accounts",
+  query: "Is the two-year renewal a done deal?",
+});
+
+for (const rule of result.rules_applied ?? []) {
+  console.log("shaped by:", rule.name);
+}
+```
+
+`rules_applied` carries the id and name of each rule that applied, and
+deliberately not its text — that is your own configuration and already in hand.
+An empty array is the useful finding that no rule applied, which is what
+separates "the memories are wrong" from "a rule said otherwise".
+
+Rules are owner-only, and free — an organisation out of credits must still be
+able to switch off a rule that is producing bad answers.
+
 ## Compound tag filters
 
 `tags` is a flat list under a single match mode, so it can say "any of these" or
@@ -446,6 +509,7 @@ ask one memory to carry every alternative at once.
 | `getUsage` | Credits and rate limit for this key |
 | `cancelJob` | Stop the parts of a queued job that have not started |
 | `getReasonSettings` / `setReasonSettings` / `resetReasonSettings` | The model `reason` uses for a space |
+| `listRules` / `createRule` / `updateRule` / `deleteRule` | Rules every answer from a space must follow |
 | `listMemoryModels` / `createMemoryModel` / `getMemoryModel` / `updateMemoryModel` / `deleteMemoryModel` | Standing questions a space keeps an answer to |
 | `refreshMemoryModel` / `clearMemoryModel` / `getMemoryModelHistory` | Re-answer, wipe, or read earlier versions |
 | `getSpaceProfile` | A space's mission and disposition |

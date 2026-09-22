@@ -110,11 +110,35 @@ export interface SearchResult {
   member_id: string | null;
 }
 
+/**
+ * A rule that shaped one answer, as `reason` reports it.
+ *
+ * Named, never quoted. The rule's text is your own configuration and is read
+ * once from `listRules`, whereas this rides every answer — a space may carry 25
+ * active rules of 2,000 characters each, so echoing the text would put tens of
+ * kilobytes on every response to tell you something you already have. The name
+ * is what identifies which rule spoke.
+ */
+export interface AppliedRule {
+  id: string;
+  name: string;
+}
+
 export interface InsightsResult {
   job_id: string | null;
   status: string | null;
   insights: unknown;
   usage?: TokenUsage | null;
+  /**
+   * Which of the space's rules shaped this answer.
+   *
+   * Never null: an empty array is the finding that no rule applied, which is
+   * worth being able to rule out when an answer is surprising — a rule
+   * overrides what the memories say, so "the memories are wrong" and "a rule
+   * said otherwise" need opposite fixes. Declared optional only because a
+   * deployment older than rules omits the field entirely.
+   */
+  rules_applied?: AppliedRule[];
 }
 
 export interface Space {
@@ -507,6 +531,37 @@ export interface RetrieveWithReceipt {
 export interface ReasonSettings {
   space_id: string;
   model: string | null;
+}
+
+/**
+ * A rule the space must follow when it answers.
+ *
+ * Not a preference and not a tone setting — those are the disposition dials on
+ * the space profile. A rule applies to **every** answer the space gives and it
+ * overrides what the memories say.
+ */
+export interface Rule {
+  id: string;
+  space_id: string;
+  /** The label an answer reports back in `rules_applied`. */
+  name: string;
+  /** The rule itself, as the space must follow it. */
+  content: string;
+  /** Applied highest first; equal priorities break on recency. */
+  priority: number;
+  /**
+   * A rule that is off is stored and editable but never applied, and does not
+   * count against the 25 a space may have active at once.
+   */
+  is_active: boolean;
+  tags: string[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface RuleList {
+  items: Rule[];
+  total: number;
 }
 
 /** When and how a memory model re-answers itself. */
