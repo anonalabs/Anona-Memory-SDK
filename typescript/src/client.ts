@@ -31,6 +31,8 @@ import type {
   RetrieveWithReceipt,
   SearchResult,
   Space,
+  SpaceType,
+  SpaceTypeList,
   UploadResult,
   UsageSnapshot,
   UserProfile,
@@ -761,10 +763,23 @@ export class Anona {
    * one is rejected. A name containing spaces produces a space id containing
    * spaces, which is legal but means every later path call must encode it (the
    * client does this for you).
+   *
+   * `spaceType` seeds the space from a preset — what it is for, what its
+   * extraction should keep, how it weighs what it is told, and a couple of
+   * standing questions it answers on its own. Everything it sets stays
+   * editable afterwards, so a type is a starting point and not a mode. The
+   * accepted values come from `listSpaceTypes`; an unknown one is rejected
+   * rather than quietly ignored. Omitting it creates exactly the space this
+   * method created before types existed.
+   *
+   * Read `space_type` back off the returned space: it is null whenever
+   * nothing was applied, including when a type was asked for and applying it
+   * failed. The space is created either way.
    */
   async createSpace(options: {
     name: string;
     description?: string;
+    spaceType?: string;
     signal?: AbortSignal;
   }): Promise<Space> {
     return this.http.request<Space>({
@@ -776,8 +791,28 @@ export class Anona {
       // Don't auto-retry it.
       idempotent: false,
       signal: options.signal,
-      body: compact({ name: options.name, description: options.description }),
+      body: compact({
+        name: options.name,
+        description: options.description,
+        space_type: options.spaceType,
+      }),
     });
+  }
+
+  /**
+   * The space types `createSpace` accepts, as a picker shows them.
+   *
+   * Unmetered, and it costs no credits. Read it rather than hardcoding the
+   * ids: the list is served so that a type added or reworded server-side
+   * reaches you without an SDK release.
+   */
+  async listSpaceTypes(signal?: AbortSignal): Promise<SpaceType[]> {
+    const page = await this.http.request<SpaceTypeList>({
+      method: "GET",
+      path: "/v1/space-types",
+      signal,
+    });
+    return page.items;
   }
 
   /** Delete a space and every memory in it. Irreversible. */

@@ -1323,14 +1323,53 @@ class AnonaClient:
         self._raise(resp)
         return resp.json()
 
-    def create_space(self, name: str, description: str | None = None) -> dict:
-        """Create a memory space. Returns ``{"space_id", "name", ...}``."""
+    def create_space(
+        self,
+        name: str,
+        description: str | None = None,
+        *,
+        space_type: str | None = None,
+    ) -> dict:
+        """Create a memory space. Returns ``{"space_id", "name", ...}``.
+
+        ``space_type`` seeds the new space from a preset — what it is for, what
+        its extraction should keep, how it weighs what it is told, and a couple
+        of standing questions it answers on its own. Everything it sets stays
+        editable afterwards, so a type is a starting point and not a mode.
+        :meth:`list_space_types` is the list of accepted values; an unknown one
+        is a 422 rather than a space quietly created without it. Omitting it
+        creates exactly the space this method created before types existed.
+
+        The response echoes ``space_type``, and it is **null whenever nothing
+        was applied** — including when a type was asked for and applying it
+        failed. The space itself is created either way, so read the field back
+        rather than assuming the type you sent is the type you got.
+        """
+        body: dict = {"name": name, "description": description}
+        # Only sent when asked for: the API forbids unknown fields and tells an
+        # absent field from a null one, and an existing caller's request must
+        # stay byte-identical to what it sent before.
+        if space_type is not None:
+            body["space_type"] = space_type
         resp = self._get_client().post(
             f"{self._base_url}/v1/spaces/",
-            json={"name": name, "description": description},
+            json=body,
         )
         self._raise(resp)
         return resp.json()
+
+    def list_space_types(self) -> list[dict]:
+        """The space types :meth:`create_space` accepts, as a picker shows them.
+
+        Each is ``{"space_type", "name", "summary", "mission", "disposition",
+        "models"}``, where ``models`` is the standing questions that type gives
+        a new space. Unmetered, and it costs no credits.
+
+        Read it rather than hardcoding the ids: the list is served so that a
+        type added or reworded server-side reaches you without an SDK release.
+        """
+        page = self._call("GET", "/v1/space-types") or {}
+        return page.get("items", [])
 
     def list_documents(
         self, space_id: str, *, limit: int = 100, offset: int = 0
@@ -2319,15 +2358,27 @@ class AnonaClient:
         return resp.json()
 
     async def async_create_space(
-        self, name: str, description: str | None = None
+        self,
+        name: str,
+        description: str | None = None,
+        *,
+        space_type: str | None = None,
     ) -> dict:
         """Async (asyncio) variant of :meth:`create_space`."""
+        body: dict = {"name": name, "description": description}
+        if space_type is not None:
+            body["space_type"] = space_type
         resp = await self._get_async_client().post(
             f"{self._base_url}/v1/spaces/",
-            json={"name": name, "description": description},
+            json=body,
         )
         self._raise(resp)
         return resp.json()
+
+    async def async_list_space_types(self) -> list[dict]:
+        """Async (asyncio) variant of :meth:`list_space_types`."""
+        page = (await self._acall("GET", "/v1/space-types")) or {}
+        return page.get("items", [])
 
     async def async_list_documents(
         self, space_id: str, *, limit: int = 100, offset: int = 0
