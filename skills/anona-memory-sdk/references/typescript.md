@@ -24,7 +24,7 @@ and returns a promise. Most accept a `signal` for cancellation.
 | `recordBatch` | `{ spaceId, items }` - up to 100, always queued |
 | `retrieve` | `{ spaceId, query, limit?, topK?, mode?, memoryType?, userId?, agentId?, sessionId?, tags?, tagsMatch?, preferObservations?, minScore?, asOf?, queryTimestamp?, occurredAfter?, occurredBefore? }` |
 | `getContext` | `retrieve` options plus `maxTokens` - one prompt-ready block |
-| `reason` | `{ spaceId, query, userId?, agentId?, sessionId?, model? }` |
+| `reason` | `{ spaceId, query, userId?, agentId?, sessionId?, model?, depth? }` |
 | `listMemories`, `getMemoryHistory`, `updateMemory`, `deleteMemory` | browse and edit |
 | `getJob` | `{ spaceId, jobId }` |
 

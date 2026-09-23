@@ -1,4 +1,10 @@
-from .client import AnonaClient, AnonaError, RateLimit, RetrieveWithReceipt
+from .client import (
+    AnonaClient,
+    AnonaError,
+    RateLimit,
+    ReasonWithReceipt,
+    RetrieveWithReceipt,
+)
 
 # `Anona` is what the TypeScript package calls its client, and the two SDKs
 # describing the same API under two different class names is a papercut every
@@ -12,6 +18,7 @@ __all__ = [
     "AnonaClient",
     "AnonaError",
     "RateLimit",
+    "ReasonWithReceipt",
     "RetrieveWithReceipt",
 ]
 __version__ = "0.14.0"

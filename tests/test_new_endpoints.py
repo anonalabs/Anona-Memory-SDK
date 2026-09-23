@@ -135,11 +135,12 @@ def test_reason_settings_get_set_reset():
     _ok(_run("""
         c.get_reason_settings('s1')
         assert seen[-1][0] == 'GET' and seen[-1][1].endswith('/v1/spaces/s1/reason-settings')
-        c.set_reason_settings('s1', model='balanced')
-        assert seen[-1][0] == 'PUT' and seen[-1][2] == {'model': 'balanced'}
-        # Clearing the override is a null, not an omission — PUT is a full replace.
-        c.set_reason_settings('s1')
-        assert seen[-1][2] == {'model': None}
+        c.set_reason_settings('s1', model='balanced', depth='fast')
+        assert seen[-1][0] == 'PUT'
+        assert seen[-1][2] == {'model': 'balanced', 'depth': 'fast'}
+        # Clearing an override is a null, not an omission — PUT is a full replace.
+        c.set_reason_settings('s1', model=None, depth=None)
+        assert seen[-1][2] == {'model': None, 'depth': None}
         c.reset_reason_settings('s1')
         assert seen[-1][0] == 'DELETE'
         print('OK')
@@ -285,5 +286,70 @@ def test_async_forms_send_the_same_request_as_the_sync_ones():
         assert seen_a[2][1].endswith('/v1/usage/me')
         assert seen_a[3][1].endswith('/v1/models')
         assert seen_a[4][2]['tags'] == ['a']
+        print('OK')
+    """))
+
+
+# ── Reason depth ────────────────────────────────────────────────────
+
+
+def test_set_reason_settings_sends_depth_alongside_the_model():
+    _ok(_run("""
+        c.set_reason_settings('s1', model='balanced', depth='thorough')
+        assert seen[-1][0] == 'PUT'
+        assert seen[-1][2] == {'model': 'balanced', 'depth': 'thorough'}, seen[-1][2]
+        print('OK')
+    """))
+
+
+def test_set_reason_settings_will_not_take_a_model_without_a_depth():
+    # The PUT is a full replace, so a body naming only the model clears the
+    # depth. An optional argument is exactly how that happens by accident, so
+    # both are required and omitting one is a TypeError at the call site rather
+    # than a setting the customer loses silently.
+    _ok(_run("""
+        for call in (lambda: c.set_reason_settings('s1', model='balanced'),
+                     lambda: c.set_reason_settings('s1', depth='thorough'),
+                     lambda: c.set_reason_settings('s1')):
+            try:
+                call()
+            except TypeError:
+                continue
+            raise AssertionError('a partial replace was accepted')
+        print('OK')
+    """))
+
+
+def test_reason_sends_the_depth_it_was_asked_for():
+    _ok(_run("""
+        c.reason('s1', 'q', depth='thorough')
+        assert seen[-1][2]['depth'] == 'thorough', seen[-1][2]
+        # Omitted means "use the space's setting" — the field must not be sent.
+        c.reason('s1', 'q')
+        assert 'depth' not in seen[-1][2], seen[-1][2]
+        print('OK')
+    """))
+
+
+def test_reason_receipt_carries_what_the_answer_was_built_from():
+    _ok(_run("""
+        import httpx
+        body = {'insights': 'an answer',
+                'sources': {'models': ['m1'], 'memories': 3, 'notes': 2},
+                'rules_applied': [{'id': 'r1', 'name': 'always cite'}],
+                'model': 'us.anthropic.claude-sonnet-4-6',
+                'usage': {'input_tokens': 10}}
+        c._client = httpx.Client(
+            transport=httpx.MockTransport(lambda r: httpx.Response(200, json=body)),
+            headers={'Authorization': 'Bearer k'})
+        got = c.reason_receipt('s1', 'q')
+        assert got.insights == 'an answer', got
+        assert got.sources == {'models': ['m1'], 'memories': 3, 'notes': 2}, got
+        assert got.rules_applied == [{'id': 'r1', 'name': 'always cite'}], got
+        assert got.model == 'us.anthropic.claude-sonnet-4-6', got
+        assert got.usage == {'input_tokens': 10}, got
+        # Stands in for what reason() would have returned, like
+        # RetrieveWithReceipt stands in for a result list.
+        assert str(got) == 'an answer'
         print('OK')
     """))

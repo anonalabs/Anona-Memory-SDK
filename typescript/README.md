@@ -508,7 +508,7 @@ ask one memory to carry every alternative at once.
 | `listWebhookDeliveries` | Recent delivery attempts, for debugging a receiver |
 | `getUsage` | Credits and rate limit for this key |
 | `cancelJob` | Stop the parts of a queued job that have not started |
-| `getReasonSettings` / `setReasonSettings` / `resetReasonSettings` | The model `reason` uses for a space |
+| `getReasonSettings` / `setReasonSettings` / `resetReasonSettings` | The model and the depth `reason` uses for a space |
 | `listRules` / `createRule` / `updateRule` / `deleteRule` | Rules every answer from a space must follow |
 | `listMemoryModels` / `createMemoryModel` / `getMemoryModel` / `updateMemoryModel` / `deleteMemoryModel` | Standing questions a space keeps an answer to |
 | `refreshMemoryModel` / `clearMemoryModel` / `getMemoryModelHistory` | Re-answer, wipe, or read earlier versions |
