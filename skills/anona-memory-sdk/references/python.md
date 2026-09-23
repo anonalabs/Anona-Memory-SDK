@@ -30,7 +30,7 @@ Every method below has an `async_` twin with the same arguments:
 | `record_batch` | `(space_id, items)` - up to 100 dicts with `content` plus optional `context`, `timestamp`, `metadata`, `tags`. Always queued. |
 | `retrieve` | `(space_id, query, limit=10, mode="accurate", user_id=None, agent_id=None, session_id=None, as_of=None, query_timestamp=None, occurred_after=None, occurred_before=None)` |
 | `get_context` | `(space_id, query, ...)` - the same search, rendered as one prompt-ready block instead of a list. |
-| `reason` | `(space_id, query, user_id=None, agent_id=None, session_id=None, model=None)` |
+| `reason` | `(space_id, query, user_id=None, agent_id=None, session_id=None, model=None, depth=None)` |
 | `list_memories` | `(space_id, ...)` - browse rather than search. |
 | `get_memory_history` | `(space_id, memory_id)` |
 | `update_memory` | `(space_id, memory_id, ...)` |
@@ -40,7 +40,12 @@ Every method below has an `async_` twin with the same arguments:
 `record` returns `{"memory_id": ...}`, or `{"job_id": ..., "status": "processing"}`
 when `background=True`. `retrieve` returns the list of results directly, already
 unwrapped from the response envelope. `reason` returns the answer string, or
-`None`.
+`None`; `reason_receipt` returns the same answer plus `sources` (which layer
+spoke), `rules_applied` and the model that actually ran.
+
+`depth="thorough"` makes `reason` check the notes and the raw memories instead
+of letting a current memory model answer on its own. It is the second look to
+ask for when an answer reads stale.
 
 ## Time
 
@@ -81,6 +86,8 @@ the same three for `chat_settings` and `reason_settings`,
 `list_webhook_deliveries`, plus `get_usage` and `list_catalog_models`.
 
 Settings writes are a full replace: an omitted field is cleared, not left alone.
+`set_reason_settings` therefore requires **both** `model` and `depth` — naming
+only the model would silently clear a depth the customer had set.
 
 ## Errors
 

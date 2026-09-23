@@ -150,7 +150,7 @@ async with AnonaClient(api_key="...") as client:
 - `get_document(space_id: str, document_id: str) -> dict` — One document by id, with its source and memory count
 - `cancel_job(space_id: str, job_id: str) -> dict` — Cancel a queued ingestion job
 - `get_reason_settings(space_id: str) -> dict` — The model this space uses for `reason`, or null for the default
-- `set_reason_settings(space_id: str, *, model: str | None = None) -> dict` — Pin the model `reason` uses for this space
+- `set_reason_settings(space_id: str, *, model: str | None, depth: str | None) -> dict` — Pin the model and the depth `reason` uses for this space. Both are required: this PUT is a full replace, so naming only one clears the other
 - `reset_reason_settings(space_id: str) -> None` — Clear the space's reason-model override. Owner-only
 - `list_rules(space_id: str) -> list[dict]` — every rule this space must follow, highest priority first; inactive ones are listed too
 - `create_rule(space_id: str, *, name: str, content: str, priority: int = 0, is_active: bool = True, tags: list[str] | None = None) -> dict` — add a rule every answer must follow; see [Rules](#rules-a-space-must-follow)

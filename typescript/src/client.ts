@@ -20,6 +20,7 @@ import type {
   MemoryModelJob,
   MemoryModelList,
   MemoryModelTrigger,
+  ReasonDepth,
   ReasonSettings,
   Rule,
   RuleList,
@@ -650,6 +651,14 @@ export class Anona {
     /** Which LLM answers: a tier name such as `"fast"`, or a model id. */
     model?: string;
     /**
+     * How hard to look before answering. `"thorough"` always checks the notes
+     * and the raw memories underneath instead of letting a current memory model
+     * answer on its own — the second look to ask for when an answer reads
+     * stale. Slower, and it costs more tokens. Omit to use the space's setting,
+     * and failing that `"fast"`.
+     */
+    depth?: ReasonDepth;
+    /**
      * The same boolean expression `retrieve` takes, narrowing what the
      * reasoning agent is allowed to look at rather than filtering an answer
      * after the fact. Worth more here than there: the predicate rides every
@@ -671,6 +680,7 @@ export class Anona {
         ...(options.agentId !== undefined && { agent_id: options.agentId }),
         ...(options.sessionId !== undefined && { session_id: options.sessionId }),
         ...(options.model !== undefined && { model: options.model }),
+        ...(options.depth !== undefined && { depth: options.depth }),
         ...(options.tagGroups !== undefined && { tag_groups: options.tagGroups }),
       },
     });
@@ -1311,7 +1321,13 @@ export class Anona {
 
   // ── Reason settings ─────────────────────────────────────────────────────────
 
-  /** The model this space uses for `reason`, or null for the platform default. */
+  /**
+   * How this space answers `reason`: its `model` and its `depth`.
+   *
+   * Either is null when the space has no override for it, which is a real
+   * answer rather than a 404 — it lets a client render the form before the
+   * first save.
+   */
   async getReasonSettings(spaceId: string, signal?: AbortSignal): Promise<ReasonSettings> {
     return this.http.request<ReasonSettings>({
       method: "GET",
@@ -1321,24 +1337,32 @@ export class Anona {
   }
 
   /**
-   * Pin the model `reason` uses for this space.
+   * Pin how `reason` answers for this space.
    *
-   * Takes a model id from `listCatalogModels`, or a tier name (`"fast"`,
-   * `"balanced"`). It is stored **resolved**, so re-pointing a tier later never
-   * moves a space that already chose one. `model: null` clears the override.
+   * `model` takes a model id from `listCatalogModels`, or a tier name
+   * (`"fast"`, `"balanced"`). It is stored **resolved**, so re-pointing a tier
+   * later never moves a space that already chose one. `depth` takes `"fast"` or
+   * `"thorough"`. Either as `null` clears that override.
    *
-   * A full replace, and owner-only.
+   * **Both are required, and that is deliberate.** This PUT is a full replace,
+   * so a body naming only the model clears the depth — an optional parameter is
+   * exactly how a customer's `"thorough"` gets undone by a call that was only
+   * ever meant to pin a model. Pass both every time; read the current pair back
+   * with `getReasonSettings` first if you are changing only one.
+   *
+   * Owner-only.
    */
   async setReasonSettings(options: {
     spaceId: string;
     model: string | null;
+    depth: ReasonDepth | null;
     signal?: AbortSignal;
   }): Promise<ReasonSettings> {
     return this.http.request<ReasonSettings>({
       method: "PUT",
       path: `/v1/spaces/${seg(options.spaceId)}/reason-settings`,
       signal: options.signal,
-      body: { model: options.model },
+      body: { model: options.model, depth: options.depth },
     });
   }
 

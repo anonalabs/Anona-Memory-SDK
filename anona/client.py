@@ -38,6 +38,39 @@ class RetrieveWithReceipt:
         return self.memories[index]
 
 
+@dataclass
+class ReasonWithReceipt:
+    """What :meth:`AnonaClient.reason_receipt` returns.
+
+    ``insights`` is exactly what :meth:`AnonaClient.reason` would have returned
+    for the same arguments; this variant exists only because ``reason`` returns
+    a bare string and has nowhere to put the rest of the answer's receipt.
+
+    ``sources`` says which *layer* spoke — ``{"models": [...], "memories": n,
+    "notes": n}``. A wrong standing answer and a wrong reading of the raw
+    memories need opposite fixes, and the answers are otherwise identical.
+    Reported zero is a real finding: an answer built from nothing.
+
+    ``rules_applied`` names the space's rules that shaped this answer. Empty
+    means none did, which is worth being able to rule out when an answer is
+    surprising — a rule overrides what the memories say.
+
+    ``model`` is the model that actually answered, not the one requested. They
+    differ whenever the caller chose nothing, and reporting the request instead
+    would make the bill unexplainable.
+    """
+
+    insights: str | None = None
+    sources: dict = field(default_factory=dict)
+    rules_applied: list[dict] = field(default_factory=list)
+    model: str | None = None
+    usage: dict | None = None
+
+    def __str__(self) -> str:
+        """The answer, so this can stand in for a plain ``reason`` result."""
+        return self.insights or ""
+
+
 def _seg(value: str) -> str:
     """Percent-encode one path segment.
 
@@ -1071,6 +1104,53 @@ class AnonaClient:
         self._raise(resp)
         return resp.json().get("context") or ""
 
+    @staticmethod
+    def _reason_body(
+        space_id: str,
+        query: str,
+        user_id: str | None,
+        agent_id: str | None,
+        session_id: str | None,
+        model: str | None,
+        depth: str | None,
+        tag_groups: list[dict] | None,
+    ) -> dict:
+        """The POST body for /v1/reason.
+
+        Shared by the sync, async and receipt forms rather than copied into
+        each: this client keeps a sync and an async copy of every method and
+        they have drifted before — an argument added to one and not the other.
+        A single builder makes that drift impossible for this route.
+        """
+        body: dict = {"space_id": space_id, "query": query}
+        for key, value in (
+            ("user_id", user_id),
+            ("agent_id", agent_id),
+            ("session_id", session_id),
+            ("model", model),
+            ("depth", depth),
+            ("tag_groups", tag_groups),
+        ):
+            if value:
+                body[key] = value
+        return body
+
+    @staticmethod
+    def _reason_receipt(data: dict) -> ReasonWithReceipt:
+        """Read a /v1/reason body into its receipt.
+
+        Every field is defaulted rather than required: a deployment older than
+        the field that carries it omits it entirely, and an answer is still a
+        perfectly good answer without its receipt.
+        """
+        return ReasonWithReceipt(
+            insights=data.get("insights"),
+            sources=data.get("sources") or {},
+            rules_applied=data.get("rules_applied") or [],
+            model=data.get("model"),
+            usage=data.get("usage"),
+        )
+
     def reason(
         self,
         space_id: str,
@@ -1079,6 +1159,7 @@ class AnonaClient:
         agent_id: str | None = None,
         session_id: str | None = None,
         model: str | None = None,
+        depth: str | None = None,
         tag_groups: list[dict] | None = None,
     ) -> str | None:
         """Synthesize an answer from everything a space knows about a topic.
@@ -1089,27 +1170,57 @@ class AnonaClient:
         as ``"fast"`` / ``"balanced"``, or a model id); omit it to use the
         space's configured default.
 
+        ``depth`` is how hard to look before answering. ``"fast"`` lets a
+        current memory model answer on its own; ``"thorough"`` always checks the
+        notes and the raw memories underneath, which is slower and costs more
+        tokens — it is the second look to ask for when an answer reads stale.
+        Omit it to use the space's setting, and failing that ``"fast"``.
+
         ``tag_groups`` takes the same boolean expression :meth:`retrieve` takes,
         and narrows what the reasoning agent is allowed to look at rather than
         filtering an answer after the fact. It is worth more here than there:
         the predicate rides every iteration of the agent loop, not one query.
+
+        Returns the answer alone. :meth:`reason_receipt` returns the same answer
+        plus what it was built from.
         """
-        body: dict = {"space_id": space_id, "query": query}
-        for key, value in (
-            ("user_id", user_id),
-            ("agent_id", agent_id),
-            ("session_id", session_id),
-            ("model", model),
-            ("tag_groups", tag_groups),
-        ):
-            if value:
-                body[key] = value
         resp = self._get_client().post(
             f"{self._base_url}/v1/reason",
-            json=body,
+            json=self._reason_body(
+                space_id, query, user_id, agent_id, session_id, model, depth,
+                tag_groups,
+            ),
         )
         self._raise(resp)
         return resp.json().get("insights")
+
+    def reason_receipt(
+        self,
+        space_id: str,
+        query: str,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+        model: str | None = None,
+        depth: str | None = None,
+        tag_groups: list[dict] | None = None,
+    ) -> ReasonWithReceipt:
+        """:meth:`reason`, plus what the answer was built from.
+
+        Same question, same answer, same arguments. The only difference is the
+        return type: :meth:`reason` hands back a bare string, which has nowhere
+        to carry the sources, the rules that applied or the model that ran, so
+        this returns all of them. ``str()`` of the result is the answer.
+        """
+        resp = self._get_client().post(
+            f"{self._base_url}/v1/reason",
+            json=self._reason_body(
+                space_id, query, user_id, agent_id, session_id, model, depth,
+                tag_groups,
+            ),
+        )
+        self._raise(resp)
+        return self._reason_receipt(resp.json())
 
     # ── Per-user profiles ─────────────────────────────────────────────────────
 
@@ -1785,7 +1896,12 @@ class AnonaClient:
         self,
         space_id: str,
     ) -> dict:
-        """The model this space uses for :meth:`reason`, or null for the default."""
+        """How this space answers :meth:`reason`: its ``model`` and its ``depth``.
+
+        Either is null when the space has no override for it, which is a real
+        answer rather than a 404 — it lets a client render the form before the
+        first save.
+        """
         return self._call(
             "GET",
             f"/v1/spaces/{_seg(space_id)}/reason-settings",
@@ -1793,19 +1909,27 @@ class AnonaClient:
 
     def set_reason_settings(
         self,
-        space_id: str, *, model: str | None = None,
+        space_id: str, *, model: str | None, depth: str | None,
     ) -> dict:
-        """Pin the model :meth:`reason` uses for this space.
+        """Pin how :meth:`reason` answers for this space.
 
-        Takes a model id or a tier name (``"fast"``, ``"balanced"``). It is
-        stored resolved, so re-pointing a tier later never moves a space that
-        already chose one. ``model=None`` clears the override.
+        ``model`` takes a model id or a tier name (``"fast"``, ``"balanced"``).
+        It is stored resolved, so re-pointing a tier later never moves a space
+        that already chose one. ``depth`` takes ``"fast"`` or ``"thorough"``.
+        Either as ``None`` clears that override.
+
+        **Both are required, and that is deliberate.** This PUT is a full
+        replace, so a body naming only the model clears the depth — an optional
+        argument is exactly how a customer's ``"thorough"`` gets undone by a
+        call that was only ever meant to pin a model. Pass both every time; read
+        the current pair back with :meth:`get_reason_settings` first if you are
+        changing only one.
 
         Owner-only."""
         return self._call(
             "PUT",
             f"/v1/spaces/{_seg(space_id)}/reason-settings",
-            json={"model": model},
+            json={"model": model, "depth": depth},
         )
 
     def reset_reason_settings(
@@ -2359,25 +2483,41 @@ class AnonaClient:
         agent_id: str | None = None,
         session_id: str | None = None,
         model: str | None = None,
+        depth: str | None = None,
         tag_groups: list[dict] | None = None,
     ) -> str | None:
         """Async (asyncio) variant of :meth:`reason`."""
-        body: dict = {"space_id": space_id, "query": query}
-        for key, value in (
-            ("user_id", user_id),
-            ("agent_id", agent_id),
-            ("session_id", session_id),
-            ("model", model),
-            ("tag_groups", tag_groups),
-        ):
-            if value:
-                body[key] = value
         resp = await self._get_async_client().post(
             f"{self._base_url}/v1/reason",
-            json=body,
+            json=self._reason_body(
+                space_id, query, user_id, agent_id, session_id, model, depth,
+                tag_groups,
+            ),
         )
         self._raise(resp)
         return resp.json().get("insights")
+
+    async def async_reason_receipt(
+        self,
+        space_id: str,
+        query: str,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+        model: str | None = None,
+        depth: str | None = None,
+        tag_groups: list[dict] | None = None,
+    ) -> ReasonWithReceipt:
+        """Async (asyncio) variant of :meth:`reason_receipt`."""
+        resp = await self._get_async_client().post(
+            f"{self._base_url}/v1/reason",
+            json=self._reason_body(
+                space_id, query, user_id, agent_id, session_id, model, depth,
+                tag_groups,
+            ),
+        )
+        self._raise(resp)
+        return self._reason_receipt(resp.json())
 
     async def async_get_user_profile(
         self,
@@ -2813,7 +2953,7 @@ class AnonaClient:
         self,
         space_id: str,
     ) -> dict:
-        """The model this space uses for :meth:`reason`, or null for the default."""
+        """Async (asyncio) variant of :meth:`get_reason_settings`."""
         return await self._acall(
             "GET",
             f"/v1/spaces/{_seg(space_id)}/reason-settings",
@@ -2821,19 +2961,17 @@ class AnonaClient:
 
     async def async_set_reason_settings(
         self,
-        space_id: str, *, model: str | None = None,
+        space_id: str, *, model: str | None, depth: str | None,
     ) -> dict:
-        """Pin the model :meth:`reason` uses for this space.
+        """Async (asyncio) variant of :meth:`set_reason_settings`.
 
-        Takes a model id or a tier name (``"fast"``, ``"balanced"``). It is
-        stored resolved, so re-pointing a tier later never moves a space that
-        already chose one. ``model=None`` clears the override.
-
-        Owner-only."""
+        Both arguments are required for the reason given there: the PUT is a
+        full replace, so an omitted ``depth`` is a cleared ``depth``.
+        """
         return await self._acall(
             "PUT",
             f"/v1/spaces/{_seg(space_id)}/reason-settings",
-            json={"model": model},
+            json={"model": model, "depth": depth},
         )
 
     async def async_reset_reason_settings(

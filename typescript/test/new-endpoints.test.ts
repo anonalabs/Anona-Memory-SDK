@@ -38,13 +38,13 @@ describe("reason settings", () => {
     expect(last().method).toBe("GET");
     expect(last().url).toBe("https://api.example.com/v1/spaces/s1/reason-settings");
 
-    await anona.setReasonSettings({ spaceId: "s1", model: "balanced" });
+    await anona.setReasonSettings({ spaceId: "s1", model: "balanced", depth: "fast" });
     expect(last().method).toBe("PUT");
-    expect(last().body).toEqual({ model: "balanced" });
+    expect(last().body).toEqual({ model: "balanced", depth: "fast" });
 
     // Clearing is an explicit null, not an omission: PUT is a full replace.
-    await anona.setReasonSettings({ spaceId: "s1", model: null });
-    expect(last().body).toEqual({ model: null });
+    await anona.setReasonSettings({ spaceId: "s1", model: null, depth: null });
+    expect(last().body).toEqual({ model: null, depth: null });
 
     await anona.resetReasonSettings("s1");
     expect(last().method).toBe("DELETE");
@@ -313,5 +313,47 @@ describe("429 handling", () => {
     expect(err.retryAfter).toBe(12);
     expect(err.code).toBe("rate_limited");
     expect(anona.rateLimit.retryAfter).toBe(12);
+  });
+});
+
+describe("reason depth", () => {
+  it("sends the depth alongside the model on a full replace", async () => {
+    const { anona, last } = spyClient({ space_id: "s1", model: null, depth: null });
+
+    await anona.setReasonSettings({ spaceId: "s1", model: "balanced", depth: "thorough" });
+    expect(last().method).toBe("PUT");
+    expect(last().body).toEqual({ model: "balanced", depth: "thorough" });
+
+    // Clearing one half is still an explicit null, never an omission.
+    await anona.setReasonSettings({ spaceId: "s1", model: "balanced", depth: null });
+    expect(last().body).toEqual({ model: "balanced", depth: null });
+  });
+
+  it("reads the depth back off the settings", async () => {
+    const { anona } = spyClient({ space_id: "s1", model: "balanced", depth: "thorough" });
+    const settings = await anona.getReasonSettings("s1");
+    expect(settings.depth).toBe("thorough");
+  });
+
+  it("asks reason for a depth, and omits the field when it was not asked", async () => {
+    const { anona, last } = spyClient({ insights: "a" });
+
+    await anona.reason({ spaceId: "s1", query: "q", depth: "thorough" });
+    expect(last().body.depth).toBe("thorough");
+
+    await anona.reason({ spaceId: "s1", query: "q" });
+    expect(last().body).not.toHaveProperty("depth");
+  });
+
+  it("carries what the answer was built from", async () => {
+    const { anona } = spyClient({
+      insights: "an answer",
+      sources: { models: ["m1"], memories: 3, notes: 2 },
+      rules_applied: [{ id: "r1", name: "always cite" }],
+      model: "us.anthropic.claude-sonnet-4-6",
+    });
+    const result = await anona.reason({ spaceId: "s1", query: "q" });
+    expect(result.sources).toEqual({ models: ["m1"], memories: 3, notes: 2 });
+    expect(result.model).toBe("us.anthropic.claude-sonnet-4-6");
   });
 });

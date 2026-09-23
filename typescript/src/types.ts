@@ -139,6 +139,21 @@ export interface InsightsResult {
    * deployment older than rules omits the field entirely.
    */
   rules_applied?: AppliedRule[];
+  /**
+   * What the answer was built from.
+   *
+   * Optional only because a deployment older than the field omits it entirely,
+   * and an absent `sources` is not the same finding as a reported zero: the
+   * first says nobody asked, the second says the answer was built from nothing.
+   */
+  sources?: AnswerSources;
+  /**
+   * The model that actually answered, not the one requested.
+   *
+   * They differ whenever the caller chose nothing, and reporting the request
+   * back would make the bill unexplainable.
+   */
+  model?: string | null;
 }
 
 export interface Space {
@@ -523,14 +538,51 @@ export interface RetrieveWithReceipt {
 }
 
 /**
- * The model `reason` uses for one space.
+ * How hard `reason` looks in a space before it answers.
  *
- * Always a resolved model id, even when a tier alias was sent: the stored
- * choice must not move under the space when an alias is re-pointed.
+ * `"fast"` lets a current memory model answer on its own; `"thorough"` always
+ * checks the notes and the raw memories underneath, which is slower and costs
+ * more tokens. Two values and deliberately not three: the shortcut that
+ * `"thorough"` defeats is released on anything below the deepest setting, so a
+ * middle value would behave like the cheap one while reading like a
+ * compromise.
+ */
+export type ReasonDepth = "fast" | "thorough";
+
+/**
+ * How `reason` answers for one space.
+ *
+ * `model` is always a resolved model id, even when a tier alias was sent: the
+ * stored choice must not move under the space when an alias is re-pointed.
+ *
+ * Either field is null when the space has no override for it — a real answer
+ * rather than a 404, so a client can render the form before the first save.
  */
 export interface ReasonSettings {
   space_id: string;
   model: string | null;
+  depth: ReasonDepth | null;
+}
+
+/**
+ * What an answer was built from.
+ *
+ * Counts rather than the memories themselves: what this has to answer is which
+ * *layer* spoke. A wrong standing answer and a wrong reading of the raw
+ * memories need opposite fixes, and the two answers are otherwise identical.
+ *
+ * A reported zero is a real finding — an answer built from nothing.
+ */
+export interface AnswerSources {
+  /**
+   * Ids of the memory models that grounded this answer. A non-empty list means
+   * a standing answer was used; check it first when the result looks stale.
+   */
+  models: string[];
+  /** How many raw memories the answer was built from. */
+  memories: number;
+  /** How many consolidated notes the answer was built from. */
+  notes: number;
 }
 
 /**
