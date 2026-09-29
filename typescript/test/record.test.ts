@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { Anona } from "../src/client.js";
+import type { RoutedTarget, RoutingStage } from "../src/types.js";
 
 function stub(body: unknown, status = 200) {
   return vi.fn(
@@ -169,5 +170,118 @@ describe("record retry safety", () => {
     ).rejects.toMatchObject({ statusCode: 503 });
     // Default maxRetries is 2; without idempotent:false this would be 3 calls.
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("record space routing", () => {
+  it("sends route and no space_id on a routed write", async () => {
+    const fetchImpl = stub(
+      {
+        memory_id: "mem_1",
+        job_id: null,
+        status: "stored",
+        routed_to: [
+          { space_id: "billing", confidence: 0.91, stage: "model", reason: "invoice terms" },
+        ],
+      },
+      201,
+    );
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    const result = await anona.record({ route: "auto", content: "Acme pays net-30" });
+
+    expect(bodyOf(fetchImpl)).toEqual({ content: "Acme pays net-30", route: "auto" });
+    // `routed_to` is the only thing that tells a misroute from a correct write.
+    expect(result.routed_to).toEqual([
+      { space_id: "billing", confidence: 0.91, stage: "model", reason: "invoice terms" },
+    ]);
+    const target: RoutedTarget = result.routed_to![0]!;
+    const stage: RoutingStage = target.stage;
+    expect(stage).toBe("model");
+  });
+
+  it("parses a rule and a fallback decision, which carry no confidence", async () => {
+    const fetchImpl = stub(
+      {
+        memory_id: "m",
+        job_id: null,
+        status: "stored",
+        routed_to: [{ space_id: "inbox", confidence: null, stage: "fallback", reason: null }],
+      },
+      201,
+    );
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    const result = await anona.record({
+      route: "auto",
+      content: "c",
+      fallbackSpaceId: "inbox",
+      maxTargets: 1,
+    });
+
+    expect(bodyOf(fetchImpl)).toEqual({
+      content: "c",
+      route: "auto",
+      fallback_space_id: "inbox",
+      max_targets: 1,
+    });
+    expect(result.routed_to?.[0]?.confidence).toBeNull();
+    expect(result.routed_to?.[0]?.stage).toBe("fallback");
+  });
+
+  it("rejects both selectors before making a request", async () => {
+    const fetchImpl = stub({});
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await expect(
+      // @ts-expect-error — both selectors is a compile error as well as a runtime one.
+      anona.record({ spaceId: "s", route: "auto", content: "c" }),
+    ).rejects.toMatchObject({ statusCode: 422, code: "route_conflict" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("rejects neither selector before making a request", async () => {
+    const fetchImpl = stub({});
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await expect(
+      // @ts-expect-error — one of the two is required.
+      anona.record({ content: "c" }),
+    ).rejects.toMatchObject({ statusCode: 422, code: "route_conflict" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("leaves an addressed write byte-identical to what it sent before routing existed", async () => {
+    const fetchImpl = stub({ memory_id: "m", job_id: null, status: "stored" }, 201);
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.record({
+      spaceId: "support",
+      content: "Alice prefers email",
+      context: "from support chat",
+      timestamp: "2026-08-01T10:00:00Z",
+      metadata: { source: "zendesk" },
+      tags: ["agent:triage"],
+      userId: "alice",
+      agentId: "triage",
+      sessionId: "s1",
+      background: true,
+    });
+
+    const raw = ((fetchImpl as any).mock.calls[0]![1] as RequestInit).body as string;
+    expect(raw).toBe(
+      JSON.stringify({
+        space_id: "support",
+        content: "Alice prefers email",
+        context: "from support chat",
+        timestamp: "2026-08-01T10:00:00Z",
+        metadata: { source: "zendesk" },
+        tags: ["agent:triage"],
+        user_id: "alice",
+        agent_id: "triage",
+        session_id: "s1",
+        async: true,
+      }),
+    );
   });
 });

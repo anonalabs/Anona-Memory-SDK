@@ -1,3 +1,4 @@
+import { AnonaError } from "./errors.js";
 import { HttpClient, seg } from "./http.js";
 import type { RateLimitSnapshot } from "./http.js";
 import type {
@@ -31,7 +32,9 @@ import type {
   MemoryItem,
   MemoryListPage,
   RecordResult,
+  RetrieveResults,
   RetrieveWithReceipt,
+  SearchedSpace,
   SearchResult,
   Space,
   SpaceType,
@@ -104,8 +107,43 @@ export interface AnonaOptions {
   fetch?: typeof fetch;
 }
 
-export interface RecordOptions {
-  spaceId: string;
+/**
+ * Naming the space a memory goes to. Exactly one of the two spellings.
+ *
+ * A union rather than two optional fields, so `{}` and
+ * `{ spaceId, route: "auto" }` are both compile errors instead of a `422
+ * route_conflict` discovered at runtime. `record` still checks at runtime too,
+ * for JavaScript callers and for anything reaching it through an `any`.
+ *
+ * "Neither" is an error and not an implicit auto-route: a caller who merely
+ * forgot `spaceId` should not have their memory filed somewhere they never
+ * named.
+ */
+export type RecordTargetOptions =
+  | {
+      spaceId: string;
+      route?: never;
+      fallbackSpaceId?: never;
+      maxTargets?: never;
+    }
+  | {
+      spaceId?: never;
+      /** Let the API choose the space. Answers with `routed_to`. */
+      route: "auto";
+      /**
+       * Where a routed memory goes when nothing fits. Defaults to the
+       * organization's default space.
+       */
+      fallbackSpaceId?: string;
+      /**
+       * How many spaces one routed memory may be written to. Capped at **1**
+       * server-side today — 2 or more is a `422`, not a fan-out. Deliberately
+       * not clamped here, so widening the cap needs no new SDK release.
+       */
+      maxTargets?: number;
+    };
+
+export interface RecordContentOptions {
   content: string;
   /** Extra framing stored alongside the content. */
   context?: string;
@@ -127,6 +165,8 @@ export interface RecordOptions {
   signal?: AbortSignal;
 }
 
+export type RecordOptions = RecordContentOptions & RecordTargetOptions;
+
 export interface BatchItem {
   content: string;
   context?: string;
@@ -135,12 +175,22 @@ export interface BatchItem {
   tags?: string[];
 }
 
-export interface RecordBatchOptions {
-  spaceId: string;
+export interface RecordBatchContentOptions {
   /** 1–100 items. */
   items: BatchItem[];
   signal?: AbortSignal;
 }
+
+/**
+ * The target is named exactly as on `record`, by sharing
+ * {@link RecordTargetOptions} rather than restating it — one rule, so the two
+ * write surfaces cannot drift.
+ *
+ * A batch is routed **as one unit**: the whole batch is filed together, and the
+ * result carries job ids only. There is deliberately no `routed_to` on a batch
+ * response, because there is no per-item decision to report.
+ */
+export type RecordBatchOptions = RecordBatchContentOptions & RecordTargetOptions;
 
 /** How multiple `tags` combine when filtering. */
 export type TagsMatch = "any" | "all" | "any_strict" | "all_strict" | "exact";
@@ -171,20 +221,45 @@ export type TagGroup =
   | { or: TagGroup[] }
   | { not: TagGroup };
 
-/** `RetrieveOptions`, plus how deep the receipt for that search should go. */
-export interface RetrieveReceiptOptions extends RetrieveOptions {
-  /**
-   * `"basic"` (default) records the cuts made after the search returned.
-   * `"full"` also records the ones the search made internally, so a memory
-   * that never made it out of ranking is accounted for rather than simply
-   * absent. `"full"` can cost latency on the first call for a given query,
-   * because those decisions are not part of a cached answer.
-   */
-  receiptDetail?: "basic" | "full";
-}
+/**
+ * Naming what a search looks in. Exactly one of the two spellings.
+ *
+ * The same union shape as {@link RecordTargetOptions}, and separate from it
+ * only because a read has no `maxTargets`: v1 searches one space, which was
+ * measured sufficient, and searching more costs `N x` on the reranker. `{}` and
+ * `{ spaceId, route: "auto" }` are both compile errors rather than a `422
+ * route_conflict` found at runtime; `retrieve` checks at runtime too, for
+ * JavaScript callers and anything reaching it through an `any`.
+ *
+ * "Neither" is an error and not an implicit auto-route: a caller who merely
+ * forgot `spaceId` should not have their question answered out of somewhere
+ * they never named.
+ */
+export type RetrieveTargetOptions =
+  | {
+      spaceId: string;
+      route?: never;
+      fallbackSpaceId?: never;
+    }
+  | {
+      spaceId?: never;
+      /** Let the API choose which space holds the answer. Answers with `searched`. */
+      route: "auto";
+      /**
+       * Where a routed read looks when nothing fits.
+       *
+       * Unlike the write side this has **no default**. On a write the
+       * organization's default space is the sink and filing there is correct;
+       * on a read it is the bag of everything that fitted nowhere, so it is the
+       * least topically coherent space there is and searching it returns
+       * irrelevant memories. Left unset, an abstention returns no results and
+       * reports why, which is the honest answer.
+       */
+      fallbackSpaceId?: string;
+    };
 
-export interface RetrieveOptions {
-  spaceId: string;
+/** Everything about a search except which space it looks in. */
+export interface RetrieveFilterOptions {
   query: string;
   /** 1–100. Default 10 server-side. */
   limit?: number;
@@ -268,6 +343,28 @@ export interface RetrieveOptions {
   memberId?: string;
   signal?: AbortSignal;
 }
+
+export type RetrieveOptions = RetrieveFilterOptions & RetrieveTargetOptions;
+
+/**
+ * A search that names its space. `getContext` and `retrieveReceipt` take this
+ * rather than {@link RetrieveOptions}: they do not forward the routing fields,
+ * and a type that accepted `route` while dropping it on the floor is worse than
+ * one that refuses it.
+ */
+export type AddressedRetrieveOptions = RetrieveFilterOptions & { spaceId: string };
+
+/** `AddressedRetrieveOptions`, plus how deep the receipt for that search goes. */
+export type RetrieveReceiptOptions = AddressedRetrieveOptions & {
+  /**
+   * `"basic"` (default) records the cuts made after the search returned.
+   * `"full"` also records the ones the search made internally, so a memory
+   * that never made it out of ranking is accounted for rather than simply
+   * absent. `"full"` can cost latency on the first call for a given query,
+   * because those decisions are not part of a cached answer.
+   */
+  receiptDetail?: "basic" | "full";
+};
 
 /**
  * Edit a memory, or retire it.
@@ -361,9 +458,32 @@ export class Anona {
    * `status: "processing"` instead of a `memory_id`. Use it in latency-
    * sensitive paths so the call never blocks on fact extraction, then poll
    * `getJob`.
+   *
+   * Name the target exactly one of two ways: pass `spaceId`, or pass
+   * `route: "auto"` and let the API choose the space. Both, or neither, is a
+   * compile error (see {@link RecordTargetOptions}) and, for a caller who got
+   * past the types, an {@link AnonaError} with `code: "route_conflict"` thrown
+   * before the request goes out — the same error the API would have returned.
+   *
+   * A routed write answers with `routed_to`, which is the only thing that tells
+   * a misroute apart from a correct write.
    */
   async record(options: RecordOptions): Promise<RecordResult> {
-    const { spaceId, background, signal, ...rest } = options;
+    const { spaceId, route, fallbackSpaceId, maxTargets, background, signal, ...rest } =
+      options as RecordContentOptions & {
+        spaceId?: string;
+        route?: "auto";
+        fallbackSpaceId?: string;
+        maxTargets?: number;
+      };
+    if (!spaceId === !route) {
+      throw new AnonaError({
+        statusCode: 422,
+        message:
+          'Provide exactly one of `spaceId` or `route: "auto"` — not both, and not neither.',
+        code: "route_conflict",
+      });
+    }
     return this.http.request<RecordResult>({
       method: "POST",
       path: "/v1/record",
@@ -381,6 +501,9 @@ export class Anona {
         agent_id: rest.agentId,
         session_id: rest.sessionId,
         async: background ? true : undefined,
+        route,
+        fallback_space_id: fallbackSpaceId,
+        max_targets: maxTargets,
       }),
     });
   }
@@ -388,26 +511,52 @@ export class Anona {
   /**
    * Bulk-ingest up to 100 memories in one call. Always queued — poll the
    * returned job id with `getJob`.
+   *
+   * Name the target exactly as on `record`: pass `spaceId`, or pass
+   * `route: "auto"`. Both, or neither, is a compile error (see
+   * {@link RecordTargetOptions}) and an {@link AnonaError} with
+   * `code: "route_conflict"` for a caller who got past the types.
+   *
+   * The batch is routed as one unit — it is filed together, not item by item —
+   * so the result carries job ids and no `routed_to`.
    */
   async recordBatch(options: RecordBatchOptions): Promise<BatchRecordResult> {
-    if (options.items.length === 0) {
+    const { spaceId, route, fallbackSpaceId, maxTargets, items, signal } =
+      options as RecordBatchContentOptions & {
+        spaceId?: string;
+        route?: "auto";
+        fallbackSpaceId?: string;
+        maxTargets?: number;
+      };
+    if (items.length === 0) {
       throw new Error("Anona: recordBatch needs at least one item.");
     }
-    if (options.items.length > 100) {
+    if (items.length > 100) {
       throw new Error(
-        `Anona: recordBatch accepts at most 100 items, got ${options.items.length}.`,
+        `Anona: recordBatch accepts at most 100 items, got ${items.length}.`,
       );
+    }
+    if (!spaceId === !route) {
+      throw new AnonaError({
+        statusCode: 422,
+        message:
+          'Provide exactly one of `spaceId` or `route: "auto"` — not both, and not neither.',
+        code: "route_conflict",
+      });
     }
     return this.http.request<BatchRecordResult>({
       method: "POST",
       path: "/v1/record/batch",
       // A create: never auto-retried on a 5xx/timeout, which could queue twice.
       idempotent: false,
-      signal: options.signal,
-      body: {
-        space_id: options.spaceId,
-        items: options.items.map((item) => compact({ ...item })),
-      },
+      signal,
+      body: compact({
+        space_id: spaceId,
+        items: items.map((item) => compact({ ...item })),
+        route,
+        fallback_space_id: fallbackSpaceId,
+        max_targets: maxTargets,
+      }),
     });
   }
 
@@ -452,7 +601,7 @@ export class Anona {
    * nothing matched.
    */
   async getContext(
-    options: RetrieveOptions & {
+    options: AddressedRetrieveOptions & {
       maxTokens?: number;
       /**
        * `"stable"` orders the block by when each memory was recorded, so the
@@ -502,14 +651,45 @@ export class Anona {
     return response.context ?? "";
   }
 
-  /** Search memories in a space. */
-  async retrieve(options: RetrieveOptions): Promise<SearchResult[]> {
-    const response = await this.http.request<{ results?: SearchResult[] }>({
+  /**
+   * Search memories.
+   *
+   * Name what to search exactly one of two ways: pass `spaceId`, or pass
+   * `route: "auto"` and let the API pick the space that holds the answer. Both,
+   * or neither, is a compile error (see {@link RetrieveTargetOptions}) and, for
+   * a caller who got past the types, an {@link AnonaError} with
+   * `code: "route_conflict"` thrown before the request goes out.
+   *
+   * The result is a plain array, as it always was, and on a routed read it also
+   * carries `searched` — where the search looked and why. Read it: looking in
+   * the wrong space is indistinguishable from a space that holds nothing. An
+   * entry whose `space_id` is `null` means nothing was searched at all, because
+   * no space was judged to answer the question; the array is empty and `reason`
+   * says why.
+   */
+  async retrieve(options: RetrieveOptions): Promise<RetrieveResults> {
+    const { spaceId, route, fallbackSpaceId } = options as RetrieveFilterOptions & {
+      spaceId?: string;
+      route?: "auto";
+      fallbackSpaceId?: string;
+    };
+    if (!spaceId === !route) {
+      throw new AnonaError({
+        statusCode: 422,
+        message:
+          'Provide exactly one of `spaceId` or `route: "auto"` — not both, and not neither.',
+        code: "route_conflict",
+      });
+    }
+    const response = await this.http.request<{
+      results?: SearchResult[];
+      searched?: SearchedSpace[];
+    }>({
       method: "POST",
       path: "/v1/retrieve",
       signal: options.signal,
       body: compact({
-        space_id: options.spaceId,
+        space_id: spaceId,
         query: options.query,
         limit: options.limit,
         top_k: options.topK,
@@ -528,9 +708,16 @@ export class Anona {
         occurred_after: options.occurredAfter,
         occurred_before: options.occurredBefore,
         member_id: options.memberId,
+        route,
+        fallback_space_id: fallbackSpaceId,
       }),
     });
-    return response.results ?? [];
+    const results = (response.results ?? []) as RetrieveResults;
+    // Assigned only when the API sent it. On an addressed read the key is
+    // absent — not null — so leaving the property off keeps the two cases
+    // indistinguishable, which is exactly what they are to a caller.
+    if (response.searched) results.searched = response.searched;
+    return results;
   }
 
   /**
