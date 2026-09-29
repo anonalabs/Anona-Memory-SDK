@@ -5,6 +5,7 @@ import random
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import Literal
 from urllib.parse import quote
 
 import httpx
@@ -36,6 +37,43 @@ class RetrieveWithReceipt:
 
     def __getitem__(self, index):
         return self.memories[index]
+
+
+class RetrieveResults(list):
+    """What :meth:`AnonaClient.retrieve` returns: the memories, plus
+    ``searched`` on a routed read.
+
+    A ``list`` *subclass*, not a wrapper. ``retrieve`` has returned a bare list
+    since it existed and every caller indexes, iterates, slices, concatenates
+    and ``json.dumps``-es one, so a wrapper like :class:`RetrieveWithReceipt`
+    would have been a breaking change on the default path. Subclassing keeps
+    ``isinstance(results, list)`` true and leaves all of that working, while
+    giving read routing somewhere to report where it looked.
+
+    ``searched`` is ``None`` on an addressed read — the server omits the key
+    entirely rather than sending null, so there is nothing to report. On a
+    routed read it is a list of ``{"space_id", "confidence", "stage",
+    "reason"}``, where ``stage`` is ``"rule"``, ``"model"`` or ``"fallback"``.
+    Read it: looking in the wrong space is indistinguishable from a space that
+    holds nothing, and this is the only thing that tells them apart.
+
+    ``space_id`` inside an entry can be ``None``. That is an abstention — no
+    space was judged to answer the question, so nothing was searched and
+    ``reason`` says why. It is deliberately not the organization's default
+    space: on a read that is the bag of everything that fitted nowhere, and
+    therefore the worst place to look. The list is still one entry long in that
+    case, because an empty list has nowhere to carry the reason.
+    """
+
+    __slots__ = ("searched",)
+
+    def __init__(
+        self,
+        memories=(),
+        searched: list[dict] | None = None,
+    ) -> None:
+        super().__init__(memories)
+        self.searched = searched
 
 
 @dataclass
@@ -433,16 +471,95 @@ def _search_extras(
     )
 
 
-def _search_body(space_id: str, query: str, *, limit: int, mode: str, **extras) -> dict:
-    """The `/v1/retrieve` payload: the four always-sent fields, plus extras."""
-    body: dict = {"space_id": space_id, "query": query, "limit": limit, "mode": mode}
+def _search_body(
+    space_id: str | None,
+    query: str | None,
+    *,
+    limit: int,
+    mode: str,
+    route: str | None = None,
+    fallback_space_id: str | None = None,
+    **extras,
+) -> dict:
+    """The `/v1/retrieve` payload: the four always-sent fields, plus extras.
+
+    Raises before any request is made when the call cannot succeed: a missing
+    ``query``, or a space named twice or not at all. The second is the server's
+    ``422 route_conflict``, reproduced locally so the caller sees the same
+    exception and the same ``code`` without paying a round trip for it — the
+    same treatment ``_record_body`` gives the write side.
+    """
+    if query is None:
+        # `query` only carries a default so that `space_id` can carry one too
+        # — see `AnonaClient.retrieve`. Restoring the error Python would have
+        # raised keeps that an implementation detail.
+        raise TypeError("retrieve() missing 1 required argument: 'query'")
+    if bool(space_id) == bool(route):
+        raise AnonaError(
+            422,
+            'Provide exactly one of `space_id` or `route="auto"` — not both, '
+            "and not neither.",
+            code="route_conflict",
+        )
+    # `space_id` stays the first key so an addressed read serialises exactly as
+    # it did before routing existed, down to the byte.
+    body: dict = {}
+    if space_id:
+        body["space_id"] = space_id
+    body["query"] = query
+    body["limit"] = limit
+    body["mode"] = mode
+    body.update(_compact((("route", route), ("fallback_space_id", fallback_space_id))))
     body.update(_search_extras(**extras))
     return body
 
 
+def _batch_body(
+    space_id: str | None,
+    items: list[dict] | None,
+    *,
+    user_id: str | None,
+    agent_id: str | None,
+    session_id: str | None,
+    route: str | None = None,
+    fallback_space_id: str | None = None,
+    max_targets: int | None = None,
+) -> dict:
+    """The `/v1/record/batch` payload, shared by the sync and async writers.
+
+    Same two pre-flight refusals as ``_record_body``, for the same reasons.
+    """
+    if items is None:
+        raise TypeError("record_batch() missing 1 required argument: 'items'")
+    if bool(space_id) == bool(route):
+        raise AnonaError(
+            422,
+            'Provide exactly one of `space_id` or `route="auto"` — not both, '
+            "and not neither.",
+            code="route_conflict",
+        )
+    body: dict = {}
+    if space_id:
+        body["space_id"] = space_id
+    body["items"] = items
+    body.update(
+        _compact(
+            (
+                ("user_id", user_id),
+                ("agent_id", agent_id),
+                ("session_id", session_id),
+                ("route", route),
+                ("fallback_space_id", fallback_space_id),
+                ("max_targets", max_targets),
+            )
+        )
+    )
+    return body
+
+
 def _record_body(
-    space_id: str,
-    content: str,
+    space_id: str | None,
+    content: str | None,
     *,
     context: str | None,
     metadata: dict | None,
@@ -452,13 +569,36 @@ def _record_body(
     agent_id: str | None,
     session_id: str | None,
     timestamp: str | None,
+    route: str | None = None,
+    fallback_space_id: str | None = None,
+    max_targets: int | None = None,
 ) -> dict:
-    """The `/v1/record` payload, shared by the sync and async writers."""
-    body: dict = {
-        "space_id": space_id,
-        "content": content,
-        "metadata": metadata or {},
-    }
+    """The `/v1/record` payload, shared by the sync and async writers.
+
+    Raises before any request is made when the call cannot succeed: a missing
+    ``content``, or a target named twice or not at all. The second is the
+    server's ``422 route_conflict``, reproduced locally so the caller sees the
+    same exception and the same ``code`` without paying a round trip for it.
+    """
+    if content is None:
+        # `content` only carries a default so that `space_id` can carry one too
+        # — see `AnonaClient.record`. Restoring the error Python would have
+        # raised keeps that an implementation detail.
+        raise TypeError("record() missing 1 required argument: 'content'")
+    if bool(space_id) == bool(route):
+        raise AnonaError(
+            422,
+            'Provide exactly one of `space_id` or `route="auto"` — not both, '
+            "and not neither.",
+            code="route_conflict",
+        )
+    # `space_id` stays the first key so an addressed write serialises exactly as
+    # it did before routing existed, down to the byte.
+    body: dict = {}
+    if space_id:
+        body["space_id"] = space_id
+    body["content"] = content
+    body["metadata"] = metadata or {}
     body.update(
         _compact(
             (
@@ -468,6 +608,9 @@ def _record_body(
                 ("agent_id", agent_id),
                 ("session_id", session_id),
                 ("timestamp", timestamp),
+                ("route", route),
+                ("fallback_space_id", fallback_space_id),
+                ("max_targets", max_targets),
             )
         )
     )
@@ -702,8 +845,8 @@ class AnonaClient:
 
     def record(
         self,
-        space_id: str,
-        content: str,
+        space_id: str | None = None,
+        content: str | None = None,
         metadata: dict | None = None,
         tags: list[str] | None = None,
         background: bool = False,
@@ -712,8 +855,38 @@ class AnonaClient:
         session_id: str | None = None,
         timestamp: str | None = None,
         context: str | None = None,
+        *,
+        route: Literal["auto"] | None = None,
+        fallback_space_id: str | None = None,
+        max_targets: int | None = None,
     ) -> dict:
         """Store a memory.
+
+        Name the target exactly one of two ways: pass ``space_id``, or pass
+        ``route="auto"`` and let the API choose the space. Both, or neither, is
+        an :class:`AnonaError` with ``code="route_conflict"`` — raised here,
+        before the request goes out, because neither can succeed. "Neither" is
+        an error rather than an implicit auto-route on purpose: a caller who
+        simply forgot ``space_id`` should not have their memory filed somewhere
+        they never named.
+
+        ``space_id`` is still the first positional parameter, so
+        ``record("my-space", "…")`` is unchanged. ``content`` gained a default
+        only so that ``space_id`` could have one — omitting it is still a
+        ``TypeError``.
+
+        On a routed write the response carries ``routed_to``: a list of
+        ``{"space_id", "confidence", "stage", "reason"}``, where ``stage`` is
+        ``"rule"``, ``"model"`` or ``"fallback"``. Read it — a misroute looks
+        exactly like a correct write, and this is the only thing that
+        distinguishes them. It is absent on an addressed write.
+
+        ``fallback_space_id`` is where a routed memory goes when nothing fits
+        (default: the organization's default space), and ``max_targets`` how
+        many spaces one memory may be written to. Both apply to ``route="auto"``
+        only. ``max_targets`` is currently capped at **1** server-side — 2 or
+        more is a 422, not a fan-out. The cap is left to the server rather than
+        checked here so that widening it needs no new SDK release.
 
         ``context`` is extra framing stored alongside the content — where the
         content came from, who said it, what the surrounding conversation was.
@@ -752,6 +925,9 @@ class AnonaClient:
             agent_id=agent_id,
             session_id=session_id,
             timestamp=timestamp,
+            route=route,
+            fallback_space_id=fallback_space_id,
+            max_targets=max_targets,
         )
         resp = self._get_client().post(f"{self._base_url}/v1/record", json=body)
         self._raise(resp)
@@ -759,17 +935,34 @@ class AnonaClient:
 
     def record_batch(
         self,
-        space_id: str,
-        items: list[dict],
+        space_id: str | None = None,
+        items: list[dict] | None = None,
         user_id: str | None = None,
         agent_id: str | None = None,
         session_id: str | None = None,
+        *,
+        route: Literal["auto"] | None = None,
+        fallback_space_id: str | None = None,
+        max_targets: int | None = None,
     ) -> dict:
         """Bulk-ingest up to 100 memories in one call (always queued).
 
         Each item is a dict with ``content`` (required) and optional ``context``,
         ``timestamp``, ``metadata``, and ``tags`` (a list of strings, filterable
         by :meth:`retrieve`). Returns a ``job_id`` — poll :meth:`get_job`.
+
+        Name the target exactly one of two ways, as on :meth:`record`: pass
+        ``space_id``, or pass ``route="auto"`` and let the API choose. Both, or
+        neither, is an :class:`AnonaError` with ``code="route_conflict"``,
+        raised here before the request goes out. ``space_id`` kept its position,
+        so ``record_batch("my-space", items)`` is unchanged; ``items`` gained a
+        default only so that ``space_id`` could have one, and omitting it is
+        still a ``TypeError``.
+
+        The **whole batch is routed as one unit** — it is filed together, not
+        item by item — and the response carries job ids only. There is no
+        ``routed_to`` on a batch; read the job, or use :meth:`record` when you
+        need to know where a single memory went.
 
         ``user_id`` / ``agent_id`` / ``session_id`` scope every item in the
         batch, exactly as they do on :meth:`record`. Passing them matters more
@@ -778,13 +971,16 @@ class AnonaClient:
         read back with one therefore comes back empty, with nothing to
         distinguish it from a space that is simply still extracting.
         """
-        body: dict = {"space_id": space_id, "items": items}
-        if user_id is not None:
-            body["user_id"] = user_id
-        if agent_id is not None:
-            body["agent_id"] = agent_id
-        if session_id is not None:
-            body["session_id"] = session_id
+        body = _batch_body(
+            space_id,
+            items,
+            user_id=user_id,
+            agent_id=agent_id,
+            session_id=session_id,
+            route=route,
+            fallback_space_id=fallback_space_id,
+            max_targets=max_targets,
+        )
         resp = self._get_client().post(f"{self._base_url}/v1/record/batch", json=body)
         self._raise(resp)
         return resp.json()
@@ -805,8 +1001,8 @@ class AnonaClient:
 
     def retrieve(
         self,
-        space_id: str,
-        query: str,
+        space_id: str | None = None,
+        query: str | None = None,
         limit: int = 10,
         mode: str = "accurate",
         user_id: str | None = None,
@@ -824,8 +1020,41 @@ class AnonaClient:
         prefer_observations: bool | None = None,
         min_score: float | None = None,
         member_id: str | None = None,
-    ) -> list[dict]:
+        *,
+        route: Literal["auto"] | None = None,
+        fallback_space_id: str | None = None,
+    ) -> RetrieveResults:
         """Search memories.
+
+        Name what to search exactly one of two ways: pass ``space_id``, or pass
+        ``route="auto"`` and let the API choose which space holds the answer.
+        Both, or neither, is an :class:`AnonaError` with
+        ``code="route_conflict"`` — raised here, before the request goes out,
+        because neither can succeed. "Neither" is an error rather than an
+        implicit auto-route on purpose: a caller who simply forgot ``space_id``
+        should not have their question silently answered from somewhere they
+        never named.
+
+        ``space_id`` is still the first positional parameter, so
+        ``retrieve("my-space", "…")`` is unchanged. ``query`` gained a default
+        only so that ``space_id`` could have one — omitting it is still a
+        ``TypeError``.
+
+        The return value is a plain ``list`` of memories, as it has always
+        been. On a routed read it also carries ``.searched`` — a list of
+        ``{"space_id", "confidence", "stage", "reason"}`` saying where this
+        search looked and why (see :class:`RetrieveResults`). An entry whose
+        ``space_id`` is ``None`` means no space was judged to answer the
+        question, so nothing was searched and the results are empty; ``reason``
+        says why. ``.searched`` is ``None`` on an addressed read.
+
+        ``fallback_space_id`` is where a routed read looks when nothing fits,
+        and applies to ``route="auto"`` only. Unlike the write side it has no
+        default: on a write the organization's default space is the sink and
+        filing there is right, but on a read it is the bag of everything that
+        fitted nowhere — the least topically coherent space there is, and so
+        the worst place to look. Leave it unset and an abstention honestly
+        returns nothing rather than something irrelevant.
 
         ``user_id`` / ``agent_id`` / ``session_id`` restrict the search to
         memories written under the same scope. The filter is strict: memories
@@ -880,6 +1109,8 @@ class AnonaClient:
             query,
             limit=limit,
             mode=mode,
+            route=route,
+            fallback_space_id=fallback_space_id,
             top_k=top_k,
             memory_type=memory_type,
             tags=tags,
@@ -901,7 +1132,11 @@ class AnonaClient:
             json=body,
         )
         self._raise(resp)
-        return resp.json().get("results", [])
+        data = resp.json()
+        # `searched` is absent — not null — on an addressed read, so `.get`
+        # yields None either way and the two cases stay indistinguishable,
+        # which is exactly what they are to a caller.
+        return RetrieveResults(data.get("results", []), data.get("searched"))
 
     def retrieve_receipt(
         self,
@@ -2216,8 +2451,8 @@ class AnonaClient:
 
     async def async_record(
         self,
-        space_id: str,
-        content: str,
+        space_id: str | None = None,
+        content: str | None = None,
         metadata: dict | None = None,
         tags: list[str] | None = None,
         background: bool = False,
@@ -2225,26 +2460,35 @@ class AnonaClient:
         agent_id: str | None = None,
         session_id: str | None = None,
         timestamp: str | None = None,
+        context: str | None = None,
+        *,
+        route: Literal["auto"] | None = None,
+        fallback_space_id: str | None = None,
+        max_targets: int | None = None,
     ) -> dict:
         """Async (asyncio) variant of :meth:`record`. ``background=True`` queues
-        the write and returns a ``job_id`` — poll with :meth:`async_get_job`."""
-        body: dict = {
-            "space_id": space_id,
-            "content": content,
-            "metadata": metadata or {},
-        }
-        if tags:
-            body["tags"] = tags
-        for key, value in (
-            ("user_id", user_id),
-            ("agent_id", agent_id),
-            ("session_id", session_id),
-            ("timestamp", timestamp),
-        ):
-            if value:
-                body[key] = value
-        if background:
-            body["async"] = True
+        the write and returns a ``job_id`` — poll with :meth:`async_get_job`.
+
+        Target selection is the same: exactly one of ``space_id`` or
+        ``route="auto"``, and a routed write answers with ``routed_to``."""
+        # Built by `_record_body`, the same helper the sync writer uses, so the
+        # two cannot disagree about the payload — which is exactly how this half
+        # of the client ended up without `context` (see the note on `_acall`).
+        body = _record_body(
+            space_id,
+            content,
+            context=context,
+            metadata=metadata,
+            tags=tags,
+            background=background,
+            user_id=user_id,
+            agent_id=agent_id,
+            session_id=session_id,
+            timestamp=timestamp,
+            route=route,
+            fallback_space_id=fallback_space_id,
+            max_targets=max_targets,
+        )
         resp = await self._get_async_client().post(
             f"{self._base_url}/v1/record", json=body
         )
@@ -2253,20 +2497,27 @@ class AnonaClient:
 
     async def async_record_batch(
         self,
-        space_id: str,
-        items: list[dict],
+        space_id: str | None = None,
+        items: list[dict] | None = None,
         user_id: str | None = None,
         agent_id: str | None = None,
         session_id: str | None = None,
+        *,
+        route: Literal["auto"] | None = None,
+        fallback_space_id: str | None = None,
+        max_targets: int | None = None,
     ) -> dict:
         """Async (asyncio) variant of :meth:`record_batch`."""
-        body: dict = {"space_id": space_id, "items": items}
-        if user_id is not None:
-            body["user_id"] = user_id
-        if agent_id is not None:
-            body["agent_id"] = agent_id
-        if session_id is not None:
-            body["session_id"] = session_id
+        body = _batch_body(
+            space_id,
+            items,
+            user_id=user_id,
+            agent_id=agent_id,
+            session_id=session_id,
+            route=route,
+            fallback_space_id=fallback_space_id,
+            max_targets=max_targets,
+        )
         resp = await self._get_async_client().post(
             f"{self._base_url}/v1/record/batch", json=body
         )
@@ -2283,8 +2534,8 @@ class AnonaClient:
 
     async def async_retrieve(
         self,
-        space_id: str,
-        query: str,
+        space_id: str | None = None,
+        query: str | None = None,
         limit: int = 10,
         mode: str = "accurate",
         user_id: str | None = None,
@@ -2302,39 +2553,44 @@ class AnonaClient:
         prefer_observations: bool | None = None,
         min_score: float | None = None,
         member_id: str | None = None,
-    ) -> list[dict]:
+        *,
+        route: Literal["auto"] | None = None,
+        fallback_space_id: str | None = None,
+    ) -> RetrieveResults:
         """Async (asyncio) variant of :meth:`retrieve`."""
-        body: dict = {
-            "space_id": space_id,
-            "query": query,
-            "limit": limit,
-            "mode": mode,
-        }
-        body.update(
-            _search_extras(
-                top_k=top_k,
-                memory_type=memory_type,
-                tags=tags,
-                tags_match=tags_match,
-                tag_groups=tag_groups,
-                prefer_observations=prefer_observations,
-                min_score=min_score,
-                member_id=member_id,
-                user_id=user_id,
-                agent_id=agent_id,
-                session_id=session_id,
-                as_of=as_of,
-                query_timestamp=query_timestamp,
-                occurred_after=occurred_after,
-                occurred_before=occurred_before,
-            )
+        # Shares `_search_body` with the sync twin rather than building its own
+        # payload: the two had already drifted once that way, and routing is
+        # exactly the kind of field one copy would have missed.
+        body = _search_body(
+            space_id,
+            query,
+            limit=limit,
+            mode=mode,
+            route=route,
+            fallback_space_id=fallback_space_id,
+            top_k=top_k,
+            memory_type=memory_type,
+            tags=tags,
+            tags_match=tags_match,
+            tag_groups=tag_groups,
+            prefer_observations=prefer_observations,
+            min_score=min_score,
+            member_id=member_id,
+            user_id=user_id,
+            agent_id=agent_id,
+            session_id=session_id,
+            as_of=as_of,
+            query_timestamp=query_timestamp,
+            occurred_after=occurred_after,
+            occurred_before=occurred_before,
         )
         resp = await self._get_async_client().post(
             f"{self._base_url}/v1/retrieve",
             json=body,
         )
         self._raise(resp)
-        return resp.json().get("results", [])
+        data = resp.json()
+        return RetrieveResults(data.get("results", []), data.get("searched"))
 
     async def async_retrieve_receipt(
         self,

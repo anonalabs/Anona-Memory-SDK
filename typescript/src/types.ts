@@ -3,6 +3,38 @@ export interface TokenUsage {
   output_tokens: number;
 }
 
+/** Which step of routing chose a space. */
+export type RoutingStage = "rule" | "model" | "fallback";
+
+/**
+ * One space an auto-routed memory was written to, and how that was decided.
+ *
+ * `confidence` is `null` on a `"rule"` or `"fallback"` decision — neither is a
+ * judgement with a score behind it.
+ */
+export interface RoutedTarget {
+  space_id: string;
+  confidence: number | null;
+  stage: RoutingStage;
+  reason: string | null;
+}
+
+/**
+ * One space a routed read looked in, and how that was decided.
+ *
+ * Deliberately not {@link RoutedTarget}: `space_id` is nullable here, because a
+ * read that fits no space searches nothing at all and still has to report why.
+ * `null` is an abstention — `results` is empty and `reason` says what happened.
+ * It is *not* the organization's default space: on a read that is the bag of
+ * everything that fitted nowhere, so it is the worst place to look.
+ */
+export interface SearchedSpace {
+  space_id: string | null;
+  confidence: number | null;
+  stage: RoutingStage;
+  reason: string | null;
+}
+
 export interface RecordResult {
   /** Present on a synchronous write. Null when queued — poll the job instead. */
   memory_id: string | null;
@@ -11,6 +43,13 @@ export interface RecordResult {
   /** "stored" for a synchronous write, "processing" when queued. */
   status: string;
   usage?: TokenUsage | null;
+  /**
+   * Where a `route: "auto"` write went. Null on an addressed write.
+   *
+   * Worth reading rather than ignoring: a misroute is a successful write to the
+   * wrong space, which is indistinguishable from a correct one without this.
+   */
+  routed_to?: RoutedTarget[] | null;
 }
 
 export interface BatchRecordResult {
@@ -536,6 +575,24 @@ export interface RetrieveWithReceipt {
   memories: SearchResult[];
   receipt_id: string | null;
 }
+
+/**
+ * What `retrieve` resolves to: the memories, plus `searched` on a routed read.
+ *
+ * An array with one extra property, not a wrapper object. `retrieve` has
+ * returned a bare array since it existed, so a wrapper — the shape
+ * {@link RetrieveWithReceipt} takes — would have been a breaking change on the
+ * default path. This stays assignable to `SearchResult[]` in both directions,
+ * so every existing call site is untouched.
+ *
+ * `searched` is `undefined` on an addressed read: the API omits the key
+ * entirely rather than sending null, because this route's body is
+ * byte-identical for callers who never ask for the feature. On a routed read it
+ * says where the search looked and why — read it, because looking in the wrong
+ * space is indistinguishable from a space that holds nothing. Note the entry's
+ * `space_id` can be `null`; see {@link SearchedSpace}.
+ */
+export type RetrieveResults = SearchResult[] & { searched?: SearchedSpace[] };
 
 /**
  * How hard `reason` looks in a space before it answers.

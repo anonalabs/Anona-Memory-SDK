@@ -28,6 +28,7 @@ The product, story by story. `pip install anona` is all these need.
 | [`multi_agent_shared_space.py`](multi_agent_shared_space.py) | A researcher and a writer share one space: `agent_id` separates their working sets, an unscoped read is the handoff. |
 | [`background_ingestion.py`](background_ingestion.py) | High-volume writes: `background=True` and `record_batch`, with `get_job` polling for the stored ids. |
 | [`knowledge_graph.py`](knowledge_graph.py) | The entity graph a space builds on its own: nodes, co-occurrence edges, and per-entity observations. |
+| [`space_routing.py`](space_routing.py) | Let Anona pick the space: `route="auto"` on a write and a read, `routed_to` / `searched` for which one it chose, and why an unanswerable question searches nothing. |
 | [`webhooks_and_settings.py`](webhooks_and_settings.py) | Configure a space: webhook lifecycle, proxy defaults, extraction settings. |
 
 ## Framework adapters

@@ -486,14 +486,60 @@ Five things worth knowing:
 left unset: a resolved leaf is a set of alternatives, so `"all_strict"` would
 ask one memory to carry every alternative at once.
 
+## Automatic space routing
+
+Naming a space is the normal way to work. `route: "auto"` hands that decision to
+Anona instead, matched against what each space declares it is for.
+
+```ts
+const result = await anona.record({ route: "auto", content: "Acme is on net-30." });
+for (const target of result.routed_to ?? []) {
+  console.log(target.space_id, target.stage, target.reason);
+}
+
+const memories = await anona.retrieve({ route: "auto", query: "Acme's payment terms?" });
+for (const looked of memories.searched ?? []) {
+  console.log(looked.space_id, looked.stage, looked.reason);
+}
+```
+
+`spaceId` and `route` are a union: passing both, or neither, is a **compile**
+error, and at runtime an `AnonaError` with `code: "route_conflict"` thrown
+before the request goes out. "Neither" is an error rather than an implicit
+auto-route — a caller who merely forgot `spaceId` should not have their memory
+filed somewhere they never named.
+
+**Read the decision.** A routed write answers with `routed_to`, a routed read
+with `searched`; each entry is `{ space_id, confidence, stage, reason }`, where
+`stage` is `"rule"`, `"model"` or `"fallback"` and `confidence` is `null` on the
+first and last of those. Nothing else distinguishes a misroute from a correct
+call: both succeed. `retrieve` still resolves to a plain `SearchResult[]` —
+`searched` rides on the array and is `undefined` on an addressed read.
+
+**An abstention searches nothing.** If no space is judged to answer the
+question, `searched` is one entry whose `space_id` is `null` and the array is
+empty. `fallbackSpaceId` has no default on a read, deliberately: the fallback
+space is where everything that fitted nowhere ends up, so it is the least
+topically coherent space you own and the worst place to look — searching it
+returns irrelevant memories that read exactly like real ones. On a write it does
+default, to your organization's default space, because a memory has to be stored
+somewhere. `maxTargets` (writes only) is capped at 1 server-side today.
+
+A batch is routed **as one unit**, so `recordBatch` takes the same fields and
+answers with job ids and no `routed_to`.
+
+Routing matches against each space's routing profile — a charter, topics and
+rules, set on `/v1/spaces/{space_id}/routing-settings`. That endpoint is
+REST-only for now; the SDK does not model it yet.
+
 ## API
 
 | Method | Purpose |
 | --- | --- |
-| `record` | Store a memory — pass `background: true` to queue it, which is ~10× faster |
+| `record` | Store a memory — pass `background: true` to queue it, which is ~10× faster; pass `route: "auto"` instead of `spaceId` to let Anona choose the space |
 | `recordBatch` | Up to 100 memories, always queued |
 | `getJob` | Status of a queued job |
-| `retrieve` | Search memories — `tagGroups` filters with a boolean expression, see below |
+| `retrieve` | Search memories — `tagGroups` filters with a boolean expression, see below; `route: "auto"` picks the space and reports it as `searched` |
 | `getContext` | The same search, returned as one prompt-ready string |
 | `reason` | Synthesised answer across a space |
 | `listSpaces` / `getSpace` / `createSpace` / `deleteSpace` | Space management |

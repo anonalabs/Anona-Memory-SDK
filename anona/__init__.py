@@ -3,6 +3,7 @@ from .client import (
     AnonaError,
     RateLimit,
     ReasonWithReceipt,
+    RetrieveResults,
     RetrieveWithReceipt,
 )
 
@@ -19,6 +20,7 @@ __all__ = [
     "AnonaError",
     "RateLimit",
     "ReasonWithReceipt",
+    "RetrieveResults",
     "RetrieveWithReceipt",
 ]
-__version__ = "0.14.0"
+__version__ = "0.15.0"

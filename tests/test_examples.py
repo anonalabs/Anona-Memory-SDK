@@ -93,6 +93,15 @@ class H(BaseHTTPRequestHandler):
             "context": "[memory] Alice is allergic to shellfish",
             "memories": [{"memory_id": "m1", "content": "allergic to shellfish"}],
             "memory_id": "m1",
+            # The routed shapes, for space_routing.py. Harmless to the rest:
+            # nothing else reads them.
+            "results": [{"memory_id": "m1", "content": "Acme is on net-30"}],
+            "routed_to": [
+                {"space_id": "billing", "confidence": 0.9, "stage": "model", "reason": "invoice terms"}
+            ],
+            "searched": [
+                {"space_id": "billing", "confidence": 0.9, "stage": "model", "reason": "invoice terms"}
+            ],
         }).encode()
         self.send_response(200)
         self.send_header("content-type", "application/json")
@@ -101,6 +110,10 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(body)
     do_POST = _handle
     do_GET = _handle
+    # space_routing.py sets a routing profile (PUT) and cleans its spaces up
+    # (DELETE); without these the example cannot be executed here at all.
+    do_PUT = _handle
+    do_DELETE = _handle
     def log_message(self, *a):
         pass
 
@@ -229,6 +242,46 @@ def test_strands_example_tools_reach_anona_and_carry_scope():
     assert record["body"]["user_id"] == "customer-42", record["body"]
     retrieve = next(r for r in result["seen"] if "retrieve" in r["path"])
     assert retrieve["body"]["user_id"] == "customer-42", retrieve["body"]
+
+
+def test_space_routing_example_runs_and_routes():
+    """The one SDK-only example executed here, because it is about the wire.
+
+    `route: "auto"` is invisible in a diff — an example that names a space by
+    accident, or sends `space_id` alongside `route`, looks exactly like a
+    correct one on the page. So this runs the script end to end against the
+    fake server and reads what it actually sent.
+    """
+    proc = _run(f"""
+        import json, runpy
+        os.environ["ANONA_BASE_URL"] = BASE
+        runpy.run_path({str(_EXAMPLES / "space_routing.py")!r}, run_name="__main__")
+        print("RESULT " + json.dumps({{"seen": SEEN}}))
+    """)
+    seen = _result(proc)["seen"]
+
+    # The routing profile is declared before anything is routed against it.
+    profile = next(r for r in seen if "routing-settings" in r["path"])
+    assert profile["method"] == "PUT"
+    assert profile["body"]["charter"]
+    assert profile["body"]["topics"]
+
+    routed_write = next(r for r in seen if r["path"].endswith("/v1/record"))
+    assert routed_write["body"]["route"] == "auto"
+    # Naming a space as well would be a 422 route_conflict.
+    assert "space_id" not in routed_write["body"]
+    assert routed_write["body"]["fallback_space_id"]
+
+    retrieves = [r for r in seen if r["path"].endswith("/v1/retrieve")]
+    routed_reads = [r for r in retrieves if r["body"].get("route") == "auto"]
+    # The routed read, and the abstention — which deliberately names no
+    # fallback, because on a read the fallback space is the worst place to look.
+    assert len(routed_reads) == 2, [r["body"] for r in retrieves]
+    assert all("space_id" not in r["body"] for r in routed_reads)
+    assert all("fallback_space_id" not in r["body"] for r in routed_reads[1:])
+    # And the addressed read still names its space and no route.
+    addressed = [r for r in retrieves if "space_id" in r["body"]]
+    assert len(addressed) == 1 and "route" not in addressed[0]["body"]
 
 
 def test_every_example_is_listed_in_the_readme():
