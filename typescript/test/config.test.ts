@@ -132,7 +132,22 @@ describe("chat settings", () => {
       memory_token_budget: null,
       auto_record: null,
       memory: null,
+      chat_model: null,
     });
+  });
+
+  it("carries the chat model", async () => {
+    // Which LLM a space's proxied calls run on is a chat-settings field, and
+    // this client could not reach it — the key was absent from the body, so a
+    // caller had to drop to raw HTTP. Worse than unreachable, since this PUT
+    // is a replace: a settings write from here cleared a model chosen in the
+    // dashboard.
+    const fetchImpl = stub({ space_id: "s1" });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.setChatSettings({ spaceId: "s1", memoryLimit: 3, chatModel: "fast" });
+
+    expect(call(fetchImpl).body).toMatchObject({ chat_model: "fast" });
   });
 
   it("resets back to the platform defaults", async () => {

@@ -131,14 +131,14 @@ async with AnonaClient(api_key="...") as client:
 - `delete_space(space_id: str) -> None` — delete a space and every memory in it; irreversible
 - `get_user_profile(space_id, user_id, *, limit=None, offset=None, memory_type=None, format=None, context_max_tokens=None) -> dict` — everything the space has learned about one end user; see [User profiles](#user-profiles)
 - `ask_about_user(space_id, user_id, query, *, model=None) -> dict` — one synthesised answer, drawn from that user's memories only
-- `upload_file(space_id, file, *, filename=None, strategy=None, tags=None) -> dict` — upload a file (path / bytes / file-like) so retrieval can draw on its content; ingested asynchronously, returns `job_ids`. PDF, DOCX, PPTX, XLSX, images (OCR), HTML, TXT/MD, CSV, audio. Files over 25 MB are rejected client-side.
+- `upload_file(space_id, file, *, filename=None, strategy=None, tags=None, user_id=None, agent_id=None, session_id=None) -> dict` — upload a file (path / bytes / file-like) so retrieval can draw on its content; ingested asynchronously, returns `job_ids`. PDF, DOCX, PPTX, XLSX, images (OCR), HTML, TXT/MD, CSV, audio. Files over 25 MB are rejected client-side.
 - `list_documents(space_id, limit=100, offset=0) -> list[dict]`
 - `delete_document(space_id, document_id) -> None` — remove a document and the memories extracted from it
 - `get_graph(space_id, limit=500, min_count=1) -> dict` — entity relationship graph (nodes + co-occurrence edges)
 - `list_entities(space_id, limit=100, offset=0) -> list[dict]`
 - `get_entity(space_id, entity_id) -> dict` — one entity + its observations
 - `get_extraction_settings(space_id) -> dict` / `set_extraction_settings(space_id, mode=None, guidance=None, custom_prompt=None, labels=None, free_form_entities=None) -> dict` / `reset_extraction_settings(space_id) -> None` — steer what a write keeps; see [Extraction settings](#extraction-settings)
-- `get_chat_settings(space_id) -> dict` / `set_chat_settings(space_id, memory_limit=None, memory_token_budget=None, auto_record=None, memory=None) -> dict` / `reset_chat_settings(space_id) -> None` — per-space defaults for the drop-in proxy endpoints
+- `get_chat_settings(space_id) -> dict` / `set_chat_settings(space_id, memory_limit=None, memory_token_budget=None, auto_record=None, memory=None, chat_model=None) -> dict` / `reset_chat_settings(space_id) -> None` — per-space defaults for the drop-in proxy endpoints
 - `create_webhook(space_id, url, event_types=None, enabled=True) -> dict` — the response carries `secret`, returned only on create
 - `list_webhooks(space_id) -> list[dict]`, `update_webhook(space_id, webhook_id, url=None, event_types=None, enabled=None) -> dict`, `delete_webhook(space_id, webhook_id) -> None`
 - `list_webhook_deliveries(space_id, webhook_id, limit=50, cursor=None) -> dict` — recent attempts, for debugging a receiver

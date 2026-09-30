@@ -160,7 +160,22 @@ def test_set_chat_settings_sends_every_field(client):
         "memory_token_budget": None,
         "auto_record": None,
         "memory": None,
+        "chat_model": None,
     }
+
+
+@respx.mock
+def test_set_chat_settings_carries_the_chat_model(client):
+    """Which LLM a space's proxied calls run on is a chat-settings field, and
+    this package could not reach it: the key was absent from the body, so a
+    caller had to drop to raw HTTP for it. Worse than unreachable, since this
+    PUT is a replace — a settings write from here cleared a model that had been
+    chosen in the dashboard."""
+    route = respx.put(f"{BASE}/v1/spaces/{SPACE}/chat-settings").mock(
+        return_value=httpx.Response(200, json={"space_id": SPACE})
+    )
+    client.set_chat_settings(SPACE, memory_limit=3, chat_model="fast")
+    assert json.loads(route.calls.last.request.content)["chat_model"] == "fast"
 
 
 @respx.mock
@@ -186,11 +201,17 @@ async def test_async_chat_settings_match_the_sync_calls():
                 return_value=httpx.Response(204)
             )
             await c.async_get_chat_settings(SPACE)
-            await c.async_set_chat_settings(SPACE, auto_record=False)
+            await c.async_set_chat_settings(
+                SPACE, auto_record=False, chat_model="balanced"
+            )
             await c.async_reset_chat_settings(SPACE)
 
             assert get.called and delete.called
-            assert json.loads(put.calls.last.request.content)["auto_record"] is False
+            sent = json.loads(put.calls.last.request.content)
+            assert sent["auto_record"] is False
+            # Both bodies are built by one helper, so the async variant carries
+            # every field the sync one does — including the newest.
+            assert sent["chat_model"] == "balanced"
 
 
 # ── Webhooks ──────────────────────────────────────────────────────────────────

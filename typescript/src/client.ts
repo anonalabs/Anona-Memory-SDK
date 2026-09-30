@@ -72,6 +72,17 @@ export interface UploadOptions {
   strategy?: string;
   /** Applied to every file in this upload; `retrieve` can scope to them later. */
   tags?: string[];
+  /**
+   * Hierarchical scope for every file in this upload, exactly as on `record`.
+   *
+   * Worth passing whenever the space is scoped at all: a scoped `retrieve` is
+   * strict, so it never returns an unscoped write. An upload that omits these
+   * is invisible to every scoped query — silently, since the documents are
+   * stored and the job completes.
+   */
+  userId?: string;
+  agentId?: string;
+  sessionId?: string;
   signal?: AbortSignal;
 }
 
@@ -1175,6 +1186,9 @@ export class Anona {
     for (const file of files) form.append("files", toBlob(file.data), file.filename);
     if (options.strategy) form.append("strategy", options.strategy);
     if (options.tags?.length) form.append("tags", options.tags.join(","));
+    if (options.userId) form.append("user_id", options.userId);
+    if (options.agentId) form.append("agent_id", options.agentId);
+    if (options.sessionId) form.append("session_id", options.sessionId);
 
     return this.http.request<UploadResult>({
       method: "POST",
@@ -1381,6 +1395,13 @@ export class Anona {
     memoryTokenBudget?: number | null;
     autoRecord?: boolean | null;
     memory?: boolean | null;
+    /**
+     * Which LLM answers this space's proxied calls: a tier name such as
+     * `"fast"`, or a model id. Stored resolved, so re-pointing a tier later
+     * never moves a space that already chose one. A request naming its own
+     * `model` still wins.
+     */
+    chatModel?: string | null;
     signal?: AbortSignal;
   }): Promise<ChatSettings> {
     return this.http.request<ChatSettings>({
@@ -1392,6 +1413,7 @@ export class Anona {
         memory_token_budget: options.memoryTokenBudget ?? null,
         auto_record: options.autoRecord ?? null,
         memory: options.memory ?? null,
+        chat_model: options.chatModel ?? null,
       },
     });
   }

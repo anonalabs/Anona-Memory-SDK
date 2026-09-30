@@ -107,6 +107,20 @@ def test_error_raises_anonaerror(client):
 
 @pytest.mark.anyio
 @respx.mock
+async def test_async_upload_file_sends_the_same_scope():
+    """The package keeps a separate body per method, and a field added to only
+    one of the pair is the usual way this surface breaks."""
+    route = respx.post(f"{BASE}/v1/spaces/{SPACE}/documents").mock(
+        return_value=httpx.Response(202, json={"job_ids": ["job_u1"]})
+    )
+    async with AnonaClient(api_key=KEY, base_url=BASE) as c:
+        await c.async_upload_file(SPACE, b"hello", filename="a.txt", agent_id="bot")
+    body = route.calls.last.request.content
+    assert b'name="agent_id"' in body and b"bot" in body
+
+
+@pytest.mark.anyio
+@respx.mock
 async def test_async_record_background_and_get_job():
     route = respx.post(f"{BASE}/v1/record").mock(
         return_value=httpx.Response(201, json={"job_id": "job_a", "status": "processing"})
@@ -343,6 +357,31 @@ def test_upload_file_from_bytes(client):
     out = client.upload_file(SPACE, b"hello pdf bytes", filename="a.txt", tags=["hr"])
     assert out["job_ids"] == ["job_u1"]
     assert route.called
+
+
+@respx.mock
+def test_upload_file_sends_scope_in_the_multipart_body(client):
+    """A scoped retrieve is strict and never returns an unscoped write, so an
+    upload that cannot carry scope is invisible to every scoped query — with
+    the documents stored and the job reporting completed, so nothing surfaces
+    it."""
+    route = respx.post(f"{BASE}/v1/spaces/{SPACE}/documents").mock(
+        return_value=httpx.Response(202, json={"job_ids": ["job_u1"]})
+    )
+    client.upload_file(
+        SPACE, b"hello", filename="a.txt", user_id="alice", session_id="sess1"
+    )
+    body = route.calls.last.request.content
+    # The wire names are the API's snake_case form fields.
+    assert b'name="user_id"' in body and b"alice" in body
+    assert b'name="session_id"' in body and b"sess1" in body
+
+
+def test_upload_parts_omits_scope_that_was_not_passed(client):
+    """An unscoped upload has to stay byte-identical: sending an empty
+    `user_id` is a different write from sending none."""
+    _, data = client._upload_parts(b"hello", "a.txt", "rag", ["hr"])
+    assert data == {"strategy": "rag", "tags": "hr"}
 
 
 def test_upload_file_rejects_oversized(client):
