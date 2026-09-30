@@ -452,6 +452,11 @@ export interface ChatSettings {
   memory_token_budget: number | null;
   auto_record: boolean | null;
   memory: boolean | null;
+  /**
+   * The LLM this space's proxied calls run on, or null to follow the platform
+   * default. Always a resolved model id, even when a tier alias was sent.
+   */
+  chat_model: string | null;
 }
 
 export type WebhookEventType =

@@ -44,6 +44,42 @@ describe("uploadFiles", () => {
     expect(form.get("tags")).toBe("handbook,hr");
   });
 
+  it("puts the whole upload in one hierarchical scope", async () => {
+    // A scoped retrieve is strict, so it never returns an unscoped write. An
+    // upload that cannot carry scope is therefore invisible to every scoped
+    // query — silently, because the files are stored and the job completes.
+    const fetchImpl = stub({ job_ids: [] }, 202);
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.uploadFiles({
+      spaceId: "s",
+      files: [small()],
+      userId: "alice",
+      agentId: "bot",
+      sessionId: "sess1",
+    });
+
+    const form = ((fetchImpl as any).mock.calls[0]![1] as RequestInit).body as FormData;
+    // The wire names are the API's snake_case form fields.
+    expect(form.get("user_id")).toBe("alice");
+    expect(form.get("agent_id")).toBe("bot");
+    expect(form.get("session_id")).toBe("sess1");
+  });
+
+  it("omits scope that was not passed", async () => {
+    // An unscoped upload has to stay byte-identical: an empty `user_id` part
+    // is a different write from no part at all.
+    const fetchImpl = stub({ job_ids: [] }, 202);
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.uploadFiles({ spaceId: "s", files: [small()] });
+
+    const form = ((fetchImpl as any).mock.calls[0]![1] as RequestInit).body as FormData;
+    expect(form.has("user_id")).toBe(false);
+    expect(form.has("agent_id")).toBe(false);
+    expect(form.has("session_id")).toBe(false);
+  });
+
   it("rejects a file over the per-file cap before uploading", async () => {
     const fetchImpl = stub({});
     const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });

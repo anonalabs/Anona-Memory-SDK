@@ -1612,6 +1612,9 @@ class AnonaClient:
         filename: str | None,
         strategy: str | None,
         tags: list[str] | str | None,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
     ) -> tuple[list, dict]:
         """Normalise a path / bytes / file-like into httpx multipart parts."""
         import os
@@ -1640,6 +1643,14 @@ class AnonaClient:
             data["strategy"] = strategy
         if tags:
             data["tags"] = ",".join(tags) if isinstance(tags, (list, tuple)) else tags
+        # Scope rides the form, exactly as it rides the body on ``record``.
+        for key, value in (
+            ("user_id", user_id),
+            ("agent_id", agent_id),
+            ("session_id", session_id),
+        ):
+            if value is not None:
+                data[key] = value
         return files, data
 
     def upload_file(
@@ -1650,6 +1661,9 @@ class AnonaClient:
         filename: str | None = None,
         strategy: str | None = None,
         tags: list[str] | str | None = None,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
     ) -> dict:
         """Upload a file into a space so retrieval can draw on its content (RAG).
 
@@ -1661,8 +1675,17 @@ class AnonaClient:
         Ingestion is asynchronous — returns ``{"job_ids": [...]}``; poll each with
         :meth:`get_job`. By default the file is stored as retrieval chunks; pass a
         ``strategy`` to override, and ``tags`` to scope later retrieval.
+
+        ``user_id`` / ``agent_id`` / ``session_id`` put the whole upload in one
+        hierarchical scope, exactly as on :meth:`record`. Pass them whenever the
+        space is scoped at all: a scoped :meth:`retrieve` is strict, so it never
+        returns an unscoped write, and an upload that omits them is invisible to
+        every scoped query — silently, since the documents are stored and the
+        job still completes.
         """
-        files, data = self._upload_parts(file, filename, strategy, tags)
+        files, data = self._upload_parts(
+            file, filename, strategy, tags, user_id, agent_id, session_id
+        )
         resp = self._get_client().post(
             f"{self._base_url}/v1/spaces/{_seg(space_id)}/documents", files=files, data=data
         )
@@ -1841,6 +1864,29 @@ class AnonaClient:
         self._raise(resp)
         return resp.json()
 
+    @staticmethod
+    def _chat_settings_body(
+        memory_limit: int | None,
+        memory_token_budget: int | None,
+        auto_record: bool | None,
+        memory: bool | None,
+        chat_model: str | None,
+    ) -> dict:
+        """The full record, nulls included.
+
+        A ``PUT`` here is a replace, so every field is always sent: omitting one
+        would keep its stored value, which is the opposite of what a replace
+        means. One builder because the sync and async variants must not drift —
+        a field added to only one of them clears it on the other.
+        """
+        return {
+            "memory_limit": memory_limit,
+            "memory_token_budget": memory_token_budget,
+            "auto_record": auto_record,
+            "memory": memory,
+            "chat_model": chat_model,
+        }
+
     def set_chat_settings(
         self,
         space_id: str,
@@ -1849,21 +1895,23 @@ class AnonaClient:
         memory_token_budget: int | None = None,
         auto_record: bool | None = None,
         memory: bool | None = None,
+        chat_model: str | None = None,
     ) -> dict:
         """Replace this space's proxy defaults.
 
         A request that sets the same field — in its body or an ``X-Anona-*``
         header — still wins over these. Replaces the record, so anything left
         out is cleared.
+
+        ``chat_model`` is which LLM answers this space's proxied calls: a tier
+        name such as ``"fast"``, or a model id. It is stored resolved, so
+        re-pointing a tier later never moves a space that already chose one.
         """
         resp = self._get_client().put(
             f"{self._base_url}/v1/spaces/{_seg(space_id)}/chat-settings",
-            json={
-                "memory_limit": memory_limit,
-                "memory_token_budget": memory_token_budget,
-                "auto_record": auto_record,
-                "memory": memory,
-            },
+            json=self._chat_settings_body(
+                memory_limit, memory_token_budget, auto_record, memory, chat_model
+            ),
         )
         self._raise(resp)
         return resp.json()
@@ -2855,9 +2903,14 @@ class AnonaClient:
         filename: str | None = None,
         strategy: str | None = None,
         tags: list[str] | str | None = None,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
     ) -> dict:
         """Async (asyncio) variant of :meth:`upload_file`."""
-        files, data = self._upload_parts(file, filename, strategy, tags)
+        files, data = self._upload_parts(
+            file, filename, strategy, tags, user_id, agent_id, session_id
+        )
         resp = await self._get_async_client().post(
             f"{self._base_url}/v1/spaces/{_seg(space_id)}/documents", files=files, data=data
         )
@@ -2966,16 +3019,14 @@ class AnonaClient:
         memory_token_budget: int | None = None,
         auto_record: bool | None = None,
         memory: bool | None = None,
+        chat_model: str | None = None,
     ) -> dict:
         """Async (asyncio) variant of :meth:`set_chat_settings`."""
         resp = await self._get_async_client().put(
             f"{self._base_url}/v1/spaces/{_seg(space_id)}/chat-settings",
-            json={
-                "memory_limit": memory_limit,
-                "memory_token_budget": memory_token_budget,
-                "auto_record": auto_record,
-                "memory": memory,
-            },
+            json=self._chat_settings_body(
+                memory_limit, memory_token_budget, auto_record, memory, chat_model
+            ),
         )
         self._raise(resp)
         return resp.json()
