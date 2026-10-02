@@ -41,6 +41,8 @@ Record when something is settled, not when it is proposed. In practice that is:
 
 - Immediately, when the user states a preference or corrects you.
 - At the end of a task, for what the task established.
+- Before a compaction you are told about, and right after one, from the summary
+  it left. Compaction is a deadline: what it drops is not recoverable.
 - Never mid-debug, while the cause is still a hypothesis.
 
 ## Backdating

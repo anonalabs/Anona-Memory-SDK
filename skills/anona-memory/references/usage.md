@@ -9,7 +9,7 @@ nothing to configure.
 
 | Tool | Arguments | Returns |
 | --- | --- | --- |
-| `record` | `space_id`, `content`, optional `metadata`, `tags`, `user_id`, `agent_id`, `session_id` | the stored `memory_id` |
+| `record` | `space_id`, `content`, optional `tags`, `user_id`, `agent_id`, `session_id` | the stored `memory_id` |
 | `retrieve` | `space_id`, `query`, `limit`, optional `mode`, `user_id`, `agent_id`, `session_id` | ranked memories |
 | `reason` | `space_id`, `query`, optional scope keys, `model` | a synthesized answer |
 | `list_spaces` | none | the spaces this key can see |
