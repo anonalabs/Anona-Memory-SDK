@@ -61,6 +61,16 @@ jobs:
       - name: Upgrade npm
         run: npm install -g npm@latest
 
+      # test/cli/cross-impl.test.ts runs the Python CLI next to the Node one and
+      # refuses to skip under CI, so the job must be able to import it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install httpx for the cross-implementation test
+        working-directory: .
+        run: python -m pip install httpx
+
       - run: npm ci --prefer-offline
 
       - name: Typecheck

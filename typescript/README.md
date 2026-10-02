@@ -44,6 +44,21 @@ const memories = await anona.retrieve({ spaceId: "support", query: "how should I
 console.log(memories[0]?.content);
 ```
 
+## `anona` command
+
+Installing the package also installs an `anona` binary: `anona login` signs in
+through the browser, `anona status` and `anona logout` manage the stored
+credential, and `anona mcp` is a stdio MCP server that forwards to Anona with
+that credential, so an MCP client needs no API key. It reads and writes the same
+`~/.anona/credentials.json` as the Python package's `anona` command.
+
+```bash
+npx @anona-labs/memory login
+claude mcp add anona -- npx -y @anona-labs/memory mcp
+```
+
+The credential is MCP-only; the SDK still needs an API key.
+
 ## Vercel AI SDK
 
 ```ts
