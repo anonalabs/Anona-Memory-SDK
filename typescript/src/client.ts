@@ -251,6 +251,7 @@ export type RetrieveTargetOptions =
       spaceId: string;
       route?: never;
       fallbackSpaceId?: never;
+      maxTargets?: never;
     }
   | {
       spaceId?: never;
@@ -267,6 +268,28 @@ export type RetrieveTargetOptions =
        * reports why, which is the honest answer.
        */
       fallbackSpaceId?: string;
+      /**
+       * The most spaces a routed read may search. 1-20; unset means the
+       * organization's setting.
+       *
+       * A **ceiling, not a count**: only spaces judged likely to hold the answer
+       * are searched, so raising this does not make every search wider.
+       *
+       * **A routed read can cost more credits than an addressed one.** Each
+       * space searched is charged as its own search, so a question that
+       * genuinely spans two spaces costs two. Most routed reads look in one
+       * space and cost the same as naming it yourself; pass `maxTargets: 1` if
+       * you need that guaranteed. `searched` lists the spaces that were
+       * searched, so the charge is reconstructible from the response.
+       *
+       * When more than one space is searched, results are ranked across all of
+       * them — so the leading memory need not come from the leading space.
+       *
+       * `never` on the addressed branch above: it means nothing without routing,
+       * and a type that accepted it while the server refused it would be a round
+       * trip to learn what the compiler already knew.
+       */
+      maxTargets?: number;
     };
 
 /** Everything about a search except which space it looks in. */
@@ -679,16 +702,29 @@ export class Anona {
    * says why.
    */
   async retrieve(options: RetrieveOptions): Promise<RetrieveResults> {
-    const { spaceId, route, fallbackSpaceId } = options as RetrieveFilterOptions & {
-      spaceId?: string;
-      route?: "auto";
-      fallbackSpaceId?: string;
-    };
+    const { spaceId, route, fallbackSpaceId, maxTargets } =
+      options as RetrieveFilterOptions & {
+        spaceId?: string;
+        route?: "auto";
+        fallbackSpaceId?: string;
+        maxTargets?: number;
+      };
     if (!spaceId === !route) {
       throw new AnonaError({
         statusCode: 422,
         message:
           'Provide exactly one of `spaceId` or `route: "auto"` — not both, and not neither.',
+        code: "route_conflict",
+      });
+    }
+    // The types already forbid this pairing; the runtime check is for a
+    // JavaScript caller, who would otherwise pay a round trip to be told the
+    // same thing.
+    if (maxTargets !== undefined && !route) {
+      throw new AnonaError({
+        statusCode: 422,
+        message:
+          '`maxTargets` applies only to a routed read. Pass `route: "auto"`, or drop `maxTargets`.',
         code: "route_conflict",
       });
     }
@@ -721,6 +757,7 @@ export class Anona {
         member_id: options.memberId,
         route,
         fallback_space_id: fallbackSpaceId,
+        max_targets: maxTargets,
       }),
     });
     const results = (response.results ?? []) as RetrieveResults;

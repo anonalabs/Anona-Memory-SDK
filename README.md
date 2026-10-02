@@ -119,7 +119,7 @@ async with AnonaClient(api_key="...") as client:
 - `record(space_id: str, content: str, metadata: dict | None = None, tags: list[str] | None = None, background: bool = False, user_id: str | None = None, agent_id: str | None = None, session_id: str | None = None, timestamp: str | None = None, context: str | None = None) -> dict` — store a memory; `context` is extra framing stored alongside the content (where it came from, who said it) without becoming the memory's text; `background=True` queues it and returns a `job_id`; `timestamp` (ISO 8601) is when the *event* happened, for importing history; `user_id` / `agent_id` / `session_id` scope it inside the space. Pass `route="auto"` instead of `space_id` to let Anona choose the space — see [Automatic space routing](#automatic-space-routing)
 - `record_batch(space_id, items) -> dict` — bulk-ingest up to 100 items (always queued); returns a `job_id`; also takes `route="auto"`, which routes the whole batch as one unit
 - `get_job(space_id, job_id) -> dict` — poll a queued job's status (free); `status` is one of pending / processing / completed / failed / cancelled / not_found
-- `retrieve(space_id: str, query: str, limit: int = 10, mode: str = "accurate", user_id: str | None = None, agent_id: str | None = None, session_id: str | None = None, as_of: str | None = None, query_timestamp: str | None = None, occurred_after: str | None = None, occurred_before: str | None = None, top_k: int | None = None, memory_type: list[str] | None = None, tags: list[str] | None = None, tags_match: str | None = None, tag_groups: list[dict] | None = None, prefer_observations: bool | None = None, min_score: float | None = None, member_id: str | None = None) -> list[dict]` — search; `tags` / `tags_match` filter on the tags a memory was written with and `tag_groups` does the same as a boolean expression (see [Compound tag filters](#compound-tag-filters)), `memory_type` narrows the kind, `min_score` floors relevance, `top_k` bounds the candidates considered before ranking, `prefer_observations=False` also returns the raw evidence behind a synthesised memory, `member_id="me"` returns only what you wrote in a shared space; see [Time travel](#time-travel) for the temporal arguments, and [Automatic space routing](#automatic-space-routing) for `route="auto"`
+- `retrieve(space_id: str, query: str, limit: int = 10, mode: str = "accurate", user_id: str | None = None, agent_id: str | None = None, session_id: str | None = None, as_of: str | None = None, query_timestamp: str | None = None, occurred_after: str | None = None, occurred_before: str | None = None, top_k: int | None = None, memory_type: list[str] | None = None, tags: list[str] | None = None, tags_match: str | None = None, tag_groups: list[dict] | None = None, prefer_observations: bool | None = None, min_score: float | None = None, member_id: str | None = None) -> list[dict]` — search; `tags` / `tags_match` filter on the tags a memory was written with and `tag_groups` does the same as a boolean expression (see [Compound tag filters](#compound-tag-filters)), `memory_type` narrows the kind, `min_score` floors relevance, `top_k` bounds the candidates considered before ranking, `prefer_observations=False` also returns the raw evidence behind a synthesised memory, `member_id="me"` returns only what you wrote in a shared space; see [Time travel](#time-travel) for the temporal arguments, and [Automatic space routing](#automatic-space-routing) for `route="auto"` and `max_targets`
 - `get_context(space_id: str, query: str, limit: int = 10, max_tokens: int | None = None, block_order: str | None = None, …) -> str` — the relevant memories as one prompt-ready string, ready to paste into a system prompt; takes the same filters as `retrieve`, and `block_order="stable"` keeps the block byte-identical between turns so a provider's prompt cache can hit it
 - `retrieve_receipt(space_id: str, query: str, receipt_detail: str = "basic", …) -> RetrieveWithReceipt` — `retrieve`, plus a receipt explaining that search; returns `.memories` and `.receipt_id`, and that id is what `get_receipt` and `explain` take
 - `get_receipt(request_id: str) -> dict` — the manifest for one earlier search: what was returned, what was considered, what was cut
@@ -257,9 +257,34 @@ place to look. Searching it would return irrelevant memories that read exactly
 like real ones. On a *write* the fallback does default (to your organization's
 default space), because a memory has to be stored somewhere.
 
-`fallback_space_id` names the space either side falls back to, and `max_targets`
-(writes only) how many spaces one memory may reach — capped at 1 server-side
-today, so 2 or more is a 422 rather than a fan-out.
+`fallback_space_id` names the space either side falls back to.
+
+**`max_targets` means something different on each side.** On a write it is how
+many spaces one memory may reach, and it is capped at 1 server-side today, so 2
+or more is a 422 rather than a fan-out — a memory is filed in one place. On a
+**read** it accepts 1 to 20, because a question can legitimately be answered out
+of several spaces: "was Acme charged for a bulk import we ran ourselves?" needs
+the charge and the account it landed on.
+
+> [!IMPORTANT]
+> **A routed read can cost more credits than one that names its space.** Each
+> space searched is charged as its own search, so a question that genuinely spans
+> two spaces costs two.
+>
+> It is a **ceiling, not a count** — only spaces that look likely to hold the
+> answer are searched, so raising `max_targets` does not make every search wider,
+> and most routed reads look in one space and cost exactly what naming it would.
+> But the cost is yours to bound: pass `max_targets=1` to guarantee a routed read
+> never costs more than an addressed one, or set an organization-wide default
+> with `PATCH /v1/orgs/me` (`route_max_targets`).
+>
+> `searched` lists every space that was searched, so the charge is always
+> reconstructible from the response you already hold. Treat `max_targets` as a
+> cost control, not a way to get better results.
+
+When more than one space is searched the results are ranked **across** them
+rather than concatenated, so the leading memory need not come from the leading
+space in `searched`.
 
 Routing matches against each space's routing profile — a charter, topics and
 rules, declared per space on `/v1/spaces/{space_id}/routing-settings`. That
