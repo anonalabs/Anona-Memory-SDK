@@ -7,7 +7,7 @@ at the end, in one line.
 | Code / status | What it means | What to do |
 | --- | --- | --- |
 | `space_not_found` (404) | Nothing has ever been written to this space. | Treat as zero results. A `record` will create it. |
-| `no_api_key` (403) | The organization has no active API key. Signing in with OAuth authenticates you, but the service still reaches memory through one of the organization's keys. | Tell the user once to create a key in the dashboard under API keys. It only has to exist; it does not have to go in the config. |
+| `no_api_key` (403) | Since 2026-10-01 a brand-new organization does NOT need a key: the gateway proves its tenancy to the memory service itself. So this now means one of two things. Either the organization revoked all of its keys, which refuses access deliberately, or something is broken on Anona's side. | Say once that memory is unavailable and continue the task without it. Do NOT tell the user to create a key as a workaround: if it is the broken case, that hides a fault Anona needs reported. Only suggest creating one if the user says they revoked their keys. |
 | `invalid_api_key` / `key_expired` (401) | The key is not one Anona issued, was revoked, or has passed its expiry. Expiry cannot be extended. | Stop using memory this session. Say so once. |
 | `credits_exhausted` (429) | The credit allowance for the period is spent. Backoff does not help. | Stop calling. Say so once. Do not retry. |
 | `rate_limited` (429) | The per-minute ceiling. It clears on its own. | Honour `Retry-After` once, then skip memory for this task. |

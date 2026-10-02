@@ -298,15 +298,23 @@ fi
 # ── MCP ──────────────────────────────────────────────────────────────────────
 
 mcp_done=0
-if [ "$WITH_MCP" = "1" ] && [ -n "$API_KEY" ] && command -v claude >/dev/null 2>&1; then
-  if claude mcp list 2>/dev/null | grep -q '^anona\b'; then
-    info "MCP server 'anona' already registered with Claude Code"
+mcp_existing=0
+# The "already registered" check deliberately sits OUTSIDE the API-key guard.
+# A user who onboarded over MCP OAuth has a working server and no key at all,
+# and the key is not needed: the skill prefers MCP tools and only falls back to
+# curl. Checking only when a key was supplied meant that user was told to
+# register a server they already had, and to go mint a key they did not need.
+# Matches any anona* server name, since the OAuth flow registers `anona-oauth`.
+if [ "$WITH_MCP" = "1" ] && command -v claude >/dev/null 2>&1; then
+  if claude mcp list 2>/dev/null | grep -q '^anona'; then
+    info "an Anona MCP server is already registered with Claude Code"
     mcp_done=1
-  elif claude mcp add --transport http anona "$MCP_URL" \
+    mcp_existing=1
+  elif [ -n "$API_KEY" ] && claude mcp add --transport http anona "$MCP_URL" \
          --header "Authorization: Bearer ${API_KEY}" >/dev/null 2>&1; then
     info "registered the 'anona' MCP server with Claude Code"
     mcp_done=1
-  else
+  elif [ -n "$API_KEY" ]; then
     warn "could not register the MCP server automatically"
   fi
 fi
@@ -337,8 +345,14 @@ if [ "$mcp_done" = "0" ] && [ "$WITH_MCP" = "1" ]; then
   say ""
 fi
 
-if [ -z "$API_KEY" ]; then
-  say "No API key was set. Get one at https://memory.anonalabs.com under API keys, then:"
+if [ -z "$API_KEY" ] && [ "$mcp_existing" = "1" ]; then
+  say "No API key needed: the skill will call Anona through the MCP server you"
+  say "already have connected."
+  say ""
+elif [ -z "$API_KEY" ]; then
+  say "No API key was set. Either connect over MCP (no key, see"
+  say "https://docs.anonalabs.com/agents/self-onboarding) or get a key at"
+  say "https://memory.anonalabs.com under API keys, then:"
   say "  install.sh --api-key anona_live_..."
   say ""
 elif [ -z "$key_ok" ]; then
