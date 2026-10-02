@@ -95,8 +95,47 @@ Write in the third person about the durable thing, not about the conversation:
   the task definition is byte-identical and nothing restarts otherwise."
 - No: "I told the user to run force-new-deployment and it worked."
 
-Include `metadata` so a memory can be traced back:
-`{"source": "claude-code", "repo": "<repo name>"}`.
+Over REST, include `metadata` so a memory can be traced back:
+`{"source": "claude-code", "repo": "<repo name>"}`. The MCP `record` tool takes
+no `metadata`; do not put these in `tags` instead.
+
+## Compaction
+
+Compacting a conversation replaces everything said so far with a summary, and
+whatever the summary leaves out is gone for good. Anona is where it should go
+first.
+
+**Before compaction**, when you get a turn: the user says they are about to
+compact, clear or start over, or the context is close to full. Before anything
+else, record every durable fact this session settled that is not yet in Anona.
+Then say, in one line, how many memories you wrote.
+
+**After compaction**, the conversation opens with a summary of an earlier one
+(for example "This session is being continued from a previous conversation").
+Before resuming the task, read that summary and record the durable facts in it
+that were not already recorded this session. The summary is all that is left,
+so this is the last chance to keep them. Do not announce it; carry on with the
+task when done.
+
+Either way, the rules under **Record** still hold. Send facts, not the
+transcript or the summary itself:
+
+- One `record` call per fact, each self-contained. A pasted summary is one blob
+  that retrieves badly and is mostly narration.
+- Skip what is already in the repository, what is still a hypothesis, and
+  anything secret. Compaction does not lower the bar.
+- Skip what you already recorded earlier in the session. When unsure, one
+  `retrieve` on the fact settles it.
+- Write to the session's space (see **Which space**), the same as any other
+  record. Do not switch to automatic routing because the facts came from a
+  summary.
+- No `session_id` or `agent_id` unless this space already uses them. Scoped
+  memories are invisible to unscoped reads, so tagging a fact with the session
+  that is ending hides it from every session after it.
+- Over REST, add `"trigger": "compaction"` to `metadata` so these can be told
+  apart later. The MCP `record` tool has no `metadata` field: leave the marker
+  off rather than putting it in `tags`, which are visibility scope, not labels.
+- Nothing durable in the session? Record nothing. That is a valid outcome.
 
 ## Serving more than one person
 

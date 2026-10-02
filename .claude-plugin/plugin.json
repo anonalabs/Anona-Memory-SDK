@@ -1,6 +1,6 @@
 {
   "name": "anona-memory",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Persistent memory across sessions, plus the Anona SDK and API surface for building on it.",
   "author": { "name": "Anona Labs", "email": "support@anonalabs.com" },
   "homepage": "https://docs.anonalabs.com/integrations/skills",
