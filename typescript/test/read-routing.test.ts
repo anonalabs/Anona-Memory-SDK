@@ -232,3 +232,68 @@ describe("recordBatch routing", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * `maxTargets` — the cap on how many spaces a routed read may search.
+ *
+ * A ceiling, not a count: the API searches only the spaces that look likely, so
+ * these pin the wire shape and the two ways the field can be wrong, not a
+ * promise about how many spaces get searched.
+ */
+describe("retrieve maxTargets", () => {
+  it("sends max_targets on a routed read", async () => {
+    const fetchImpl = stub({ results: [] });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.retrieve({ route: "auto", query: "was acme charged?", maxTargets: 3 });
+
+    expect(bodyOf(fetchImpl)).toEqual({
+      query: "was acme charged?",
+      route: "auto",
+      max_targets: 3,
+    });
+  });
+
+  it("omits it entirely when unset, so the organization's setting applies", async () => {
+    const fetchImpl = stub({ results: [] });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await anona.retrieve({ route: "auto", query: "was acme charged?" });
+
+    expect(bodyOf(fetchImpl)).not.toHaveProperty("max_targets");
+  });
+
+  it("refuses it on an addressed read before the request goes out", async () => {
+    // The types already forbid this; the runtime check is for a JavaScript
+    // caller, who would otherwise pay a round trip to be told the same thing.
+    const fetchImpl = stub({ results: [] });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    await expect(
+      anona.retrieve({
+        spaceId: "billing",
+        query: "invoices?",
+        maxTargets: 2,
+      } as never),
+    ).rejects.toMatchObject({ code: "route_conflict" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("reports every space searched, best first", async () => {
+    const searched: SearchedSpace[] = [
+      { space_id: "billing", confidence: 0.78, stage: "model", reason: null },
+      { space_id: "acme", confidence: 0.73, stage: "model", reason: null },
+    ];
+    const fetchImpl = stub({ results: [{ memory_id: "m1" }], searched });
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    const results = await anona.retrieve({
+      route: "auto",
+      query: "was acme charged?",
+      maxTargets: 2,
+    });
+
+    expect(results.searched).toHaveLength(2);
+    expect(results.searched?.[0]?.space_id).toBe("billing");
+  });
+});

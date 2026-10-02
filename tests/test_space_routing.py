@@ -473,3 +473,61 @@ async def test_async_batch_routes_too(client):
     assert body["route"] == "auto" and "space_id" not in body
     assert result["job_id"] == "j1"
     await client.aclose()
+
+
+# ── read: `max_targets`, the cap on how many spaces a routed read may search ──
+#
+# Different from the write side's `max_targets`, which is capped at 1: a memory
+# is filed in one space, but a question can be answered out of several.
+
+
+@respx.mock
+def test_routed_retrieve_sends_max_targets(client):
+    route = respx.post(f"{BASE}/v1/retrieve").mock(
+        return_value=httpx.Response(200, json=ROUTED_READ)
+    )
+    client.retrieve(query="was acme charged?", route="auto", max_targets=3)
+    body = json.loads(route.calls.last.request.content)
+    assert body["max_targets"] == 3
+    assert body["route"] == "auto"
+
+
+@respx.mock
+def test_an_unset_max_targets_is_omitted(client):
+    """Omitted, not defaulted client-side, so the organization's setting applies
+    and raising the server default needs no new SDK release."""
+    route = respx.post(f"{BASE}/v1/retrieve").mock(
+        return_value=httpx.Response(200, json=ROUTED_READ)
+    )
+    client.retrieve(query="q", route="auto")
+    assert "max_targets" not in json.loads(route.calls.last.request.content)
+
+
+@respx.mock
+def test_max_targets_on_an_addressed_retrieve_fails_locally(client):
+    """It means nothing without routing, and a caller who passed it there thinks
+    they widened a search that never routed. Refused before the round trip."""
+    route = respx.post(f"{BASE}/v1/retrieve").mock(
+        return_value=httpx.Response(200, json=ROUTED_READ)
+    )
+    with pytest.raises(AnonaError) as excinfo:
+        client.retrieve("billing", "invoices?", max_targets=2)
+    assert excinfo.value.code == "route_conflict"
+    assert not route.calls, "the request went out anyway"
+
+
+@respx.mock
+def test_async_retrieve_takes_max_targets_too(client):
+    """The sync and async twins share `_search_body`; they had drifted once
+    before, and a routing field is exactly what one copy would have missed."""
+    import asyncio
+
+    route = respx.post(f"{BASE}/v1/retrieve").mock(
+        return_value=httpx.Response(200, json=ROUTED_READ)
+    )
+
+    async def main():
+        await client.async_retrieve(query="q", route="auto", max_targets=2)
+
+    asyncio.run(main())
+    assert json.loads(route.calls.last.request.content)["max_targets"] == 2

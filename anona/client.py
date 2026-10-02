@@ -479,6 +479,7 @@ def _search_body(
     mode: str,
     route: str | None = None,
     fallback_space_id: str | None = None,
+    max_targets: int | None = None,
     **extras,
 ) -> dict:
     """The `/v1/retrieve` payload: the four always-sent fields, plus extras.
@@ -509,7 +510,25 @@ def _search_body(
     body["query"] = query
     body["limit"] = limit
     body["mode"] = mode
-    body.update(_compact((("route", route), ("fallback_space_id", fallback_space_id))))
+    if max_targets is not None and not route:
+        # The server's 422, reproduced locally: `max_targets` means nothing on a
+        # read that names its space, and a caller who passed it there believes
+        # they widened a search that never routed.
+        raise AnonaError(
+            422,
+            "`max_targets` applies only to a routed read. Pass "
+            'route="auto", or drop `max_targets`.',
+            code="route_conflict",
+        )
+    body.update(
+        _compact(
+            (
+                ("route", route),
+                ("fallback_space_id", fallback_space_id),
+                ("max_targets", max_targets),
+            )
+        )
+    )
     body.update(_search_extras(**extras))
     return body
 
@@ -1023,6 +1042,7 @@ class AnonaClient:
         *,
         route: Literal["auto"] | None = None,
         fallback_space_id: str | None = None,
+        max_targets: int | None = None,
     ) -> RetrieveResults:
         """Search memories.
 
@@ -1055,6 +1075,23 @@ class AnonaClient:
         fitted nowhere — the least topically coherent space there is, and so
         the worst place to look. Leave it unset and an abstention honestly
         returns nothing rather than something irrelevant.
+
+        ``max_targets`` is the most spaces a routed read may search, and applies
+        to ``route="auto"`` only — passing it on an addressed read raises
+        ``route_conflict`` here, before the request goes out. It is a **ceiling,
+        not a count**: only spaces judged likely to hold the answer are searched,
+        so raising it does not make every search wider.
+
+        **A routed read can cost more credits than an addressed one.** Each space
+        searched is charged as its own search, so a question that genuinely spans
+        two spaces costs two. Most routed reads look in one space and cost the
+        same as naming it yourself; pass ``max_targets=1`` if you need that
+        guaranteed. ``.searched`` lists the spaces that were searched, so the
+        charge is always reconstructible from the response you already have.
+
+        A routed read may therefore look in more than one space, and ``.searched``
+        then carries an entry per space, best first. Results are ranked across
+        all of them, so the leading memory need not come from the leading space.
 
         ``user_id`` / ``agent_id`` / ``session_id`` restrict the search to
         memories written under the same scope. The filter is strict: memories
@@ -1111,6 +1148,7 @@ class AnonaClient:
             mode=mode,
             route=route,
             fallback_space_id=fallback_space_id,
+            max_targets=max_targets,
             top_k=top_k,
             memory_type=memory_type,
             tags=tags,
@@ -2604,6 +2642,7 @@ class AnonaClient:
         *,
         route: Literal["auto"] | None = None,
         fallback_space_id: str | None = None,
+        max_targets: int | None = None,
     ) -> RetrieveResults:
         """Async (asyncio) variant of :meth:`retrieve`."""
         # Shares `_search_body` with the sync twin rather than building its own
@@ -2616,6 +2655,7 @@ class AnonaClient:
             mode=mode,
             route=route,
             fallback_space_id=fallback_space_id,
+            max_targets=max_targets,
             top_k=top_k,
             memory_type=memory_type,
             tags=tags,
