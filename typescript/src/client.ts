@@ -25,6 +25,7 @@ import type {
   ReasonSettings,
   Rule,
   RuleList,
+  DispositionInput,
   SpaceProfile,
   ContextReceipt,
   MemoryExplanation,
@@ -1898,6 +1899,55 @@ export class Anona {
     return this.http.request<SpaceProfile>({
       method: "GET",
       path: `/v1/spaces/${seg(spaceId)}/profile`,
+      signal,
+    });
+  }
+
+  /**
+   * Set what a space is for, and how it weighs what it is told.
+   *
+   * **A full replace, and both fields are required for that reason.** A body
+   * naming only the mission clears the dials back to the default, so an
+   * optional argument here is exactly how a customer's disposition gets undone
+   * by a call that was only ever meant to set a mission. Pass both every time;
+   * read the current pair back with {@link getSpaceProfile} first if you are
+   * changing one of them.
+   *
+   * The mission is prepended to the reasoning prompt on every `reason` call and
+   * every model refresh, so its length is a per-call cost rather than a one-off.
+   * An empty or whitespace-only mission means "unset", not a stored blank.
+   *
+   * Owner-only: a share grants use of a space, not authority over it.
+   */
+  async setSpaceProfile(options: {
+    spaceId: string;
+    /** Up to 4,000 characters. Null, empty or blank clears it. */
+    mission: string | null;
+    /** Each dial 1-5, or null for the default of 3. */
+    disposition: DispositionInput | null;
+    signal?: AbortSignal;
+  }): Promise<SpaceProfile> {
+    return this.http.request<SpaceProfile>({
+      method: "PUT",
+      path: `/v1/spaces/${seg(options.spaceId)}/profile`,
+      signal: options.signal,
+      // Sent in full, nulls included: this is a replace, so an omitted key
+      // would keep its stored value, which is the opposite of what it means.
+      body: { mission: options.mission, disposition: options.disposition },
+    });
+  }
+
+  /**
+   * Back to no mission and the default dials. Idempotent.
+   *
+   * Owner-only, and free: reconfiguring a space is not work, so it stays
+   * available to an organization that has run out of credits.
+   */
+  async deleteSpaceProfile(spaceId: string, signal?: AbortSignal): Promise<void> {
+    await this.http.request<void>({
+      method: "DELETE",
+      path: `/v1/spaces/${seg(spaceId)}/profile`,
+      expectNoContent: true,
       signal,
     });
   }

@@ -3,7 +3,12 @@ import { Anona } from "../src/client.js";
 import { AnonaError } from "../src/errors.js";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
-  return new Response(JSON.stringify(body), {
+  const status = init.status ?? 200;
+  // 204/205/304 carry no body, and the Response constructor throws rather than
+  // ignoring one — which surfaces as a confusing 408 from the client's own
+  // error handling instead of as the status under test.
+  const bodiless = status === 204 || status === 205 || status === 304;
+  return new Response(bodiless ? null : JSON.stringify(body), {
     status: 200,
     headers: { "content-type": "application/json" },
     ...init,
@@ -113,6 +118,44 @@ describe("space profile and the LLM catalog", () => {
     await anona.listCatalogModels();
     // /v1/models is the LLM catalog; /v1/spaces/{id}/models is memory models.
     expect(last().url).toBe("https://api.example.com/v1/models");
+  });
+
+  it("writes both halves of the profile, because the PUT replaces", async () => {
+    // A body naming only the mission clears the dials back to the default, so
+    // both keys go on the wire every time.
+    const { anona, last } = spyClient({ space_id: "s1" });
+
+    await anona.setSpaceProfile({
+      spaceId: "s1",
+      mission: "Track the Halcyon account.",
+      disposition: { skepticism: 2, empathy: 5 },
+    });
+
+    const call = last();
+    expect(call.method).toBe("PUT");
+    expect(call.url).toBe("https://api.example.com/v1/spaces/s1/profile");
+    expect(call.body).toEqual({
+      mission: "Track the Halcyon account.",
+      disposition: { skepticism: 2, empathy: 5 },
+    });
+  });
+
+  it("sends explicit nulls when clearing one half", async () => {
+    // An absent key reads as "keep" server-side, which is the opposite of what
+    // clearing means.
+    const { anona, last } = spyClient({ space_id: "s1" });
+
+    await anona.setSpaceProfile({ spaceId: "s1", mission: null, disposition: null });
+
+    expect(last().body).toEqual({ mission: null, disposition: null });
+  });
+
+  it("deletes the profile without parsing a body", async () => {
+    const { anona, last } = spyClient(null, { status: 204 });
+
+    await expect(anona.deleteSpaceProfile("s1")).resolves.toBeUndefined();
+    expect(last().method).toBe("DELETE");
+    expect(last().url).toBe("https://api.example.com/v1/spaces/s1/profile");
   });
 });
 

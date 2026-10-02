@@ -21,7 +21,7 @@ def _run(snippet: str) -> subprocess.CompletedProcess:
     header = (
         "import sys\n"
         f"sys.path.insert(0, {str(_SDK_ROOT)!r})\n"
-        "import json, httpx\n"
+        "import asyncio, json, httpx\n"
         "from anona.client import AnonaClient\n"
         "seen = []\n"
         "def handler(request):\n"
@@ -33,6 +33,9 @@ def _run(snippet: str) -> subprocess.CompletedProcess:
         "c = AnonaClient(api_key='k', base_url='http://t.local')\n"
         "c._client = httpx.Client(transport=httpx.MockTransport(handler),\n"
         "                         headers={'Authorization': 'Bearer k'})\n"
+        "c._async_client = httpx.AsyncClient(\n"
+        "    transport=httpx.MockTransport(handler),\n"
+        "    headers={'Authorization': 'Bearer k'})\n"
     )
     script = header + textwrap.dedent(snippet)
     return subprocess.run(
@@ -178,6 +181,60 @@ def test_space_profile_and_model_catalog_paths():
         assert seen[-1][1].endswith('/v1/spaces/s1/profile')
         c.list_catalog_models()
         assert seen[-1][1].endswith('/v1/models')
+        print('OK')
+    """))
+
+
+def test_set_space_profile_sends_both_halves():
+    """The PUT is a full replace, so both keys go on the wire every time: a
+    body naming only the mission clears the dials back to the default, which
+    is how a customer's disposition gets undone by a call that meant to set a
+    mission."""
+    _ok(_run("""
+        c.set_space_profile('s1', mission='Track the Halcyon account.',
+                            disposition={'skepticism': 2, 'empathy': 5})
+        method, url, body = seen[-1]
+        assert method == 'PUT'
+        assert url.endswith('/v1/spaces/s1/profile')
+        assert set(body) == {'mission', 'disposition'}
+        assert body['disposition'] == {'skepticism': 2, 'empathy': 5}
+        print('OK')
+    """))
+
+
+def test_set_space_profile_sends_explicit_nulls():
+    """Clearing one half has to travel as null rather than as an absent key —
+    the server reads an omitted key as "keep", which is the opposite."""
+    _ok(_run("""
+        c.set_space_profile('s1', mission=None, disposition=None)
+        _, _, body = seen[-1]
+        assert body == {'mission': None, 'disposition': None}
+        print('OK')
+    """))
+
+
+def test_reset_space_profile_deletes():
+    _ok(_run("""
+        out = c.reset_space_profile('s1')
+        method, url, _ = seen[-1]
+        assert method == 'DELETE'
+        assert url.endswith('/v1/spaces/s1/profile')
+        assert out is None
+        print('OK')
+    """))
+
+
+def test_async_space_profile_writes_match_the_sync_calls():
+    """The package keeps two bodies per method, and a field added to only one
+    of them is the usual way this surface breaks."""
+    _ok(_run("""
+        async def main():
+            await c.async_set_space_profile('s1', mission='m',
+                                            disposition={'literalism': 4})
+            await c.async_reset_space_profile('s1')
+        asyncio.run(main())
+        assert [m for m, _, _ in seen[-2:]] == ['PUT', 'DELETE']
+        assert seen[-2][2] == {'mission': 'm', 'disposition': {'literalism': 4}}
         print('OK')
     """))
 
