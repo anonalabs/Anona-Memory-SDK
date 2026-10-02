@@ -746,6 +746,21 @@ export interface Disposition {
   empathy: number | null;
 }
 
+/**
+ * The three dials as a caller may set them: 1-5, or null for the default.
+ *
+ * Separate from {@link Disposition}, which is what reads back: a value set out
+ * of band can be anything, and the response has to report it honestly, while a
+ * write is bounded because a config value is stored without its range being
+ * checked — a 99 would save, read back, and reach the prompt as
+ * `skepticism=99`.
+ */
+export interface DispositionInput {
+  skepticism?: number | null;
+  literalism?: number | null;
+  empathy?: number | null;
+}
+
 export interface SpaceProfile {
   space_id: string;
   name: string | null;

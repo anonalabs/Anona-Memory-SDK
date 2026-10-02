@@ -165,6 +165,7 @@ async with AnonaClient(api_key="...") as client:
 - `clear_memory_model(space_id: str, model_id: str) -> dict` — Wipe a memory model's content, keeping its definition
 - `get_memory_model_history(space_id: str, model_id: str) -> dict` — Earlier versions of a memory model's content
 - `get_space_profile(space_id: str) -> dict` — A space's profile — its mission and disposition
+- `set_space_profile(space_id, *, mission, disposition) -> dict` / `reset_space_profile(space_id) -> None` — set what a space is for and how it weighs what it is told. Both arguments are required: the PUT is a full replace, so an omitted one clears that half. Owner-only.
 - `list_catalog_models() -> dict` — Every LLM this deployment will answer with, and what each costs
 - Every method has an `async_` twin (`async_record`, `async_retrieve`, …) taking the same arguments
 - `close()` / `aclose()` — release underlying HTTP clients

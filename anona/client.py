@@ -2508,6 +2508,16 @@ class AnonaClient:
             f"/v1/spaces/{_seg(space_id)}/models/{_seg(model_id)}/history",
         )
 
+    @staticmethod
+    def _space_profile_body(mission: str | None, disposition: dict | None) -> dict:
+        """The full record, nulls included.
+
+        A ``PUT`` here is a replace, so both keys are always sent: omitting one
+        would keep its stored value, which is the opposite of what a replace
+        means. One builder because the sync and async variants must not drift.
+        """
+        return {"mission": mission, "disposition": disposition}
+
     def get_space_profile(
         self,
         space_id: str,
@@ -2516,6 +2526,43 @@ class AnonaClient:
         return self._call(
             "GET",
             f"/v1/spaces/{_seg(space_id)}/profile",
+        )
+
+    def set_space_profile(
+        self,
+        space_id: str,
+        *,
+        mission: str | None,
+        disposition: dict | None,
+    ) -> dict:
+        """Set what a space is for, and how it weighs what it is told.
+
+        ``mission`` is up to 4,000 characters and is prepended to the reasoning
+        prompt on every :meth:`reason` call and every model refresh, so its
+        length is a per-call cost rather than a one-off. Blank or ``None``
+        clears it. ``disposition`` takes ``skepticism`` / ``literalism`` /
+        ``empathy``, each 1-5 or ``None`` for the default of 3.
+
+        **Both arguments are required, and that is deliberate.** This PUT is a
+        full replace, so a body naming only the mission clears the dials — an
+        optional argument is exactly how a customer's disposition gets undone
+        by a call that was only ever meant to set a mission. Read the current
+        pair back with :meth:`get_space_profile` when changing one of them.
+
+        Owner-only: a share grants use of a space, not authority over it.
+        """
+        return self._call(
+            "PUT",
+            f"/v1/spaces/{_seg(space_id)}/profile",
+            json=self._space_profile_body(mission, disposition),
+        )
+
+    def reset_space_profile(self, space_id: str) -> None:
+        """Back to no mission and the default dials. Idempotent, owner-only."""
+        return self._call(
+            "DELETE",
+            f"/v1/spaces/{_seg(space_id)}/profile",
+            expect_no_content=True,
         )
 
     def list_catalog_models(self) -> dict:
@@ -3527,6 +3574,28 @@ class AnonaClient:
         return await self._acall(
             "GET",
             f"/v1/spaces/{_seg(space_id)}/profile",
+        )
+
+    async def async_set_space_profile(
+        self,
+        space_id: str,
+        *,
+        mission: str | None,
+        disposition: dict | None,
+    ) -> dict:
+        """Async (asyncio) variant of :meth:`set_space_profile`."""
+        return await self._acall(
+            "PUT",
+            f"/v1/spaces/{_seg(space_id)}/profile",
+            json=self._space_profile_body(mission, disposition),
+        )
+
+    async def async_reset_space_profile(self, space_id: str) -> None:
+        """Async (asyncio) variant of :meth:`reset_space_profile`."""
+        return await self._acall(
+            "DELETE",
+            f"/v1/spaces/{_seg(space_id)}/profile",
+            expect_no_content=True,
         )
 
     async def async_list_catalog_models(self) -> dict:
