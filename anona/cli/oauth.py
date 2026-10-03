@@ -20,6 +20,63 @@ class OAuthError(Exception):
     """Anything that should stop the login with a message the human can act on."""
 
 
+class RegistrationRejected(OAuthError):
+    """The authorization server refused this registration.
+
+    Carries the server's own status and RFC 6749 `error` code so the caller can
+    decide whether the refusal is one it can recover from. `register_client`
+    raises this instead of a bare `OAuthError` for every non-2xx, because the
+    one thing that distinguishes a recoverable refusal from a fatal one is the
+    server's answer, and discarding it is what made the stranded-token case
+    unrecoverable.
+    """
+
+    def __init__(self, message: str, *, status: int, error: str | None) -> None:
+        super().__init__(message)
+        self.status = status
+        self.error = error
+
+
+def _server_error(resp: httpx.Response) -> tuple[str | None, str | None]:
+    """The server's own `(error, error_description)`, through either envelope.
+
+    RFC 6749 puts the pair at the top level, which is what a third-party
+    authorization server sends. Our own gateway wraps every structured detail
+    in its `{"error": {...}}` envelope, so the same pair arrives one level
+    deeper. Read both rather than pick one: this function's only job is to find
+    a sentence worth printing, and guessing the deployment wrong turns an
+    actionable message back into silence.
+    """
+    try:
+        body = resp.json()
+    except ValueError:
+        return None, None
+    if not isinstance(body, dict):
+        return None, None
+    inner = body.get("error")
+    if isinstance(inner, dict):
+        body = inner
+    error = body.get("error")
+    description = body.get("error_description") or body.get("message")
+    return (
+        error if isinstance(error, str) else None,
+        _printable(description) if isinstance(description, str) else None,
+    )
+
+
+def _printable(text: str, limit: int = 300) -> str | None:
+    """Server text, made safe to print to a terminal.
+
+    The body is remote input. Collapsing whitespace drops embedded newlines and
+    carriage returns, which otherwise let a response forge extra lines of CLI
+    output, and the cap stops a long body burying the rest of the message.
+    """
+    cleaned = " ".join(text.split())
+    if not cleaned:
+        return None
+    return cleaned if len(cleaned) <= limit else cleaned[: limit - 1] + "…"
+
+
 def new_pkce() -> tuple[str, str]:
     """A fresh (verifier, challenge) pair, S256.
 
@@ -78,29 +135,46 @@ def discover(base_url: str, client: httpx.Client) -> dict:
     return meta
 
 
-def register_client(meta: dict, redirect_uri: str, client: httpx.Client) -> str:
+def register_client(
+    meta: dict, redirect_uri: str, client: httpx.Client, temp_token: str | None = None
+) -> str:
     """Register this machine as an OAuth client (RFC 7591) and return its id.
 
     Registration is open and unauthenticated by design, so there is nothing to
     present here. A new id per login is fine and is what keeps the loopback
     port, which changes every run, matching the registered redirect_uri.
     """
+    payload = {
+        "client_name": "Anona CLI",
+        "redirect_uris": [redirect_uri],
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "none",
+    }
+    if temp_token:
+        # In the request body, never the authorize URL: that URL is printed to
+        # the terminal and lands in browser history.
+        payload["temp_token"] = temp_token
     try:
         resp = client.post(
             meta["registration_endpoint"],
-            json={
-                "client_name": "Anona CLI",
-                "redirect_uris": [redirect_uri],
-                "grant_types": ["authorization_code", "refresh_token"],
-                "response_types": ["code"],
-                "token_endpoint_auth_method": "none",
-            },
+            json=payload,
             timeout=15,
         )
     except httpx.HTTPError as exc:
         raise OAuthError(f"Could not register with the authorization server: {exc}") from exc
     if resp.status_code not in (200, 201):
-        raise OAuthError(f"Client registration failed with {resp.status_code}.")
+        error, description = _server_error(resp)
+        # The server's sentence, not just its number. This is the one call site
+        # where the refusal is actionable — "this profile is already claimed,
+        # expired or unknown" tells the human what happened; "failed with 400"
+        # sends them to a log they do not have.
+        suffix = f": {description}" if description else "."
+        raise RegistrationRejected(
+            f"Client registration failed with {resp.status_code}{suffix}",
+            status=resp.status_code,
+            error=error,
+        )
     try:
         body = resp.json()
     except ValueError as exc:
