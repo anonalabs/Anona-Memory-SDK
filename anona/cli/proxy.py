@@ -25,7 +25,7 @@ from typing import Any
 
 import httpx
 
-from . import tokens
+from . import store, tokens
 
 # `reason` is an agent loop and can legitimately run for a minute and a half.
 _TIMEOUT = 120
@@ -60,10 +60,39 @@ def _post(client: httpx.Client, url: str, token: str, msg: dict | list) -> httpx
     )
 
 
+def _bearer(client: httpx.Client) -> tuple[str, bool]:
+    """(token, is_temp). A signed-in OAuth credential always wins.
+
+    The temp token is the fallback only when there is no login: once someone
+    has logged in, their session is the credential and a leftover temp token
+    must not be sent. It lives here rather than in `tokens.access_token`
+    because that function's whole contract is the refresh-and-rotate path,
+    which a temp token has no part in.
+    """
+    c = store.load()
+    if c is not None and c.signed_in:
+        return tokens.access_token(client), False
+    temp = c.live_temp_token() if c is not None else None
+    if temp is not None:
+        return temp, True
+    if c is not None and c.temp_token:
+        raise tokens.NotLoggedIn(
+            "The temporary profile has expired. Run `anona start` for a new one, "
+            "or `anona login`."
+        )
+    return tokens.access_token(client), False  # raises NotLoggedIn
+
+
 def _forward(client: httpx.Client, url: str, msg: dict | list) -> str | None:
     """The response line to write, or None when there is nothing to say."""
-    token = tokens.access_token(client)
+    token, is_temp = _bearer(client)
     resp = _post(client, url, token, msg)
+    if resp.status_code == 401 and is_temp:
+        # Opaque and fixed: there is nothing to refresh, only expired or claimed.
+        raise _Failure(
+            "The server rejected the temporary profile (expired, or already claimed). "
+            "Run `anona login`."
+        )
     if resp.status_code == 401:
         token = tokens.access_token(client, force_refresh=True, rejected=token)
         resp = _post(client, url, token, msg)

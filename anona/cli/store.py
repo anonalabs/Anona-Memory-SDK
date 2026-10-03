@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -26,10 +27,36 @@ class Credentials:
     expires_at: float
     client_id: str
     base_url: str = DEFAULT_BASE_URL
+    # An unclaimed profile made by `anona start`. A temp-only file has empty
+    # OAuth fields (see `signed_in`). repr=False for the same reason as above.
+    temp_token: str | None = field(default=None, repr=False)
+    temp_expires_at: float | None = None
+
+    def live_temp_token(self) -> str | None:
+        """The unclaimed-profile token, unless it is absent, undated or past its deadline.
+
+        An expired profile is already gone server-side, so presenting it can
+        only fail.
+        """
+        if not self.temp_token:
+            return None
+        if self.temp_expires_at is None or self.temp_expires_at <= time.time():
+            return None
+        return self.temp_token
+
+    @property
+    def signed_in(self) -> bool:
+        return bool(self.access_token)
 
 
 def path() -> Path:
     return Path(os.path.expanduser("~")) / ".anona" / "credentials.json"
+
+
+def _opt(value, kind):
+    # A wrong-typed optional field reads as absent; it must not make the whole
+    # credential unreadable.
+    return value if isinstance(value, kind) and not isinstance(value, bool) else None
 
 
 def load() -> Credentials | None:
@@ -48,6 +75,8 @@ def load() -> Credentials | None:
             expires_at=float(raw["expires_at"]),
             client_id=raw["client_id"],
             base_url=raw.get("base_url", DEFAULT_BASE_URL),
+            temp_token=_opt(raw.get("temp_token"), str),
+            temp_expires_at=_opt(raw.get("temp_expires_at"), (int, float)),
         )
     except Exception:
         return None
@@ -63,16 +92,19 @@ def save(c: Credentials) -> None:
     p = path()
     p.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(p.parent, 0o700)
-    payload = json.dumps(
-        {
-            "access_token": c.access_token,
-            "refresh_token": c.refresh_token,
-            "expires_at": c.expires_at,
-            "client_id": c.client_id,
-            "base_url": c.base_url,
-        },
-        indent=2,
-    )
+    doc: dict = {
+        "access_token": c.access_token,
+        "refresh_token": c.refresh_token,
+        "expires_at": c.expires_at,
+        "client_id": c.client_id,
+        "base_url": c.base_url,
+    }
+    # Only when set, so the file an ordinary login writes is byte-for-byte
+    # what it always was.
+    if c.temp_token is not None:
+        doc["temp_token"] = c.temp_token
+        doc["temp_expires_at"] = c.temp_expires_at
+    payload = json.dumps(doc, indent=2)
     fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=".credentials-")
     try:
         # Wrap the fd first so it is closed even if fchmod raises.

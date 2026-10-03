@@ -118,7 +118,16 @@ def _await_callback(server: HTTPServer, timeout: float = TIMEOUT_SECONDS) -> str
     return server.code
 
 
-def _exchange(meta: dict, client_id: str, redirect_uri: str, code: str, verifier: str) -> store.Credentials:
+def _exchange(
+    meta: dict, client_id: str, redirect_uri: str, code: str, verifier: str
+) -> tuple[store.Credentials, bool]:
+    """Redeem the code. Returns the credential and whether a claim was confirmed.
+
+    The claim flag comes from the server and nowhere else: the gateway sets
+    `temp_claimed` only when consent actually adopted the stored profile. A
+    login that did not claim must leave the stored token alone, because the
+    token is never printed and the credential file is its only copy.
+    """
     try:
         resp = httpx.post(
             meta["token_endpoint"],
@@ -152,13 +161,74 @@ def _exchange(meta: dict, client_id: str, redirect_uri: str, code: str, verifier
         or ttl <= 0
     ):
         raise Abort("The token response was incomplete, so nothing was saved.")
-    return store.Credentials(
-        access_token=access,
-        refresh_token=refresh,
-        expires_at=time.time() + ttl,
-        client_id=client_id,
-        base_url="",  # filled in by the caller
+    return (
+        store.Credentials(
+            access_token=access,
+            refresh_token=refresh,
+            expires_at=time.time() + ttl,
+            client_id=client_id,
+            base_url="",  # filled in by the caller
+        ),
+        # `is True`, not truthiness: a string or a number here is a server we
+        # do not understand, and the cost of reading it as a claim is losing
+        # the only copy of a token that still opens a live profile.
+        body.get("temp_claimed") is True,
     )
+
+
+def _live_temp_token(base_url: str) -> str | None:
+    c = store.load()
+    if c is None or c.base_url.rstrip("/") != base_url.rstrip("/"):
+        # A profile belongs to the deployment that made it; another would
+        # only be handed a token it has never heard of.
+        return None
+    return c.live_temp_token()
+
+
+def _register(
+    meta: dict, redirect_uri: str, client: httpx.Client, temp_token: str | None
+) -> tuple[str, bool]:
+    """Register, and recover from a stored temp token the server will not take.
+
+    Returns `(client_id, dropped_temp)`.
+
+    The claim commits at consent, but the stored token is only spent once the
+    code is redeemed — so closing the browser after clicking Allow, a
+    `_await_callback` timeout, or a dropped `_exchange` all leave the profile
+    claimed server-side and the dead token still on disk with a future
+    `temp_expires_at`. Without this, every later `anona login` resent that
+    token, took a 400, and aborted; `anona start` refused to make another
+    because one "already exists"; and the only exit was `anona logout --force`,
+    which nothing in either message suggests. The account was locked out of its
+    own CLI, permanently, by succeeding.
+
+    Unknown, claimed and expired are one refusal server-side and mean the same
+    thing here — the token opens nothing — so there is never a reason to insist
+    on it. Retry without it and let the login proceed.
+
+    Scoped deliberately: only when we actually sent a token, only on a 400, and
+    only on `invalid_request`, which is what `_registration_temp_token` raises
+    for an unusable token. The other 400 that endpoint can produce,
+    `invalid_redirect_uri`, is about this machine's listener and would not be
+    fixed by dropping anything.
+    """
+    try:
+        client_id = oauth.register_client(
+            meta, redirect_uri, client, temp_token=temp_token
+        )
+        return client_id, False
+    except oauth.RegistrationRejected as exc:
+        if not (temp_token and exc.status == 400 and exc.error == "invalid_request"):
+            raise
+        # `exc` is unbound once the except clause ends, so keep the sentence.
+        reason = str(exc)
+    print(
+        f"The stored temporary profile can no longer be claimed. {reason} "
+        "Signing in without it.",
+        file=sys.stderr,
+    )
+    # A second refusal is the real one, and propagates with the server's text.
+    return oauth.register_client(meta, redirect_uri, client), True
 
 
 def run_login(base_url: str, open_browser: bool = True) -> int:
@@ -168,7 +238,9 @@ def run_login(base_url: str, open_browser: bool = True) -> int:
             meta = oauth.discover(base_url, client)
             server = _make_server()
             redirect_uri = f"http://127.0.0.1:{server.server_address[1]}{CALLBACK_PATH}"
-            client_id = oauth.register_client(meta, redirect_uri, client)
+            client_id, dropped_temp = _register(
+                meta, redirect_uri, client, _live_temp_token(base_url)
+            )
         verifier, challenge = oauth.new_pkce()
         server.expected_state = secrets.token_urlsafe(32)
         url = oauth.authorize_url(meta, client_id, redirect_uri, challenge, server.expected_state)
@@ -185,13 +257,37 @@ def run_login(base_url: str, open_browser: bool = True) -> int:
         print("Waiting for approval...", flush=True)
 
         code = _await_callback(server, TIMEOUT_SECONDS)
-        creds = _exchange(meta, client_id, redirect_uri, code, verifier)
+        creds, claimed = _exchange(meta, client_id, redirect_uri, code, verifier)
         creds.base_url = base_url
         try:
             # Under the refresh lock: a proxy that finishes rotating just after
             # this must not overwrite the credential the user just approved
             # with the old family's rotated pair.
             with tokens.credential_lock():
+                # `dropped_temp` is the third case, and it must not carry:
+                # the server has already told us that token opens nothing, so
+                # writing it back only reproduces the dead end on the next run.
+                if not claimed and not dropped_temp:
+                    # Carried across, not dropped. Only a server-confirmed
+                    # claim spends the token; a login that claimed nothing —
+                    # an account that already had an org, a refusal, no
+                    # profile at all — leaves the stored one exactly as it
+                    # was, because the token is never printed and this file is
+                    # its only copy.
+                    #
+                    # Re-read under the lock rather than reused from the
+                    # register step, and only when the stored profile belongs
+                    # to the deployment just signed in to: the same match
+                    # `_live_temp_token` makes. Carrying it across deployments
+                    # would retag another host's token with this base URL and
+                    # then present it there. `anona login` already announces
+                    # that a credential for another deployment is replaced.
+                    stored = store.load()
+                    if stored is not None and stored.base_url.rstrip(
+                        "/"
+                    ) == base_url.rstrip("/"):
+                        creds.temp_token = stored.temp_token
+                        creds.temp_expires_at = stored.temp_expires_at
                 store.save(creds)
         except OSError as exc:
             raise Abort(
