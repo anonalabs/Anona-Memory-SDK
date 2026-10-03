@@ -6,12 +6,12 @@
  * both in one process tree.
  */
 import { execFile } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { credentialsPath, loadCredentials, saveCredentials } from "../../src/cli/store.js";
+import { credentialsPath, liveTempToken, loadCredentials, saveCredentials } from "../../src/cli/store.js";
 import { accessToken } from "../../src/cli/tokens.js";
 import { startAs, tokenOk, useTempHome, type FakeAs } from "./helpers.js";
 
@@ -156,5 +156,115 @@ with httpx.Client() as c:
     expect(n).toBe("rotated");
     expect(p.trim()).toBe("rotated");
     expect(as.count("/oauth/token")).toBe(1);
+  });
+});
+
+// The temp-profile fields travel in the same file. Same shape as above: each
+// direction, and each side surviving the other's refresh.
+describe.skipIf(!pythonOk)("credential file, temp profile fields: Python <-> Node", () => {
+  const home = useTempHome();
+  let as: FakeAs;
+  beforeEach(async () => void (as = await startAs()));
+  afterEach(() => as.close());
+
+  const TOK = "anona_tmp_CROSSIMPL";
+  const PY_REFRESH = `
+import httpx
+from anona.cli import tokens
+with httpx.Client() as c:
+    print(tokens.access_token(c))`;
+  const LOAD = `
+import json
+from anona.cli import store
+c = store.load()
+print(json.dumps(None if c is None else [c.access_token, c.temp_token, c.temp_expires_at, c.live_temp_token()]))`;
+
+  it("Python writes a temp-only file, Node reads the token and the fractional deadline", async () => {
+    await py(
+      `
+import time
+from anona.cli import store
+store.save(store.Credentials("", "", 0.0, "", "https://py.test", temp_token="${TOK}", temp_expires_at=time.time() + 7200.5))`,
+      home.dir(),
+    );
+    const c = loadCredentials()!;
+    expect(c).toMatchObject({ accessToken: "", tempToken: TOK, baseUrl: "https://py.test" });
+    expect(c.tempExpiresAt! % 1).not.toBe(0);
+    expect(liveTempToken(c)).toBe(TOK);
+  });
+
+  it("Node writes a temp-only file, Python reads the token and the deadline and calls it live", async () => {
+    const at = Date.now() / 1000 + 7200.5;
+    saveCredentials({ accessToken: "", refreshToken: "", expiresAt: 0, clientId: "", baseUrl: "https://n.test", tempToken: TOK, tempExpiresAt: at });
+    expect(JSON.parse(await py(LOAD, home.dir()))).toEqual(["", TOK, at, TOK]);
+  });
+
+  it("Node writes an expired profile, Python agrees it is not live", async () => {
+    saveCredentials({ accessToken: "", refreshToken: "", expiresAt: 0, clientId: "", baseUrl: "https://n.test", tempToken: TOK, tempExpiresAt: 1000 });
+    expect(JSON.parse(await py(LOAD, home.dir()))).toEqual(["", TOK, 1000, null]);
+  });
+
+  it("Node rotates a credential Python wrote and Python's temp profile survives", async () => {
+    as.on("/oauth/token", tokenOk("node-rotated", "node-rt"));
+    await py(
+      `
+import time
+from anona.cli import store
+store.save(store.Credentials("a", "r", time.time() - 10, "cid", "${as.base}", temp_token="${TOK}", temp_expires_at=4102444800.0))`,
+      home.dir(),
+    );
+    expect(await accessToken()).toBe("node-rotated");
+    expect(JSON.parse(await py(LOAD, home.dir()))).toEqual(["node-rotated", TOK, 4102444800, TOK]);
+  });
+
+  it("Python rotates a credential Node wrote and Node's temp profile survives", async () => {
+    as.on("/oauth/token", tokenOk("py-rotated", "py-rt"));
+    saveCredentials({ accessToken: "a", refreshToken: "r", expiresAt: 1, clientId: "cid", baseUrl: as.base, tempToken: TOK, tempExpiresAt: 4102444800 });
+    await py(PY_REFRESH, home.dir());
+    expect(loadCredentials()).toMatchObject({ accessToken: "py-rotated", tempToken: TOK, tempExpiresAt: 4102444800 });
+  });
+
+  it("the file Node writes for an ordinary login has no temp keys, and Python reads it as no profile", async () => {
+    saveCredentials({ accessToken: "a", refreshToken: "r", expiresAt: 1, clientId: "c", baseUrl: "https://n.test" });
+    expect(JSON.parse(await py(LOAD, home.dir()))).toEqual(["a", null, null, null]);
+  });
+
+  // The same file must read the same to a human, in either CLI.
+  const PY_STATUS = `
+import sys
+from anona.cli import main
+sys.exit(main.main(["status"]))`;
+  it("`status` prints the same words in both CLIs for a temp-only file", async () => {
+    saveCredentials({ accessToken: "", refreshToken: "", expiresAt: 0, clientId: "", baseUrl: "https://n.test", tempToken: TOK, tempExpiresAt: Date.now() / 1000 + 71.5 * 3600 });
+    const pyOut = await py(PY_STATUS, home.dir());
+    const t: string[] = [];
+    const { main } = await import("../../src/cli/index.js");
+    await main(["status"], { stdin: process.stdin, stdout: { write: (s) => void t.push(s) }, stderr: { write: () => {} } });
+    expect(t.join("")).toBe(pyOut);
+    expect(pyOut).toContain("Temporary profile for https://n.test");
+    expect(pyOut).not.toContain(TOK);
+  });
+
+  it("`start` prints the same four sentences in both CLIs, and writes the same file shape", async () => {
+    const expires = new Date(Date.now() + 71.5 * 3600_000).toISOString();
+    as.on("/v1/temp/profiles", (_q, r) => {
+      r.writeHead(201, { "content-type": "application/json" });
+      r.end(JSON.stringify({ temp_token: TOK, expires_at: expires }));
+    });
+    const pyOut = await py(
+      `
+import sys
+from anona.cli import main
+sys.exit(main.main(["--base-url", "${as.base}", "start"]))`,
+      home.dir(),
+    );
+    const pyFile = JSON.parse(readFileSync(credentialsPath(), "utf8"));
+    rmSync(credentialsPath());
+    const t: string[] = [];
+    const { main } = await import("../../src/cli/index.js");
+    expect(await main(["--base-url", as.base, "start"], { stdin: process.stdin, stdout: { write: (s) => void t.push(s) }, stderr: { write: () => {} } })).toBe(0);
+    expect(t.join("")).toBe(pyOut);
+    expect(Object.keys(JSON.parse(readFileSync(credentialsPath(), "utf8")))).toEqual(Object.keys(pyFile));
+    expect(JSON.parse(readFileSync(credentialsPath(), "utf8")).temp_expires_at).toBeCloseTo(pyFile.temp_expires_at, 3);
   });
 });

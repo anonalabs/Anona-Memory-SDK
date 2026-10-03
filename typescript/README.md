@@ -52,6 +52,10 @@ credential, and `anona mcp` is a stdio MCP server that forwards to Anona with
 that credential, so an MCP client needs no API key. It reads and writes the same
 `~/.anona/credentials.json` as the Python package's `anona` command.
 
+`anona start` makes a temporary profile with no account. It is deleted after 72
+hours unless you claim it with `anona login`; `anona status` shows the deadline,
+and `anona logout` refuses to discard an unclaimed profile without `--force`.
+
 ```bash
 npx @anona-labs/memory login
 claude mcp add anona -- npx -y @anona-labs/memory mcp

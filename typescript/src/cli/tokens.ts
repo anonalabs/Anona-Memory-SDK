@@ -187,5 +187,7 @@ async function refresh(c: Credentials): Promise<Credentials> {
     expiresAt: Date.now() / 1000 + b.expires_in,
     clientId: c.clientId,
     baseUrl: c.baseUrl,
+    // A refresh must not drop an unclaimed profile the file also holds.
+    ...(c.tempToken !== undefined ? { tempToken: c.tempToken, tempExpiresAt: c.tempExpiresAt } : {}),
   };
 }

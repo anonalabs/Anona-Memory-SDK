@@ -9,8 +9,8 @@ import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { authorizeUrl, discover, newPkce, OAuthError, registerClient, type ServerMetadata } from "./oauth.js";
-import { credentialsPath, saveCredentials, type Credentials } from "./store.js";
+import { authorizeUrl, discover, newPkce, OAuthError, RegistrationRejected, registerClient, type ServerMetadata } from "./oauth.js";
+import { credentialsPath, liveTempToken, loadCredentials, saveCredentials, type Credentials } from "./store.js";
 import { withCredentialLock } from "./tokens.js";
 
 export const TIMEOUT_SECONDS = 300;
@@ -152,7 +152,7 @@ async function exchange(
   code: string,
   verifier: string,
   baseUrl: string,
-): Promise<Credentials> {
+): Promise<{ creds: Credentials; claimed: boolean }> {
   let resp: Response;
   try {
     resp = await fetch(meta.token_endpoint, {
@@ -182,7 +182,7 @@ async function exchange(
   if (body === null || typeof body !== "object" || Array.isArray(body)) {
     throw new Abort("The token endpoint returned something that is not a JSON object.");
   }
-  const b = body as { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown };
+  const b = body as { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown; temp_claimed?: unknown };
   if (
     typeof b.access_token !== "string" ||
     !b.access_token ||
@@ -195,12 +195,59 @@ async function exchange(
     throw new Abort("The token response was incomplete, so nothing was saved.");
   }
   return {
-    accessToken: b.access_token,
-    refreshToken: b.refresh_token,
-    expiresAt: Date.now() / 1000 + b.expires_in,
-    clientId,
-    baseUrl,
+    creds: {
+      accessToken: b.access_token,
+      refreshToken: b.refresh_token,
+      expiresAt: Date.now() / 1000 + b.expires_in,
+      clientId,
+      baseUrl,
+    },
+    // The claim flag comes from the server and nowhere else, and only a literal
+    // `true` counts: a string or a number here is a server we do not
+    // understand, and the cost of reading it as a claim is losing the only copy
+    // of a token that still opens a live profile.
+    claimed: b.temp_claimed === true,
   };
+}
+
+const sameBase = (a: string, b: string) => a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+
+/** The stored profile's token, only when it belongs to the deployment being signed in to. */
+function storedTempToken(baseUrl: string): string | undefined {
+  const c = loadCredentials();
+  // A profile belongs to the deployment that made it; another would only be
+  // handed a token it has never heard of.
+  if (c === null || !sameBase(c.baseUrl, baseUrl)) return undefined;
+  return liveTempToken(c) ?? undefined;
+}
+
+/**
+ * Register, and recover from a stored temp token the server will not take.
+ *
+ * The claim commits at consent, but the stored token is only spent once the
+ * code is redeemed, so closing the browser after clicking Allow, a timeout or a
+ * dropped exchange all leave the profile claimed server-side with the dead
+ * token still on disk. Without this, every later login resent it, took a 400 and
+ * aborted. Unknown, claimed and expired are one refusal and mean the same
+ * thing, so retry without it.
+ *
+ * Scoped: only when a token was sent, only on a 400, only on `invalid_request`.
+ * The other 400, `invalid_redirect_uri`, is about this machine's listener.
+ */
+async function register(
+  meta: ServerMetadata,
+  redirectUri: string,
+  tempToken: string | undefined,
+  err: { write(s: string): unknown },
+): Promise<{ clientId: string; droppedTemp: boolean }> {
+  try {
+    return { clientId: await registerClient(meta, redirectUri, tempToken), droppedTemp: false };
+  } catch (e) {
+    if (!(tempToken && e instanceof RegistrationRejected && e.status === 400 && e.error === "invalid_request")) throw e;
+    err.write(`The stored temporary profile can no longer be claimed. ${e.message} Signing in without it.\n`);
+  }
+  // A second refusal is the real one, and propagates with the server's text.
+  return { clientId: await registerClient(meta, redirectUri), droppedTemp: true };
 }
 
 /**
@@ -253,7 +300,7 @@ export async function runLogin(baseUrl: string, opts: LoginOptions = {}): Promis
     const meta = await discover(baseUrl);
     lb = await makeServer();
     const redirectUri = `http://127.0.0.1:${lb.port}${CALLBACK_PATH}`;
-    const clientId = await registerClient(meta, redirectUri);
+    const { clientId, droppedTemp } = await register(meta, redirectUri, storedTempToken(baseUrl), err);
     const { verifier, challenge } = newPkce();
     const state = randomBytes(32).toString("base64url");
     lb.setState(state);
@@ -267,11 +314,28 @@ export async function runLogin(baseUrl: string, opts: LoginOptions = {}): Promis
     out.write("Waiting for approval...\n");
 
     const code = await awaitCallback(lb, opts.timeoutMs ?? TIMEOUT_SECONDS * 1000);
-    const creds = await exchange(meta, clientId, redirectUri, code, verifier, baseUrl);
+    const { creds, claimed } = await exchange(meta, clientId, redirectUri, code, verifier, baseUrl);
     try {
       // Under the refresh lock: a proxy that finishes rotating just after this
       // must not overwrite the credential the user just approved.
-      await withCredentialLock(() => saveCredentials(creds));
+      await withCredentialLock(() => {
+        // `droppedTemp` is the third case and must not carry: the server has
+        // said that token opens nothing, so writing it back only reproduces the
+        // dead end on the next run.
+        if (!claimed && !droppedTemp) {
+          // Carried across, not dropped. Only a server-confirmed claim spends
+          // the token; a login that claimed nothing leaves the stored one as it
+          // was, because the token is never printed and this file is its only
+          // copy. Re-read under the lock, and only for the same deployment:
+          // carrying it across hosts would present one host's token to another.
+          const stored = loadCredentials();
+          if (stored !== null && sameBase(stored.baseUrl, baseUrl) && stored.tempToken !== undefined) {
+            creds.tempToken = stored.tempToken;
+            creds.tempExpiresAt = stored.tempExpiresAt;
+          }
+        }
+        saveCredentials(creds);
+      });
     } catch (e) {
       if (e instanceof OAuthError) throw e; // the lock timed out; not a disk fault
       throw new Abort(
