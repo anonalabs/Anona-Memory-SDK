@@ -20,6 +20,7 @@
  */
 import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
+import { isSignedIn, liveTempToken, loadCredentials } from "./store.js";
 import { accessToken, NotLoggedIn } from "./tokens.js";
 
 // `reason` is an agent loop and can legitimately run for a minute and a half.
@@ -58,10 +59,35 @@ function post(url: string, token: string, msg: Json): Promise<Response> {
   });
 }
 
+/**
+ * The bearer to present, and whether it is a temp token. A signed-in OAuth
+ * credential always wins: once someone has logged in their session is the
+ * credential, and a leftover temp token must not be sent.
+ *
+ * The temp token is chosen here rather than in `accessToken` because that
+ * function's whole contract is the refresh-and-rotate path, which a temp token
+ * has no part in. Keeping it out by construction beats guarding it.
+ */
+async function bearer(): Promise<{ token: string; isTemp: boolean }> {
+  const c = loadCredentials();
+  if (c !== null && isSignedIn(c)) return { token: await accessToken(), isTemp: false };
+  const temp = c !== null ? liveTempToken(c) : null;
+  if (temp !== null) return { token: temp, isTemp: true };
+  if (c !== null && c.tempToken) {
+    throw new NotLoggedIn("The temporary profile has expired. Run `anona start` for a new one, or `anona login`.");
+  }
+  return { token: await accessToken(), isTemp: false }; // throws NotLoggedIn
+}
+
 /** The response line to write, or null when there is nothing to say. */
 async function forward(url: string, msg: Json): Promise<string | null> {
-  let token = await accessToken();
+  const first = await bearer();
+  let token = first.token;
   let resp = await post(url, token, msg);
+  if (resp.status === 401 && first.isTemp) {
+    // Opaque and fixed: there is nothing to refresh, only expired or claimed.
+    throw new Failure("The server rejected the temporary profile (expired, or already claimed). Run `anona login`.");
+  }
   if (resp.status === 401) {
     token = await accessToken({ forceRefresh: true, rejected: token });
     resp = await post(url, token, msg);

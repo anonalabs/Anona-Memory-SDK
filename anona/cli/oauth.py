@@ -37,7 +37,9 @@ class RegistrationRejected(OAuthError):
         self.error = error
 
 
-def _server_error(resp: httpx.Response) -> tuple[str | None, str | None]:
+def _server_error(
+    resp: httpx.Response, redact: str | None = None
+) -> tuple[str | None, str | None]:
     """The server's own `(error, error_description)`, through either envelope.
 
     RFC 6749 puts the pair at the top level, which is what a third-party
@@ -46,6 +48,11 @@ def _server_error(resp: httpx.Response) -> tuple[str | None, str | None]:
     deeper. Read both rather than pick one: this function's only job is to find
     a sentence worth printing, and guessing the deployment wrong turns an
     actionable message back into silence.
+
+    `redact` is a secret this request sent. A server that echoes it back must
+    not get it onto the terminal, so it is removed from both fields here, before
+    `_printable` truncates: cutting first would let a token straddling the cap
+    survive as an unmatched prefix.
     """
     try:
         body = resp.json()
@@ -58,6 +65,11 @@ def _server_error(resp: httpx.Response) -> tuple[str | None, str | None]:
         body = inner
     error = body.get("error")
     description = body.get("error_description") or body.get("message")
+    if redact:
+        if isinstance(error, str):
+            error = error.replace(redact, "[redacted]")
+        if isinstance(description, str):
+            description = description.replace(redact, "[redacted]")
     return (
         error if isinstance(error, str) else None,
         _printable(description) if isinstance(description, str) else None,
@@ -164,7 +176,7 @@ def register_client(
     except httpx.HTTPError as exc:
         raise OAuthError(f"Could not register with the authorization server: {exc}") from exc
     if resp.status_code not in (200, 201):
-        error, description = _server_error(resp)
+        error, description = _server_error(resp, redact=temp_token)
         # The server's sentence, not just its number. This is the one call site
         # where the refusal is actionable — "this profile is already claimed,
         # expired or unknown" tells the human what happened; "failed with 400"

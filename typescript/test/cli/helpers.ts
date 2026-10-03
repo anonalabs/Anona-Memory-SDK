@@ -122,7 +122,10 @@ export async function drive(base: string, lines: string[]): Promise<{ rc: number
   const stray: string[] = [];
   const spies = [
     vi.spyOn(process.stdout, "write").mockImplementation(((c: unknown) => (stray.push(String(c)), true)) as never),
-    ...(["log", "info", "debug"] as const).map((m) =>
+    // stderr is where an MCP client's log capture reads, so a token written to
+    // the process's real stderr lands on disk somewhere nobody looks.
+    vi.spyOn(process.stderr, "write").mockImplementation(((c: unknown) => (stray.push(String(c)), true)) as never),
+    ...(["log", "info", "debug", "error", "warn"] as const).map((m) =>
       vi.spyOn(console, m).mockImplementation(((...a: unknown[]) => void stray.push(a.join(" "))) as never),
     ),
   ];
@@ -133,7 +136,7 @@ export async function drive(base: string, lines: string[]): Promise<{ rc: number
   } finally {
     spies.forEach((s) => s.mockRestore());
   }
-  expect(stray, "something wrote to the real stdout while the proxy ran").toEqual([]);
+  expect(stray, "something wrote to the real stdout or stderr while the proxy ran").toEqual([]);
   const text = outChunks.join("");
   const out = text
     .split("\n")

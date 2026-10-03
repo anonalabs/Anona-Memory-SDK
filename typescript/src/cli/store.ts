@@ -33,6 +33,30 @@ export interface Credentials {
   expiresAt: number;
   clientId: string;
   baseUrl: string;
+  /**
+   * An unclaimed profile made by `anona start`. A temp-only file has empty
+   * OAuth fields (see `isSignedIn`). Never printed, never in a repr: the file
+   * is its only copy.
+   */
+  tempToken?: string;
+  /** Unix seconds. The deadline after which the server deletes the profile. */
+  tempExpiresAt?: number;
+}
+
+/** True when an OAuth access token is stored. A temp-only file has an empty one. */
+export function isSignedIn(c: Credentials): boolean {
+  return c.accessToken !== "";
+}
+
+/**
+ * The unclaimed-profile token, unless it is absent, undated or past its
+ * deadline. An expired profile is already gone server-side, so presenting it
+ * can only fail.
+ */
+export function liveTempToken(c: Credentials, nowSeconds: number = Date.now() / 1000): string | null {
+  if (!c.tempToken) return null;
+  if (c.tempExpiresAt === undefined || c.tempExpiresAt <= nowSeconds) return null;
+  return c.tempToken;
 }
 
 export function credentialsPath(): string {
@@ -61,13 +85,20 @@ export function loadCredentials(): Credentials | null {
     ) {
       return null;
     }
-    return {
+    const c: Credentials = {
       accessToken: raw.access_token,
       refreshToken: raw.refresh_token,
       expiresAt,
       clientId: raw.client_id,
       baseUrl: typeof raw.base_url === "string" ? raw.base_url : DEFAULT_BASE_URL,
     };
+    // A wrong-typed optional field reads as absent; it must not make the whole
+    // credential unreadable.
+    if (typeof raw.temp_token === "string") c.tempToken = raw.temp_token;
+    if (typeof raw.temp_expires_at === "number" && Number.isFinite(raw.temp_expires_at)) {
+      c.tempExpiresAt = raw.temp_expires_at;
+    }
+    return c;
   } catch {
     return null;
   }
@@ -85,17 +116,20 @@ export function saveCredentials(c: Credentials): void {
   const dir = join(file, "..");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   chmodSync(dir, 0o700);
-  const payload = JSON.stringify(
-    {
-      access_token: c.accessToken,
-      refresh_token: c.refreshToken,
-      expires_at: c.expiresAt,
-      client_id: c.clientId,
-      base_url: c.baseUrl,
-    },
-    null,
-    2,
-  );
+  const doc: Record<string, unknown> = {
+    access_token: c.accessToken,
+    refresh_token: c.refreshToken,
+    expires_at: c.expiresAt,
+    client_id: c.clientId,
+    base_url: c.baseUrl,
+  };
+  // Only when set, so the file an ordinary login writes is byte-for-byte what
+  // it always was.
+  if (c.tempToken !== undefined) {
+    doc.temp_token = c.tempToken;
+    doc.temp_expires_at = c.tempExpiresAt ?? null;
+  }
+  const payload = JSON.stringify(doc, null, 2);
   const tmp = join(dir, `.credentials-${randomBytes(6).toString("hex")}`);
   try {
     // "wx" so a stale temp file is never adopted; fchmod because the mode

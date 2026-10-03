@@ -16,6 +16,56 @@ export class OAuthError extends Error {
   }
 }
 
+/**
+ * The authorization server refused this registration.
+ *
+ * Carries the server's own status and RFC 6749 `error` code so the caller can
+ * decide whether the refusal is one it can recover from.
+ */
+export class RegistrationRejected extends OAuthError {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly error: string | null,
+  ) {
+    super(message);
+    this.name = "RegistrationRejected";
+  }
+}
+
+/**
+ * Server text, made safe to print to a terminal. The body is remote input:
+ * collapsing whitespace drops embedded newlines that would forge extra lines of
+ * CLI output, and the cap stops a long body burying the rest of the message.
+ */
+function printable(text: string, limit = 300): string | null {
+  const cleaned = text.split(/\s+/).filter(Boolean).join(" ");
+  if (!cleaned) return null;
+  return cleaned.length <= limit ? cleaned : cleaned.slice(0, limit - 1) + "…";
+}
+
+/** The server's own `(error, error_description)`, through either envelope. */
+async function serverError(resp: Response, secret?: string): Promise<[string | null, string | null]> {
+  let body: unknown;
+  try {
+    body = await resp.json();
+  } catch {
+    return [null, null];
+  }
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return [null, null];
+  let o = body as Record<string, unknown>;
+  const inner = o.error;
+  if (inner !== null && typeof inner === "object" && !Array.isArray(inner)) o = inner as Record<string, unknown>;
+  // Redact BEFORE the cap: truncating first can slice the token in half, leaving
+  // a prefix with no complete match for the replace to find. Best effort: this
+  // matches the exact string, so a server that case-folds or URL-encodes the
+  // token before echoing it would slip through.
+  const scrub = (t: string) => (secret ? t.split(secret).join("[redacted]") : t);
+  const error = typeof o.error === "string" ? scrub(o.error) : null;
+  const d = o.error_description || o.message;
+  return [error, typeof d === "string" ? printable(scrub(d)) : null];
+}
+
 export interface ServerMetadata {
   issuer: string;
   authorization_endpoint: string;
@@ -120,7 +170,7 @@ export async function discover(baseUrl: string): Promise<ServerMetadata> {
  * present here. A new id per login is fine and is what keeps the loopback port,
  * which changes every run, matching the registered redirect_uri.
  */
-export async function registerClient(meta: ServerMetadata, redirectUri: string): Promise<string> {
+export async function registerClient(meta: ServerMetadata, redirectUri: string, tempToken?: string): Promise<string> {
   let resp: Response;
   try {
     resp = await fetch(meta.registration_endpoint, {
@@ -132,6 +182,9 @@ export async function registerClient(meta: ServerMetadata, redirectUri: string):
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
         token_endpoint_auth_method: "none",
+        // In the request body, never the authorize URL: that URL is printed to
+        // the terminal and lands in browser history.
+        ...(tempToken ? { temp_token: tempToken } : {}),
       }),
       signal: AbortSignal.timeout(15_000),
     });
@@ -139,7 +192,14 @@ export async function registerClient(meta: ServerMetadata, redirectUri: string):
     throw new OAuthError(`Could not register with the authorization server: ${(err as Error).message}`);
   }
   if (resp.status !== 200 && resp.status !== 201) {
-    throw new OAuthError(`Client registration failed with ${resp.status}.`);
+    const [error, description] = await serverError(resp, tempToken);
+    // The server's sentence, not just its number: this is the one call site
+    // where the refusal is actionable.
+    throw new RegistrationRejected(
+      `Client registration failed with ${resp.status}${description ? `: ${description}` : "."}`,
+      resp.status,
+      error,
+    );
   }
   let body: unknown;
   try {
