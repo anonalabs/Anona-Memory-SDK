@@ -133,7 +133,7 @@ def access_token(
     file is only ever written from here (and by login/logout), under that lock.
     """
     c = store.load()
-    if c is None:
+    if c is None or not c.signed_in:
         raise NotLoggedIn(f"Not logged in. {_RELOGIN}")
     if not _must_refresh(c, force_refresh, rejected):
         return c.access_token
@@ -143,7 +143,7 @@ def access_token(
         # Re-read: whoever held the lock before us may have refreshed already.
         # Refreshing again would replay a refresh token that is now burned.
         c = store.load()
-        if c is None:
+        if c is None or not c.signed_in:
             raise NotLoggedIn(f"Not logged in. {_RELOGIN}")
         if not _must_refresh(c, force_refresh, rejected):
             return c.access_token
@@ -195,4 +195,7 @@ def _refresh(c: store.Credentials, client: httpx.Client) -> store.Credentials:
         expires_at=time.time() + expires_in,
         client_id=c.client_id,
         base_url=c.base_url,
+        # A refresh must not drop an unclaimed profile the file also holds.
+        temp_token=c.temp_token,
+        temp_expires_at=c.temp_expires_at,
     )

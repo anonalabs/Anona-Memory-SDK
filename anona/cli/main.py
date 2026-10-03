@@ -1,4 +1,4 @@
-"""The `anona` command: login, logout, status, mcp."""
+"""The `anona` command: start, login, logout, status, mcp."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import os
 import sys
 import time
 
-from . import login, proxy, store, tokens
+from . import login, proxy, store, temp, tokens
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -35,8 +35,14 @@ def _parser() -> argparse.ArgumentParser:
         parents=[common],
     )
     sub = p.add_subparsers(dest="command", required=True)
+    sub.add_parser("start", parents=[common], help="Create a temporary profile with no account")
     sub.add_parser("login", parents=[common], help="Approve access in a browser and store a credential")
-    sub.add_parser("logout", parents=[common], help="Delete the stored credential")
+    lo = sub.add_parser("logout", parents=[common], help="Delete the stored credential")
+    lo.add_argument(
+        "--force",
+        action="store_true",
+        help="also abandon an unclaimed temporary profile (it cannot be recovered)",
+    )
     sub.add_parser("status", parents=[common], help="Show whether you are signed in")
     sub.add_parser("mcp", parents=[common], help="Run the stdio MCP proxy for a client to launch")
     return p
@@ -49,6 +55,16 @@ def _default_base_url() -> str:
 def _status() -> int:
     c = store.load()
     if c is None:
+        print("Not logged in. Run `anona login`.")
+        return 1
+    if c.temp_token and c.temp_expires_at is not None:
+        # The only warning an unclaimed profile gets: it has no email address.
+        print(f"Temporary profile for {c.base_url}: {temp.describe_deadline(c.temp_expires_at)}.")
+        if c.temp_expires_at > time.time():
+            print("Run `anona login` to claim it before then.")
+        if not c.signed_in:
+            return 0
+    elif not c.signed_in:
         print("Not logged in. Run `anona login`.")
         return 1
     # Never the tokens or the client id: this output ends up in pastes and logs.
@@ -69,17 +85,45 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     base_url = getattr(args, "base_url", None)
     no_browser = getattr(args, "no_browser", False)
+    if args.command == "start":
+        return temp.run_start(base_url or _default_base_url())
     if args.command == "login":
         base = base_url or _default_base_url()
         print(f"Signing in to {base}")
         stored = store.load()
         if stored and stored.base_url.rstrip("/") != base.rstrip("/"):
             print(f"Note: the stored credential is for {stored.base_url}; this replaces it.")
+            # A profile belongs to the deployment that minted it, so its token
+            # cannot be carried onto this one — `_live_temp_token` matches on
+            # base_url, and retagging it would present one host's token to
+            # another. But the token is never printed, so this file is its
+            # only copy and replacing it is the same loss `anona logout`
+            # refuses to do silently. Say so while they can still cancel.
+            if stored.live_temp_token():
+                print(
+                    f"Note: that includes an unclaimed temporary profile "
+                    f"(it {temp.describe_deadline(stored.temp_expires_at)}), "
+                    f"which will be abandoned. Claim it first with "
+                    f"`anona login --base-url {stored.base_url}`."
+                )
         return login.run_login(base, open_browser=not no_browser)
     if args.command == "logout":
         # Under the refresh lock, so a refresh finishing just after cannot
         # write the credential back.
         with tokens.credential_lock():
+            held = store.load()
+            if held is not None and held.live_temp_token() and not getattr(args, "force", False):
+                # The token is never printed, so this file is its only copy:
+                # deleting it strands the profile and everything in it until
+                # the server deletes it too.
+                print(
+                    f"anona logout: this would abandon an unclaimed temporary profile "
+                    f"(it {temp.describe_deadline(held.temp_expires_at)}). "
+                    "Run `anona login` to claim it, or `anona logout --force` to "
+                    "discard it.",
+                    file=sys.stderr,
+                )
+                return 1
             store.clear()
         print("Logged out.")
         return 0
