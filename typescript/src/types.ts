@@ -238,6 +238,16 @@ export interface SpaceTypeList {
 
 export interface MemoryItem {
   id: string | null;
+  /**
+   * The memory body. Canonical, and the same name `record` writes and
+   * `retrieve` returns -- prefer it.
+   */
+  content: string | null;
+  /**
+   * @deprecated The same body as `content`, always equal to it. The list
+   * endpoint shipped this name before `content` existed and still sends both,
+   * so existing readers keep working; new code should read `content`.
+   */
   text: string | null;
   context: string | null;
   date: string | null;
