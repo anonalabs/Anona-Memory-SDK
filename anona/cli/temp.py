@@ -33,7 +33,7 @@ def _parse_deadline(value: object) -> float:
     except ValueError as exc:
         raise StartError("The server returned an expiry time that is not a date.") from exc
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
+        dt = dt.replace(tzinfo=timezone.utc)
     return dt.timestamp()
 
 
