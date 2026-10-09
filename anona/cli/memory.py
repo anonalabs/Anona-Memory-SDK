@@ -4,9 +4,14 @@ MCP is the primary surface and these are deliberately not documented as the
 main way in. They exist for two cases: somebody who will not enable MCP at
 all, and the session before a client restart has loaded the MCP tools.
 
-`--space` is optional on a temporary profile because the server hardcodes its
-space to "default". For a signed-in account it is required: an account may
-hold several spaces, and writing to the wrong one looks exactly like success.
+`--space` is optional because a temporary profile's space is hardcoded to
+"default" server-side.
+
+These verbs are temporary-profile-only, and that is a property of the
+credential rather than a choice: `anona login` mints an MCP-scoped OAuth token
+and the data plane refuses it, so there is no account credential the CLI holds
+that /v1/record would accept. Giving an account the same three verbs means
+giving the CLI an API key, which is a server-side decision, not a flag.
 """
 
 from __future__ import annotations
@@ -76,13 +81,33 @@ def _token_and_space(space: str | None) -> tuple[str, str] | None:
             # transport-error translation, so this one can really fire.
             print(f"anona: could not refresh the login ({type(exc).__name__}).", file=sys.stderr)
             return None
+    if not is_temp:
+        # A login mints an MCP-scoped OAuth token (`typ=mcp_access`), and the
+        # data plane rejects any token carrying a `typ` -- deliberately, so an
+        # MCP credential cannot be replayed against the REST API
+        # (`test_mcp_access_token_rejected_on_data_plane`). These verbs call
+        # /v1/record, /v1/retrieve and /v1/reason directly, so on a signed-in
+        # account they can only ever get `401 invalid_token`.
+        #
+        # The server's own message is good -- "This token cannot be used for
+        # the memory API. Use an Anona API key, or connect over MCP at /mcp."
+        # An earlier version of this comment claimed it said "Session token is
+        # invalid or expired", which is the *other* branch, the one for a JWT
+        # that fails to decode. So this guard is not rescuing a misleading
+        # answer. What it buys is smaller and still worth it: no wasted round
+        # trip, no `_fail` wrapping the envelope in a Python dict repr, and a
+        # mention of `anona start`, which is the third option and the one the
+        # server cannot know about.
+        print(
+            "`record`, `retrieve` and `reason` work on a temporary profile "
+            "(`anona start`).\n"
+            "A signed-in account reaches memory over MCP (`anona mcp`), or with "
+            "an API key\nand the SDK -- the login credential is scoped to MCP "
+            "and the REST API refuses it.",
+            file=sys.stderr,
+        )
+        return None
     if space is None:
-        if not is_temp:
-            print(
-                "This account may hold several spaces, so --space is required.",
-                file=sys.stderr,
-            )
-            return None
         space = "default"  # a temp profile's only space, fixed server-side
     return token, space
 
