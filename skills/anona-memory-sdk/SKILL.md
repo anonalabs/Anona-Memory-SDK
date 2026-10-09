@@ -27,9 +27,15 @@ references, check `https://docs.anonalabs.com` before writing it.
 ## Install
 
 ```bash
-pip install anona                      # Python
-npm install @anona-labs/memory         # TypeScript
+pip install -U anona                   # Python
+npm install @anona-labs/memory@latest  # TypeScript
 ```
+
+`-U` / `@latest` matter when the project already depends on Anona: without
+them an older pinned version stays, and code written against a newer method
+fails at runtime rather than at install. If pip answers
+`externally-managed-environment` it is refusing a system Python — install into
+a virtualenv, which is what a project should be doing anyway.
 
 Framework adapters are extras: `pip install 'anona[langchain]'` and the same for
 `crewai`, `llamaindex`, `adk`, `msagent`, `strands`, `litellm`, `mcp`.

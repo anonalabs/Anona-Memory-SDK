@@ -1,6 +1,6 @@
 # Calling Anona
 
-Three transports, same data. Use the first one that is available.
+Four transports, same data. Use the first one that is available.
 
 ## 1. MCP tools (preferred)
 
@@ -85,7 +85,32 @@ A write that should not block the caller takes `"async": true` and answers with
 a `job_id` instead of a `memory_id`. Poll it at
 `GET /v1/spaces/{space_id}/jobs/{job_id}`.
 
-## 3. Python SDK
+## 3. The `anona` CLI (temporary profile only)
+
+For a machine with no MCP and no API key. `anona status` says whether there is a
+credential; these three work when it reports a **temporary profile**, and refuse
+on a signed-in account, whose credential is scoped to MCP.
+
+```bash
+anona start                                    # no account, no key, 72 hours
+anona record   "The user prefers pnpm."
+anona retrieve "package manager preference"
+anona reason   "how does this team like to build?"
+```
+
+No space argument — a temporary profile has exactly one space. `retrieve` prints
+one memory per line; `reason` answers in prose and takes tens of seconds, saying
+so on stderr, so `anona reason "..." > answer.md` captures only the answer.
+Every one of them exits non-zero on failure and prints the reason on stderr.
+
+These are in the **pip** package only, 0.20.0 or later. The npm package has
+`start`, `login`, `logout`, `status` and `mcp` and not these. Two traps worth one
+check: `pip install anona` does not upgrade an existing copy, so confirm with
+`anona --help`; and on a system Python `pip install` is refused with
+`externally-managed-environment`, where `uvx --from anona anona <command>` works
+and is always current.
+
+## 4. Python SDK
 
 Only when the project already depends on it.
 

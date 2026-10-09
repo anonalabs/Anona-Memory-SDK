@@ -25,13 +25,45 @@ mechanism.
 Check, in this order, and use the first that works:
 
 1. **MCP tools** named `record`, `retrieve`, `reason`, `list_spaces`. If they
-   exist, use them. Nothing else to set up.
+   exist, use them. Nothing else to set up. Only a tool in your own tool list
+   counts: a server that appears in a config listing, even saying `connected`,
+   gives you nothing to call if its tools are absent from this session.
 2. **`ANONA_API_KEY`** in the environment, or in `~/.anona/config.env` (source
    it: `. ~/.anona/config.env`). Then call the REST API with `curl`. See
    `references/usage.md`.
-3. **Neither.** Say once, in one line, that Anona is not configured and how to
-   fix it (`curl -fsSL https://raw.githubusercontent.com/anonalabs/Anona-Memory-SDK/main/skills/install.sh | bash`),
+3. **The `anona` CLI on a temporary profile.** Run `anona status`. If it reports
+   a *temporary profile*, you have memory with no account and no key:
+
+   ```bash
+   anona record   "The user prefers pnpm."
+   anona retrieve "package manager preference"
+   anona reason   "how does this team like to build?"
+   ```
+
+   No space argument: a temporary profile has one space. These three need the
+   **pip** package, 0.20.0 or later, and they work *only* on a temporary
+   profile. If `anona status` reports a signed-in account instead, they refuse
+   — that credential is scoped to MCP — so on an account go back to 1 or 2.
+
+4. **None of these.** You can create a profile yourself; it needs no account,
+   no email and no card, and it holds memories for 72 hours:
+
+   ```bash
+   anona start     # or, with nothing installed: uvx --from anona anona start
+   ```
+
+   Tell the user in one line that you did it, that it expires in 72 hours, and
+   that `anona login` keeps it. If `anona` is not installed and you cannot
+   install it, say once that Anona is not configured and how to set it up
+   (`curl -fsSL https://raw.githubusercontent.com/anonalabs/Anona-Memory-SDK/main/skills/install.sh | bash`),
    then do the task without memory. Do not ask again this session.
+
+**Two ways the CLI misleads you, both worth one check.** `pip install anona`
+does **not** upgrade an existing copy — it reports success and leaves the old
+version — so run `anona --help` and read the command list rather than trusting
+this page. And on a system Python, `pip install` is refused outright with
+`error: externally-managed-environment`; `uvx --from anona anona <command>`
+installs nothing and always runs the current version.
 
 ## Which space
 
