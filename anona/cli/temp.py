@@ -109,5 +109,5 @@ def run_start(base_url: str) -> int:
     print(f"Temporary profile created. It {describe_deadline(deadline)}.")
     print("Nothing warns you before then: run `anona status` to check, and")
     print("`anona login` to claim it and keep what it holds.")
-    print("Its space is created by the first memory written to it.")
+    print("Its space, `default`, is normally created now; if a retrieve reports no space, the first memory you write creates it.")
     return 0
