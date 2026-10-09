@@ -118,41 +118,52 @@ def test_temp_profile_retrieve_prints_results(tmp_path):
     """, tmp_path))
 
 
-def test_signed_in_account_must_name_a_space(tmp_path):
+def test_a_signed_in_account_is_refused_before_the_request(tmp_path):
+    # `anona login` mints an MCP-scoped OAuth token and the data plane rejects
+    # any token carrying a `typ`, so these verbs can only ever get
+    # `401 invalid_token` on an account -- a message that reads as a broken
+    # login and sends someone back to `anona login` for the same token again.
+    # The point of this test is `SEEN == []`: the refusal must come BEFORE the
+    # request, because the server's own answer is the misleading one.
     ok(_run("""
         creds(signed_in=True)
-        for argv in (["record", "x"], ["retrieve", "x"], ["reason", "x"]):
+        for argv in (["record", "x"], ["retrieve", "x"], ["reason", "x"],
+                     ["record", "x", "--space", "work"]):
             rc, out, err = run_main(argv)
             assert rc == 1, (argv, rc)
-            assert "--space" in err, err
-        assert SEEN == [], "nothing may be sent without a space: %r" % SEEN
+            assert "temporary profile" in err, (argv, err)
+            # It must name both ways an account DOES reach memory, or the
+            # message is a refusal with nowhere to go.
+            assert "anona mcp" in err and "API key" in err, (argv, err)
+        assert SEEN == [], "nothing may be sent on an account credential: %r" % SEEN
         print("OK")
     """, tmp_path))
 
 
-def test_signed_in_account_with_space_uses_that_space(tmp_path):
+def test_naming_a_space_does_not_buy_past_the_refusal(tmp_path):
+    # --space used to be the thing an account was missing, so the obvious
+    # reading of the old message was "pass --space and it works". It does not,
+    # and must not look like it might.
     ok(_run("""
         creds(signed_in=True)
         rc, out, err = run_main(["record", "x", "--space", "work"])
-        assert rc == 0, (rc, err)
-        path, auth, body = SEEN[-1]
-        assert body["space_id"] == "work", body
-        assert auth == "Bearer oauth_ACCESS", auth
+        assert rc == 1, rc
+        assert "--space" not in err, "must not suggest --space is the fix: %r" % err
+        assert SEEN == [], SEEN
         print("OK")
     """, tmp_path))
 
 
-def test_oauth_credential_beats_a_leftover_temp_token_and_needs_a_space(tmp_path):
-    # Signed in AND still holding a live temp token: the account wins, so the
-    # temp profile's "default" must not be assumed.
+def test_a_login_beside_a_live_temp_token_is_still_a_login(tmp_path):
+    # Signed in AND still holding a live temp token. `_bearer` prefers the
+    # account, so the temp profile's "default" must not be silently used --
+    # that would write to a space the credential cannot even reach.
     ok(_run("""
         creds(temp_hours=60, signed_in=True)
         rc, out, err = run_main(["record", "x"])
         assert rc == 1, rc
-        assert "--space" in err, err
-        rc, out, err = run_main(["record", "x", "--space", "work"])
-        assert rc == 0, (rc, err)
-        assert SEEN[-1][1] == "Bearer oauth_ACCESS", SEEN[-1][1]
+        assert "temporary profile" in err, err
+        assert SEEN == [], SEEN
         print("OK")
     """, tmp_path))
 
