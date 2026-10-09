@@ -1,4 +1,4 @@
-"""The `anona` command: start, login, logout, status, mcp."""
+"""The `anona` command: start, login, logout, status, mcp, record, retrieve, reason."""
 
 from __future__ import annotations
 
@@ -31,11 +31,20 @@ def _parser() -> argparse.ArgumentParser:
     )
     p = argparse.ArgumentParser(
         prog="anona",
-        description="Sign in to Anona Memory and connect MCP clients.",
+        description="Anona Memory: sign in, connect MCP clients, and record, retrieve or reason over memories.",
         parents=[common],
     )
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("start", parents=[common], help="Create a temporary profile with no account")
+    rec = sub.add_parser("record", parents=[common], help="Store a memory (no MCP needed)")
+    rec.add_argument("content", help="The fact to store, as a complete sentence")
+    rec.add_argument("--space", default=None, help="Space to write to (required when signed in)")
+    ret = sub.add_parser("retrieve", parents=[common], help="Search your memories (no MCP needed)")
+    ret.add_argument("query", help="What to search for")
+    ret.add_argument("--space", default=None, help="Space to search (required when signed in)")
+    rsn = sub.add_parser("reason", parents=[common], help="Ask a question and get a synthesized answer")
+    rsn.add_argument("query", help="The question to answer from your memories")
+    rsn.add_argument("--space", default=None, help="Space to reason over (required when signed in)")
     sub.add_parser("login", parents=[common], help="Approve access in a browser and store a credential")
     lo = sub.add_parser("logout", parents=[common], help="Delete the stored credential")
     lo.add_argument(
@@ -87,6 +96,17 @@ def main(argv: list[str] | None = None) -> int:
     no_browser = getattr(args, "no_browser", False)
     if args.command == "start":
         return temp.run_start(base_url or _default_base_url())
+    if args.command in ("record", "retrieve", "reason"):
+        from . import memory
+
+        # Like `mcp`: a credential belongs to the deployment that issued it.
+        held = store.load()
+        base = base_url or (held.base_url if held else None) or _default_base_url()
+        if args.command == "record":
+            return memory.run_record(base, args.content, args.space)
+        if args.command == "reason":
+            return memory.run_reason(base, args.query, args.space)
+        return memory.run_retrieve(base, args.query, args.space)
     if args.command == "login":
         base = base_url or _default_base_url()
         print(f"Signing in to {base}")
@@ -106,6 +126,11 @@ def main(argv: list[str] | None = None) -> int:
                     f"which will be abandoned. Claim it first with "
                     f"`anona login --base-url {stored.base_url}`."
                 )
+        if stored and stored.live_temp_token() and stored.base_url.rstrip("/") == base.rstrip("/"):
+            print(
+                f"Signing in will try to claim your temporary profile, which "
+                f"{temp.describe_deadline(stored.temp_expires_at)}."
+            )
         return login.run_login(base, open_browser=not no_browser)
     if args.command == "logout":
         # Under the refresh lock, so a refresh finishing just after cannot

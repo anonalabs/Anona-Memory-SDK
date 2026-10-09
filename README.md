@@ -684,6 +684,40 @@ import litellm
 litellm.completion(model="gpt-4o", messages=[{"role": "user", "content": "..."}])
 ```
 
+## The `anona` command
+
+Installing the package also installs a CLI. It exists so an agent can have
+memory without an API key in a config file, and so a person can use memory from
+a terminal.
+
+```bash
+anona start                                   # a temporary profile, no account
+anona record   "The user prefers pnpm."       # store a memory
+anona retrieve "package manager preference"   # search them
+anona reason   "how does this team build?"    # answer from across them
+anona login                                   # approve in a browser, keep it
+anona status                                  # what is stored, and until when
+```
+
+`anona start` needs no signup: it creates a profile that holds memories for 72
+hours, and `anona login` claims it into a real account with everything it holds.
+Pass `--space NAME` to work in a named space; a temporary profile has one space
+and does not need it.
+
+`retrieve` lists the memories that match. `reason` reads across them and answers
+in prose — ask it when no single memory holds the answer. It is an agent loop
+rather than a lookup, so it takes tens of seconds and says so on stderr while it
+works, leaving `anona reason "..." > answer.md` to capture only the answer.
+
+`anona mcp` is a stdio MCP server for a client to launch, so the client needs no
+OAuth and no key of its own:
+
+```json
+{ "mcpServers": { "anona": { "command": "anona", "args": ["mcp"] } } }
+```
+
+Full reference: [docs.anonalabs.com/agents/cli](https://docs.anonalabs.com/agents/cli).
+
 ## MCP server
 
 The SDK ships an [MCP](https://modelcontextprotocol.io) server so any MCP client

@@ -113,6 +113,6 @@ export async function runStart(
   io.stdout.write(`Temporary profile created. It ${describeDeadline(deadline)}.\n`);
   io.stdout.write("Nothing warns you before then: run `anona status` to check, and\n");
   io.stdout.write("`anona login` to claim it and keep what it holds.\n");
-  io.stdout.write("Its space is created by the first memory written to it.\n");
+  io.stdout.write("Its space, `default`, is normally created now; if a retrieve reports no space, the first memory you write creates it.\n");
   return 0;
 }

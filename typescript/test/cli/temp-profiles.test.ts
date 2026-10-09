@@ -106,7 +106,7 @@ describe("anona start", () => {
       /^Temporary profile created\. It expires \d{4}-\d\d-\d\d \d\d:\d\d UTC \(in 71 hours\), after which its memories are deleted\.\n/,
     );
     expect(t.o()).toContain(
-      "Nothing warns you before then: run `anona status` to check, and\n`anona login` to claim it and keep what it holds.\nIts space is created by the first memory written to it.\n",
+      "Nothing warns you before then: run `anona status` to check, and\n`anona login` to claim it and keep what it holds.\nIts space, `default`, is normally created now; if a retrieve reports no space, the first memory you write creates it.\n",
     );
     expect(rawFile()).toMatchObject({ access_token: "", refresh_token: "", client_id: "", base_url: as.base, temp_token: TEMP });
     expect(all(t)).not.toContain(TEMP);

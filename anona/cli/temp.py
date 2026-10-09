@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import httpx
 
@@ -40,7 +40,7 @@ def _parse_deadline(value: object) -> float:
 def describe_deadline(expires_at: float, now: float | None = None) -> str:
     """'expires 2026-10-06 12:51 UTC (in 71 hours)', or the past-tense form."""
     now = time.time() if now is None else now
-    when = datetime.fromtimestamp(expires_at, UTC).strftime("%Y-%m-%d %H:%M UTC")
+    when = datetime.fromtimestamp(expires_at, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     left = expires_at - now
     if left <= 0:
         return f"expired {when}; its memories have been or will shortly be deleted"
@@ -109,5 +109,5 @@ def run_start(base_url: str) -> int:
     print(f"Temporary profile created. It {describe_deadline(deadline)}.")
     print("Nothing warns you before then: run `anona status` to check, and")
     print("`anona login` to claim it and keep what it holds.")
-    print("Its space is created by the first memory written to it.")
+    print("Its space, `default`, is normally created now; if a retrieve reports no space, the first memory you write creates it.")
     return 0

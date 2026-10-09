@@ -21,11 +21,13 @@ Three rules, each pinned by a test:
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import httpx
 
 from . import store, tokens
+from .temp import describe_deadline
 
 # `reason` is an agent loop and can legitimately run for a minute and a half.
 _TIMEOUT = 120
@@ -153,6 +155,21 @@ def _handle(client: httpx.Client, url: str, line: str, stderr) -> str | None:
 
 def run_proxy(base_url: str, stdin, stdout, stderr) -> int:
     url = base_url.rstrip("/") + "/mcp"
+    # stdout is the transport and carries nothing but JSON-RPC; stderr is
+    # where this proxy already puts diagnostics (see `_handle`). An unclaimed
+    # profile has no email address, so there is no other channel to warn on
+    # at all -- `anona status` is the only other place the deadline appears.
+    c = store.load()
+    if c is not None and c.live_temp_token() and c.temp_expires_at:
+        remaining = c.temp_expires_at - time.time()
+        if 0 < remaining <= 24 * 3600:
+            print(
+                f"anona mcp: this temporary profile "
+                f"{describe_deadline(c.temp_expires_at)}. "
+                "Run `anona login` to claim it and keep what it holds.",
+                file=stderr,
+                flush=True,
+            )
     with httpx.Client() as client:
         for raw in stdin:
             line = raw.strip()
