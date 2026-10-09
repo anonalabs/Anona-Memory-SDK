@@ -1,6 +1,6 @@
 # Python client
 
-`pip install anona`. Requires Python 3.10+, depends only on `httpx`.
+`pip install -U anona`. Requires Python 3.10+, depends only on `httpx`.
 
 ```python
 from anona import AnonaClient, AnonaError

@@ -18,6 +18,17 @@ at the end, in one line.
 | `service_unavailable` (503) | Temporary degradation. | One retry at most, then continue without memory. |
 | Timeout | `reason` in particular can be slow on a large space. | Fall back to `retrieve`, which is much faster. |
 
+## The `anona` CLI specifically
+
+| What you see | What it means | What to do |
+| --- | --- | --- |
+| `invalid choice: 'record'` | The installed CLI predates these commands. `pip install anona` does not upgrade. | `pip install -U anona`, or `uvx --from anona anona <command>`. `anona --help` lists what this copy has. |
+| `error: externally-managed-environment` | pip refusing to write to a system Python. The default on Debian, Ubuntu and Homebrew. | `uvx --from anona anona <command>`, or `pipx install anona`. |
+| `record`/`retrieve`/`reason` refuse, naming a temporary profile | You are signed in, and a login credential is scoped to MCP. | Use MCP, or an API key with the REST API. Not a fault. |
+| `Not signed in.` | No credential at all. | `anona start` for a temporary profile. No account needed. |
+| `The temporary profile has expired.` | Past its 72 hours. Its memories are gone. | `anona start` for a new one. Nothing to recover. |
+| `Too many temporary profiles from this address today.` | A per-address daily limit. | Reuse the existing profile, or wait. Do not loop. |
+
 ## Nothing comes back and the space is not empty
 
 - **A scoped search only sees scoped memories.** If you retrieve with a
