@@ -40,8 +40,22 @@ export interface RecordResult {
   memory_id: string | null;
   /** Present when the write was queued. */
   job_id: string | null;
-  /** "stored" for a synchronous write, "processing" when queued. */
+  /**
+   * `stored`, `nothing_extracted` or `processing` (queued).
+   *
+   * A `201` does not mean a memory exists. When extraction yields no facts the
+   * write is still accepted — the extraction did not fail, the content simply
+   * held nothing durable — and the status is `nothing_extracted` with a null
+   * `memory_id` and nothing to retrieve. Read this, not the HTTP code.
+   */
   status: string;
+  /**
+   * Set only alongside a status the caller has to act on, and today that is
+   * `nothing_extracted` alone: it says what to do (usually re-record with a
+   * sentence of context). Null on every successful write, so it is safe to
+   * surface whenever it is present.
+   */
+  message?: string | null;
   usage?: TokenUsage | null;
   /**
    * Where a `route: "auto"` write went. Null on an addressed write.
