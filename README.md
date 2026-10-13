@@ -1,6 +1,14 @@
 # Anona Memory SDK
 
-Official SDKs for [Anona Memory](https://memory.anonalabs.com) — managed AI memory for intelligent agents. Record, retrieve, and reason over memories per user/space via a simple client, or auto-inject memory into LiteLLM calls with one line.
+[![PyPI](https://img.shields.io/pypi/v/anona)](https://pypi.org/project/anona/)
+[![Python](https://img.shields.io/pypi/pyversions/anona)](https://pypi.org/project/anona/)
+[![npm](https://img.shields.io/npm/v/@anona-labs/memory)](https://www.npmjs.com/package/@anona-labs/memory)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+Official SDKs for [Anona Memory](https://memory.anonalabs.com), managed memory
+for AI agents. Record, retrieve and reason over memories scoped per user, agent
+and space: from a client, a framework adapter, an MCP server, or the `anona`
+command.
 
 **Documentation** — [Python SDK](https://docs.anonalabs.com/sdk/python) ·
 [TypeScript SDK](https://docs.anonalabs.com/sdk/javascript) ·
@@ -9,34 +17,27 @@ Official SDKs for [Anona Memory](https://memory.anonalabs.com) — managed AI me
 [MCP server](https://docs.anonalabs.com/mcp-integration) ·
 [Framework integrations](https://docs.anonalabs.com/integrations/langchain)
 
-- **Python** — this repository root, published as [`anona`](https://pypi.org/project/anona/) on PyPI. Documented below and at [docs.anonalabs.com/sdk/python](https://docs.anonalabs.com/sdk/python).
-- **TypeScript** — [`typescript/`](typescript/), published as [`@anona-labs/memory`](https://www.npmjs.com/package/@anona-labs/memory) on npm. Zero dependencies, runs on Node 18+, Bun, Deno, Cloudflare Workers and the browser, with adapters for the Vercel AI SDK and the OpenAI Agents SDK. See [`typescript/README.md`](typescript/README.md) and [docs.anonalabs.com/sdk/javascript](https://docs.anonalabs.com/sdk/javascript).
+| SDK | Package | Location |
+| --- | --- | --- |
+| Python | [`anona`](https://pypi.org/project/anona/) on PyPI | this repository root, documented below |
+| TypeScript | [`@anona-labs/memory`](https://www.npmjs.com/package/@anona-labs/memory) on npm | [`typescript/`](typescript/) |
 
-```typescript
-import { Anona } from "@anona-labs/memory";
+## Contents
 
-const anona = new Anona({ apiKey: process.env.ANONA_API_KEY! });
-await anona.record({ spaceId: "support", content: "Alice prefers email" });
-const hits = await anona.retrieve({ spaceId: "support", query: "how to contact Alice" });
-```
-
-```bash
-npm install @anona-labs/memory
-```
-
-## Agent Skills
-
-Two installable [Agent Skills](https://docs.anonalabs.com/integrations/skills)
-that teach a coding agent to use Anona without being told to — recall before a
-task, record after it — in Claude Code, Codex, Hermes, OpenCode or Cursor.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/anonalabs/Anona-Memory-SDK/main/skills/install.sh | bash
-```
-
-Or `npx skills add anonalabs/Anona-Memory-SDK`, or the Claude Code plugin
-marketplace (`/plugin marketplace add anonalabs/Anona-Memory-SDK`). Source and
-options: [`skills/`](skills/).
+- [Install](#install)
+- [Quickstart](#quickstart)
+- **Guides** — [Automatic space routing](#automatic-space-routing) ·
+  [User profiles](#user-profiles) · [Time travel](#time-travel) ·
+  [Compound tag filters](#compound-tag-filters) ·
+  [Extraction settings](#extraction-settings) ·
+  [Rules](#rules-a-space-must-follow)
+- **Integrations** — [Framework adapters](#framework-adapters) ·
+  [LiteLLM](#litellm-integration) · [The `anona` command](#the-anona-command) ·
+  [MCP server](#mcp-server) · [Agent Skills](#agent-skills)
+- **Reference** — [API](#api-reference) ·
+  [Errors, retries and rate limits](#errors-retries-and-rate-limits) ·
+  [Requirements](#requirements)
+- [TypeScript](#typescript)
 
 ## Install
 
@@ -111,109 +112,6 @@ Async variants (`async_record`, `async_retrieve`, `async_reason`) are available 
 async with AnonaClient(api_key="...") as client:
     await client.async_record(space_id="space_123", content="...")
 ```
-
-## API
-
-### `AnonaClient(api_key: str, base_url: str = "https://api.anonalabs.com", timeout: float = 120.0, max_retries: int = 2, retry_max_wait: float = 60.0)`
-
-- `record(space_id: str, content: str, metadata: dict | None = None, tags: list[str] | None = None, background: bool = False, user_id: str | None = None, agent_id: str | None = None, session_id: str | None = None, timestamp: str | None = None, context: str | None = None) -> dict` — store a memory; `context` is extra framing stored alongside the content (where it came from, who said it) without becoming the memory's text; `background=True` queues it and returns a `job_id`; `timestamp` (ISO 8601) is when the *event* happened, for importing history; `user_id` / `agent_id` / `session_id` scope it inside the space. Pass `route="auto"` instead of `space_id` to let Anona choose the space — see [Automatic space routing](#automatic-space-routing)
-- `record_batch(space_id, items) -> dict` — bulk-ingest up to 100 items (always queued); returns a `job_id`; also takes `route="auto"`, which routes the whole batch as one unit
-- `get_job(space_id, job_id) -> dict` — poll a queued job's status (free); `status` is one of pending / processing / completed / failed / cancelled / not_found
-- `retrieve(space_id: str, query: str, limit: int = 10, mode: str = "accurate", user_id: str | None = None, agent_id: str | None = None, session_id: str | None = None, as_of: str | None = None, query_timestamp: str | None = None, occurred_after: str | None = None, occurred_before: str | None = None, top_k: int | None = None, memory_type: list[str] | None = None, tags: list[str] | None = None, tags_match: str | None = None, tag_groups: list[dict] | None = None, prefer_observations: bool | None = None, min_score: float | None = None, member_id: str | None = None) -> list[dict]` — search; `tags` / `tags_match` filter on the tags a memory was written with and `tag_groups` does the same as a boolean expression (see [Compound tag filters](#compound-tag-filters)), `memory_type` narrows the kind, `min_score` floors relevance, `top_k` bounds the candidates considered before ranking, `prefer_observations=False` also returns the raw evidence behind a synthesised memory, `member_id="me"` returns only what you wrote in a shared space; see [Time travel](#time-travel) for the temporal arguments, and [Automatic space routing](#automatic-space-routing) for `route="auto"` and `max_targets`
-- `get_context(space_id: str, query: str, limit: int = 10, max_tokens: int | None = None, block_order: str | None = None, …) -> str` — the relevant memories as one prompt-ready string, ready to paste into a system prompt; takes the same filters as `retrieve`, and `block_order="stable"` keeps the block byte-identical between turns so a provider's prompt cache can hit it
-- `retrieve_receipt(space_id: str, query: str, receipt_detail: str = "basic", …) -> RetrieveWithReceipt` — `retrieve`, plus a receipt explaining that search; returns `.memories` and `.receipt_id`, and that id is what `get_receipt` and `explain` take
-- `get_receipt(request_id: str) -> dict` — the manifest for one earlier search: what was returned, what was considered, what was cut
-- `explain(request_id: str, memory_id: str) -> dict` — account for one specific memory against an earlier search
-- `reason(space_id, query) -> str | None`
-- `list_spaces() -> list[dict]`
-- `create_space(name: str, description: str | None = None, *, space_type: str | None = None) -> dict` — create a space; a space's id *is* its name. `space_type` seeds it from a preset (mission, extraction guidance, disposition and a couple of standing questions); the returned `space_type` is null whenever nothing was applied, including when a type was asked for and applying it failed
-- `list_space_types() -> list[dict]` — the types `create_space` accepts, as a picker shows them; free, and worth reading rather than hardcoding
-- `delete_space(space_id: str) -> None` — delete a space and every memory in it; irreversible
-- `get_user_profile(space_id, user_id, *, limit=None, offset=None, memory_type=None, format=None, context_max_tokens=None) -> dict` — everything the space has learned about one end user; see [User profiles](#user-profiles)
-- `ask_about_user(space_id, user_id, query, *, model=None) -> dict` — one synthesised answer, drawn from that user's memories only
-- `upload_file(space_id, file, *, filename=None, strategy=None, tags=None, user_id=None, agent_id=None, session_id=None) -> dict` — upload a file (path / bytes / file-like) so retrieval can draw on its content; ingested asynchronously, returns `job_ids`. PDF, DOCX, PPTX, XLSX, images (OCR), HTML, TXT/MD, CSV, audio. Files over 25 MB are rejected client-side.
-- `list_documents(space_id, limit=100, offset=0) -> list[dict]`
-- `delete_document(space_id, document_id) -> None` — remove a document and the memories extracted from it
-- `get_graph(space_id, limit=500, min_count=1) -> dict` — entity relationship graph (nodes + co-occurrence edges)
-- `list_entities(space_id, limit=100, offset=0) -> list[dict]`
-- `get_entity(space_id, entity_id) -> dict` — one entity + its observations
-- `get_extraction_settings(space_id) -> dict` / `set_extraction_settings(space_id, mode=None, guidance=None, custom_prompt=None, labels=None, free_form_entities=None) -> dict` / `reset_extraction_settings(space_id) -> None` — steer what a write keeps; see [Extraction settings](#extraction-settings)
-- `get_chat_settings(space_id) -> dict` / `set_chat_settings(space_id, memory_limit=None, memory_token_budget=None, auto_record=None, memory=None, chat_model=None) -> dict` / `reset_chat_settings(space_id) -> None` — per-space defaults for the drop-in proxy endpoints
-- `create_webhook(space_id, url, event_types=None, enabled=True) -> dict` — the response carries `secret`, returned only on create
-- `list_webhooks(space_id) -> list[dict]`, `update_webhook(space_id, webhook_id, url=None, event_types=None, enabled=None) -> dict`, `delete_webhook(space_id, webhook_id) -> None`
-- `list_webhook_deliveries(space_id, webhook_id, limit=50, cursor=None) -> dict` — recent attempts, for debugging a receiver
-- `get_space(space_id: str) -> dict` — One space by id
-- `list_memories(space_id: str, *, limit: int = 50, offset: int = 0, q: str | None = None, memory_type: str | None = None, state: str | None = None, prefer_observations: bool | None = None, user_id: str | None = None, agent_id: str | None = None, session_id: str | None = None, member_id: str | None = None) -> dict` — Page through the memories stored in a space
-- `get_memory_history(space_id: str, memory_id: str) -> dict` — Every recorded version of one memory, newest first
-- `update_memory(space_id: str, memory_id: str, *, text: str | None = None, context: str | None = None, occurred_start: str | None = None, occurred_end: str | None = None, memory_type: str | None = None, entities: list[str] | None = None, state: str | None = None, reason: str | None = None) -> dict` — Correct one memory in place
-- `get_usage() -> dict` — Credits and rate limit for the organization this key belongs to
-- `get_document(space_id: str, document_id: str) -> dict` — One document by id, with its source and memory count
-- `cancel_job(space_id: str, job_id: str) -> dict` — Cancel a queued ingestion job
-- `get_reason_settings(space_id: str) -> dict` — The model this space uses for `reason`, or null for the default
-- `set_reason_settings(space_id: str, *, model: str | None, depth: str | None) -> dict` — Pin the model and the depth `reason` uses for this space. Both are required: this PUT is a full replace, so naming only one clears the other
-- `reset_reason_settings(space_id: str) -> None` — Clear the space's reason-model override. Owner-only
-- `list_rules(space_id: str) -> list[dict]` — every rule this space must follow, highest priority first; inactive ones are listed too
-- `create_rule(space_id: str, *, name: str, content: str, priority: int = 0, is_active: bool = True, tags: list[str] | None = None) -> dict` — add a rule every answer must follow; see [Rules](#rules-a-space-must-follow)
-- `update_rule(space_id: str, rule_id: str, *, name=None, content=None, priority=None, is_active=None, tags=None) -> dict` — change one rule, only the fields you pass
-- `delete_rule(space_id: str, rule_id: str) -> None` — remove a rule; later answers stop obeying it
-- `list_memory_models(space_id: str, *, limit: int = 50, offset: int = 0, tags: list[str] | None = None) -> dict` — The memory models defined on a space, with their current content
-- `create_memory_model(space_id: str, *, name: str, query: str, model_id: str | None = None, tags: list[str] | None = None, max_tokens: int | None = None, trigger: dict | None = None) -> dict` — Define a memory model
-- `get_memory_model(space_id: str, model_id: str) -> dict` — One memory model, with its current content
-- `update_memory_model(space_id: str, model_id: str, *, name: str | None = None, query: str | None = None, tags: list[str] | None = None, max_tokens: int | None = None, trigger: dict | None = None) -> dict` — Edit a memory model's definition
-- `delete_memory_model(space_id: str, model_id: str) -> None` — Delete a memory model and its content
-- `refresh_memory_model(space_id: str, model_id: str) -> dict` — Re-answer a memory model from the space's current memories
-- `clear_memory_model(space_id: str, model_id: str) -> dict` — Wipe a memory model's content, keeping its definition
-- `get_memory_model_history(space_id: str, model_id: str) -> dict` — Earlier versions of a memory model's content
-- `get_space_profile(space_id: str) -> dict` — A space's profile — its mission and disposition
-- `set_space_profile(space_id, *, mission, disposition) -> dict` / `reset_space_profile(space_id) -> None` — set what a space is for and how it weighs what it is told. Both arguments are required: the PUT is a full replace, so an omitted one clears that half. Owner-only.
-- `list_catalog_models() -> dict` — Every LLM this deployment will answer with, and what each costs
-- Every method has an `async_` twin (`async_record`, `async_retrieve`, …) taking the same arguments
-- `close()` / `aclose()` — release underlying HTTP clients
-
-`Anona` is an alias for `AnonaClient`, matching the TypeScript package's class name.
-
-### Errors
-
-Errors raise `AnonaError(status_code, detail)`. The exception also carries `code`
-(the API's stable machine-readable handle, e.g. `space_not_found`), `request_id`
-(what support needs to find the call in the logs) and, on a 429, `retry_after`
-in seconds. A 503 with no `request_id` may be a Cloudflare-mangled 502 or 504:
-the edge strips the body of those two statuses, so the API rewrites them to 503
-before they leave. Report such a failure with a timestamp rather than treating
-it as a malformed response.
-
-### Retries
-
-A 429 is retried for every method, `record` included: the limiter refuses the
-request before anything runs, so re-sending cannot double-write. A 5xx is
-retried only for idempotent methods (GET, PUT, DELETE), because a 5xx on a write
-may arrive after the work landed, and replaying it would store the memory
-twice. Uploads are never retried. `max_retries=0` turns it off.
-
-**A 429 waits as long as the server says to.** The rate-limit window is a whole
-minute, so a client backing off on its own schedule tops out in the low seconds,
-spends its retries landing on the same full bucket, and fails anyway. The client
-reads `Retry-After`, falling back to the `window_seconds` the rate-limit body
-carries, and waits that out, capped at `retry_max_wait` (60s by default). A 5xx
-with no hint backs off briefly with jitter. `AnonaError.retry_after` carries the
-same number if you would rather schedule it yourself.
-
-### Staying inside the rate limit
-
-Every metered response reports the budget it left you, so a bulk job can pace
-itself instead of discovering the ceiling by hitting it. `client.rate_limit` is
-updated in place on every call (`limit`, `remaining`, `window_seconds`, `credits_remaining`, `retry_after`):
-
-```python
-client.retrieve("support", "billing")
-rl = client.rate_limit
-if rl.remaining is not None and rl.remaining < 5:
-    time.sleep(rl.window_seconds or 60)
-```
-
-Fields are `None` until a metered call has been made. The unmetered routes
-(spaces, settings, webhooks) report no budget and leave the last reading in
-place rather than blanking it.
 
 ## Automatic space routing
 
@@ -291,6 +189,95 @@ Routing matches against each space's routing profile — a charter, topics and
 rules, declared per space on `/v1/spaces/{space_id}/routing-settings`. That
 endpoint is REST-only for now; the SDK does not model it yet.
 [`examples/space_routing.py`](examples/space_routing.py) shows the whole loop.
+
+## User profiles
+
+If you scope writes with `user_id`, a space accumulates a per-user history with
+nowhere to address it directly. These two read it back, instead of you
+reconstructing it from a wide-open search.
+
+```python
+profile = client.get_user_profile("support", "alice_123")
+print(profile["memory_count"], profile["last_active"])
+
+# Prompt-ready instead of a list
+block = client.get_user_profile(
+    "support", "alice_123", format="block", context_max_tokens=500
+)
+messages = [{"role": "system", "content": block["context"]}, ...]
+
+answer = client.ask_about_user(
+    "support", "alice_123", "How does she prefer to be contacted?"
+)
+print(answer["insights"], answer["model"])
+```
+
+`user_id` has to be the **same value** your writes are scoped with — a typo on
+either side looks like an empty profile, not an error.
+
+Three things worth knowing:
+
+- **An unknown user is not a 404.** A `user_id` is a scope tag created by the
+  first write naming it, not a resource you register, so there is no valid set
+  for a typo to fall outside of. A user nobody has recorded under comes back
+  with `memory_count` of `0` and an empty `memories` list. An unknown *space* is
+  still a 404.
+- **`memory_count` can go down.** The default view collapses layers: several raw
+  facts become one synthesised note, and the note is what gets counted. A
+  profile read during an import can genuinely go 115 → 67 → 15 while the corpus
+  behind it grows the whole time. Read it as how many distinct things are
+  currently known about this user, never as an ingestion counter, and never as
+  the basis for a progress bar.
+- **`ask_about_user` returns the whole response**, not the answer string
+  `reason` returns, because `model` reports which LLM actually answered. That is
+  the rate the call was charged at, and it differs from what you asked for
+  whenever you asked for nothing.
+
+## Time travel
+
+Three arguments, and the distinction between them is the whole point: one is
+about **when something happened**, the other two are about **what you knew and
+when**.
+
+```python
+# Importing history: date the memory to the event, not to the import run.
+client.record(
+    space_id="support",
+    content="Renewed the enterprise contract",
+    timestamp="2025-06-14T10:00:00Z",
+)
+
+# What did the space know in June, ignoring everything learned since?
+client.retrieve(space_id="support", query="contract status", as_of="2026-06-01T00:00:00Z")
+
+# Same corpus, but score recency and resolve "last June" against a past instant.
+client.retrieve(space_id="support", query="what changed last June",
+                query_timestamp="2026-01-01T00:00:00Z")
+
+# Everything that HAPPENED in June 2025, however recently it was imported.
+client.retrieve(space_id="support", query="contract status",
+                occurred_after="2025-06-01T00:00:00Z",
+                occurred_before="2025-06-30T23:59:59Z")
+```
+
+- **`timestamp`** on `record` is when the *event* occurred. It feeds recency
+  ranking, comes back on a result as `timestamp`, and is what the event-time
+  window below matches against. It does not change when the memory was
+  *recorded*, so it has no effect on `as_of`. It is **not** copied into
+  `occurred_start` / `occurred_end`: those are filled only from a date found in
+  the memory's own text, so a memory whose text names no date has both of them
+  null while carrying a perfectly good `timestamp`.
+- **`as_of`** on `retrieve` is a hard cutoff: only memories **recorded** at or
+  before that instant come back. A backdated import is recorded today no matter
+  what `timestamp` it carries.
+- **`query_timestamp`** on `retrieve` only re-ranks. It moves the "now" that
+  recency and relative dates are measured against, and never removes a result.
+  Reach for `as_of` when you need the cutoff actually enforced.
+- **`occurred_after` / `occurred_before`** on `retrieve` bound when the thing
+  *happened*, which is the one question `as_of` cannot answer: a year of
+  history imported this morning has one record time and twelve months of event
+  time. Either bound alone is an open-ended window, and the test is an overlap,
+  so an event straddling an edge is inside.
 
 ## Compound tag filters
 
@@ -384,95 +371,6 @@ memory to carry every alternative at once.
 A filter is only as good as the tags a memory carries. If you are tagging by
 hand on every write, [labels](#labels-tag-your-memories-as-they-are-written) can
 have extraction do it for you.
-
-## Time travel
-
-Three arguments, and the distinction between them is the whole point: one is
-about **when something happened**, the other two are about **what you knew and
-when**.
-
-```python
-# Importing history: date the memory to the event, not to the import run.
-client.record(
-    space_id="support",
-    content="Renewed the enterprise contract",
-    timestamp="2025-06-14T10:00:00Z",
-)
-
-# What did the space know in June, ignoring everything learned since?
-client.retrieve(space_id="support", query="contract status", as_of="2026-06-01T00:00:00Z")
-
-# Same corpus, but score recency and resolve "last June" against a past instant.
-client.retrieve(space_id="support", query="what changed last June",
-                query_timestamp="2026-01-01T00:00:00Z")
-
-# Everything that HAPPENED in June 2025, however recently it was imported.
-client.retrieve(space_id="support", query="contract status",
-                occurred_after="2025-06-01T00:00:00Z",
-                occurred_before="2025-06-30T23:59:59Z")
-```
-
-- **`timestamp`** on `record` is when the *event* occurred. It feeds recency
-  ranking, comes back on a result as `timestamp`, and is what the event-time
-  window below matches against. It does not change when the memory was
-  *recorded*, so it has no effect on `as_of`. It is **not** copied into
-  `occurred_start` / `occurred_end`: those are filled only from a date found in
-  the memory's own text, so a memory whose text names no date has both of them
-  null while carrying a perfectly good `timestamp`.
-- **`as_of`** on `retrieve` is a hard cutoff: only memories **recorded** at or
-  before that instant come back. A backdated import is recorded today no matter
-  what `timestamp` it carries.
-- **`query_timestamp`** on `retrieve` only re-ranks. It moves the "now" that
-  recency and relative dates are measured against, and never removes a result.
-  Reach for `as_of` when you need the cutoff actually enforced.
-- **`occurred_after` / `occurred_before`** on `retrieve` bound when the thing
-  *happened*, which is the one question `as_of` cannot answer: a year of
-  history imported this morning has one record time and twelve months of event
-  time. Either bound alone is an open-ended window, and the test is an overlap,
-  so an event straddling an edge is inside.
-
-## User profiles
-
-If you scope writes with `user_id`, a space accumulates a per-user history with
-nowhere to address it directly. These two read it back, instead of you
-reconstructing it from a wide-open search.
-
-```python
-profile = client.get_user_profile("support", "alice_123")
-print(profile["memory_count"], profile["last_active"])
-
-# Prompt-ready instead of a list
-block = client.get_user_profile(
-    "support", "alice_123", format="block", context_max_tokens=500
-)
-messages = [{"role": "system", "content": block["context"]}, ...]
-
-answer = client.ask_about_user(
-    "support", "alice_123", "How does she prefer to be contacted?"
-)
-print(answer["insights"], answer["model"])
-```
-
-`user_id` has to be the **same value** your writes are scoped with — a typo on
-either side looks like an empty profile, not an error.
-
-Three things worth knowing:
-
-- **An unknown user is not a 404.** A `user_id` is a scope tag created by the
-  first write naming it, not a resource you register, so there is no valid set
-  for a typo to fall outside of. A user nobody has recorded under comes back
-  with `memory_count` of `0` and an empty `memories` list. An unknown *space* is
-  still a 404.
-- **`memory_count` can go down.** The default view collapses layers: several raw
-  facts become one synthesised note, and the note is what gets counted. A
-  profile read during an import can genuinely go 115 → 67 → 15 while the corpus
-  behind it grows the whole time. Read it as how many distinct things are
-  currently known about this user, never as an ingestion counter, and never as
-  the basis for a progress bar.
-- **`ask_about_user` returns the whole response**, not the answer string
-  `reason` returns, because `model` reports which LLM actually answered. That is
-  the rate the call was charged at, and it differs from what you asked for
-  whenever you asked for nothing.
 
 ## Extraction settings
 
@@ -768,6 +666,160 @@ claude mcp add anona \
 without naming one; override it per call with the `space_id` argument. The key
 is personal — the server only reaches spaces you are a member of.
 
+## Agent Skills
+
+Two installable [Agent Skills](https://docs.anonalabs.com/integrations/skills)
+that teach a coding agent to use Anona without being told to — recall before a
+task, record after it — in Claude Code, Codex, Hermes, OpenCode or Cursor.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/anonalabs/Anona-Memory-SDK/main/skills/install.sh | bash
+```
+
+Or `npx skills add anonalabs/Anona-Memory-SDK`, or the Claude Code plugin
+marketplace (`/plugin marketplace add anonalabs/Anona-Memory-SDK`). Source and
+options: [`skills/`](skills/).
+
+## API reference
+
+```python
+AnonaClient(
+    api_key,
+    base_url="https://api.anonalabs.com",
+    timeout=120.0,
+    max_retries=2,
+    retry_max_wait=60.0,
+)
+```
+
+| Parameter | Meaning |
+| --- | --- |
+| `api_key` | Your `anona_live_...` key. Required. |
+| `base_url` | Defaults to the production API; pass it only to override. |
+| `timeout` | Per-request ceiling in seconds. It is a ceiling, not a wait: calls return the instant the server answers, and a loaded `reason()` can legitimately run 70–115s. |
+| `max_retries` | Retries for a 429, and for a 5xx on idempotent methods. `0` turns retrying off. See [Retries](#retries). |
+| `retry_max_wait` | Cap, in seconds, on any single retry wait. |
+
+`Anona` is an alias for `AnonaClient`, matching the TypeScript package's class
+name. Every method below has an `async_` twin (`async_record`,
+`async_retrieve`, …) taking the same arguments. `close()` / `aclose()` release
+the underlying HTTP clients, or use the client as a context manager. Full
+signatures and parameter docs are in each method's docstring and at
+[docs.anonalabs.com/sdk/python](https://docs.anonalabs.com/sdk/python).
+
+### Writing and reading memories
+
+| Method | Description |
+| --- | --- |
+| `record(space_id, content, …)` | Store a memory. `background=True` queues it and returns a `job_id`. `context` adds framing (where it came from, who said it) without becoming the memory's text. `timestamp` (ISO 8601) is when the *event* happened, for importing history. `user_id` / `agent_id` / `session_id` scope it inside the space. Pass `route="auto"` instead of `space_id` to let Anona choose: see [Automatic space routing](#automatic-space-routing). |
+| `record_batch(space_id, items)` | Bulk-ingest up to 100 items. Always queued; returns a `job_id`. Also takes `route="auto"`, which routes the whole batch as one unit. |
+| `get_job(space_id, job_id)` | Poll a queued job. Free. `status` is `pending`, `processing`, `completed`, `failed`, `cancelled` or `not_found`. |
+| `cancel_job(space_id, job_id)` | Cancel a queued ingestion job. |
+| `retrieve(space_id, query, …)` | Search. `limit`, `mode` (`"accurate"` or `"fast"`), the scope arguments, `memory_type`, `min_score` and `top_k` narrow it; `tags` / `tags_match` and `tag_groups` filter on tags ([Compound tag filters](#compound-tag-filters)); `prefer_observations=False` also returns the raw evidence behind a synthesised memory; `member_id="me"` returns only what you wrote in a shared space. Temporal arguments: [Time travel](#time-travel). `route="auto"` and `max_targets`: [Automatic space routing](#automatic-space-routing). |
+| `get_context(space_id, query, …)` | The same search, returned as one prompt-ready string. Takes the same filters as `retrieve`. `max_tokens` bounds it; `block_order="stable"` keeps the block byte-identical between turns so a provider's prompt cache can hit it. |
+| `retrieve_receipt(space_id, query, …)` | `retrieve`, plus a receipt explaining that search. Returns `.memories` and `.receipt_id`. |
+| `get_receipt(request_id)` | The manifest for one earlier search: what was returned, what was considered, what was cut. |
+| `explain(request_id, memory_id)` | Account for one specific memory against an earlier search. |
+| `reason(space_id, query, …)` | A synthesised answer across a space, as a string. `depth` is `"fast"` or `"thorough"`; `model` picks the LLM; `tag_groups` narrows what the reasoning agent may look at. |
+| `reason_receipt(space_id, query, …)` | `reason`, plus what the answer was built from: `.sources`, `.rules_applied` and the `.model` that actually answered. `str()` of the result is the answer. |
+
+### Managing memories
+
+| Method | Description |
+| --- | --- |
+| `list_memories(space_id, …)` | Page through a space's memories. Filters by `q`, `memory_type`, `state` and scope. |
+| `get_memory_history(space_id, memory_id)` | Every recorded version of one memory, newest first. |
+| `update_memory(space_id, memory_id, …)` | Correct one memory in place; only the fields you pass change. `state="invalidated"` retires a memory reversibly, and `reason` is kept on its history. |
+| `delete_memory(space_id, memory_id)` | Delete one memory. Irreversible: prefer `update_memory(..., state="invalidated")`. |
+
+### Spaces and documents
+
+| Method | Description |
+| --- | --- |
+| `create_space(name, description=None, *, space_type=None)` | Create a space; a space's id *is* its name. `space_type` seeds it from a preset (mission, extraction guidance, disposition and a couple of standing questions). The returned `space_type` is null whenever nothing was applied, including when a type was asked for and applying it failed. |
+| `list_space_types()` | The types `create_space` accepts. Free; read it rather than hardcoding. |
+| `list_spaces()` / `get_space(space_id)` | List spaces, or fetch one. |
+| `delete_space(space_id)` | Delete a space and every memory in it. Irreversible. |
+| `upload_file(space_id, file, …)` | Upload a path, bytes or file object so retrieval can draw on it. Ingested asynchronously; returns `job_ids`. Accepts `strategy`, `tags` and the scope arguments. Files over 25 MB are rejected client-side. |
+| `list_documents(space_id, …)` / `get_document(space_id, document_id)` | List documents, or fetch one with its source and memory count. |
+| `delete_document(space_id, document_id)` | Remove a document and the memories extracted from it. |
+| `get_graph(space_id, limit=500, min_count=1)` | The entity relationship graph: nodes plus co-occurrence edges. |
+| `list_entities(space_id, …)` / `get_entity(space_id, entity_id)` | Entities, and one entity with its observations. |
+
+### End users
+
+| Method | Description |
+| --- | --- |
+| `get_user_profile(space_id, user_id, …)` | Everything the space has learned about one end user. See [User profiles](#user-profiles). |
+| `ask_about_user(space_id, user_id, query, *, model=None)` | One synthesised answer, drawn from that user's memories only. |
+
+### Space configuration
+
+| Method | Description |
+| --- | --- |
+| `get_extraction_settings` / `set_extraction_settings` / `reset_extraction_settings` | Steer what a write keeps. A set **replaces** the record. See [Extraction settings](#extraction-settings). |
+| `list_rules` / `create_rule` / `update_rule` / `delete_rule` | Standing instructions every answer must follow. See [Rules](#rules-a-space-must-follow). |
+| `get_space_profile` / `set_space_profile` / `reset_space_profile` | A space's mission and disposition. Both arguments to the setter are required: the PUT is a full replace, so an omitted one clears that half. Owner-only. |
+| `get_reason_settings` / `set_reason_settings` / `reset_reason_settings` | The model and depth `reason` uses for a space. Both are required on set, for the same full-replace reason. Owner-only. |
+| `get_chat_settings` / `set_chat_settings` / `reset_chat_settings` | Per-space defaults for the drop-in proxy endpoints. |
+| `list_memory_models` / `create_memory_model` / `get_memory_model` / `update_memory_model` / `delete_memory_model` | Standing questions a space keeps an answer to. |
+| `refresh_memory_model` / `clear_memory_model` / `get_memory_model_history` | Re-answer a memory model from current memories, wipe its content but keep its definition, or read earlier versions. |
+| `list_catalog_models()` | Every LLM this deployment will answer with, and what each costs. |
+
+### Webhooks and usage
+
+| Method | Description |
+| --- | --- |
+| `create_webhook(space_id, url, event_types=None, enabled=True)` | The response carries `secret`, returned only on create. |
+| `list_webhooks` / `update_webhook` / `delete_webhook` | Manage a space's webhooks. |
+| `list_webhook_deliveries(space_id, webhook_id, limit=50, cursor=None)` | Recent attempts, for debugging a receiver. |
+| `get_usage()` | Credits and rate limit for the organization this key belongs to. |
+
+## Errors, retries and rate limits
+
+### Errors
+
+Errors raise `AnonaError(status_code, detail)`. The exception also carries `code`
+(the API's stable machine-readable handle, e.g. `space_not_found`), `request_id`
+(what support needs to find the call in the logs) and, on a 429, `retry_after`
+in seconds. A 503 with no `request_id` may be a Cloudflare-mangled 502 or 504:
+the edge strips the body of those two statuses, so the API rewrites them to 503
+before they leave. Report such a failure with a timestamp rather than treating
+it as a malformed response.
+
+### Retries
+
+A 429 is retried for every method, `record` included: the limiter refuses the
+request before anything runs, so re-sending cannot double-write. A 5xx is
+retried only for idempotent methods (GET, PUT, DELETE), because a 5xx on a write
+may arrive after the work landed, and replaying it would store the memory
+twice. Uploads are never retried. `max_retries=0` turns it off.
+
+**A 429 waits as long as the server says to.** The rate-limit window is a whole
+minute, so a client backing off on its own schedule tops out in the low seconds,
+spends its retries landing on the same full bucket, and fails anyway. The client
+reads `Retry-After`, falling back to the `window_seconds` the rate-limit body
+carries, and waits that out, capped at `retry_max_wait` (60s by default). A 5xx
+with no hint backs off briefly with jitter. `AnonaError.retry_after` carries the
+same number if you would rather schedule it yourself.
+
+### Staying inside the rate limit
+
+Every metered response reports the budget it left you, so a bulk job can pace
+itself instead of discovering the ceiling by hitting it. `client.rate_limit` is
+updated in place on every call (`limit`, `remaining`, `window_seconds`, `credits_remaining`, `retry_after`):
+
+```python
+client.retrieve("support", "billing")
+rl = client.rate_limit
+if rl.remaining is not None and rl.remaining < 5:
+    time.sleep(rl.window_seconds or 60)
+```
+
+Fields are `None` until a metered call has been made. The unmetered routes
+(spaces, settings, webhooks) report no budget and leave the last reading in
+place rather than blanking it.
+
 ## Requirements
 
 - Python >= 3.10
@@ -792,6 +844,27 @@ Full guides and the complete API reference live at
 | [API reference](https://docs.anonalabs.com/api-reference/overview) | The REST API these SDKs wrap |
 | [MCP server](https://docs.anonalabs.com/mcp-integration) | Local stdio and remote transports |
 | [Framework integrations](https://docs.anonalabs.com/integrations/langchain) | LangChain, CrewAI, LlamaIndex, Google ADK and more |
+
+## TypeScript
+
+[`@anona-labs/memory`](https://www.npmjs.com/package/@anona-labs/memory) has zero
+dependencies and runs on Node 18+, Bun, Deno, Cloudflare Workers and the
+browser, with adapters for the Vercel AI SDK and the OpenAI Agents SDK.
+
+```bash
+npm install @anona-labs/memory
+```
+
+```typescript
+import { Anona } from "@anona-labs/memory";
+
+const anona = new Anona({ apiKey: process.env.ANONA_API_KEY! });
+await anona.record({ spaceId: "support", content: "Alice prefers email" });
+const hits = await anona.retrieve({ spaceId: "support", query: "how to contact Alice" });
+```
+
+See [`typescript/README.md`](typescript/README.md) and
+[docs.anonalabs.com/sdk/javascript](https://docs.anonalabs.com/sdk/javascript).
 
 ## License
 
