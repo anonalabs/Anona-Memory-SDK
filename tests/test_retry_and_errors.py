@@ -284,3 +284,84 @@ def test_rate_limit_snapshot_starts_empty_and_survives_an_unmetered_call():
         assert c.rate_limit.limit == 60 and c.rate_limit.remaining == 5
         print('OK')
     """))
+
+
+# ── Non-finite retry hints and credits_exhausted ──────────
+
+
+def test_non_finite_retry_after_header_is_no_hint_not_a_crash():
+    # float() accepts all three, and int() of them used to raise OverflowError
+    # (or ValueError for nan) straight out of the transport.
+    _ok(_run("""
+        for value in ('inf', '1e400', 'nan', '-inf'):
+            r = httpx.Response(429, headers={'Retry-After': value}, request=httpx.Request('GET', 'http://t'))
+            assert ac._server_retry_hint(r) is None, value
+        print('OK')
+    """))
+
+
+def test_non_finite_retry_after_in_the_body_is_no_hint_not_a_crash():
+    # json.loads turns a bare Infinity into float('inf').
+    _ok(_run("""
+        for raw in (b'{"error":{"retry_after":Infinity}}', b'{"error":{"window_seconds":NaN}}'):
+            r = httpx.Response(429, content=raw, request=httpx.Request('GET', 'http://t'))
+            assert ac._server_retry_hint(r) is None, raw
+        print('OK')
+    """))
+
+
+def test_an_infinite_hint_still_retries_on_the_blind_backoff():
+    _ok(_run("""
+        def handler(request):
+            attempts.append(request)
+            if len(attempts) == 1:
+                return httpx.Response(429, headers={'Retry-After': 'inf'},
+                                      json={'error': {'code': 'rate_limited'}})
+            return httpx.Response(200, json={'results': []})
+        wire(c, handler)
+        c.retrieve(space_id='s1', query='q')
+        assert len(attempts) == 2, attempts
+        assert len(slept) == 1 and slept[0] < 5, slept
+        print('OK')
+    """))
+
+
+def test_credits_exhausted_is_not_retried():
+    # A balance, not a window: no wait can make the retry succeed.
+    _ok(_run("""
+        def handler(request):
+            attempts.append(request)
+            return httpx.Response(429, json={'error': {'code': 'credits_exhausted',
+                                                       'message': 'out'}})
+        wire(c, handler)
+        try:
+            c.retrieve(space_id='s1', query='q')
+        except AnonaError as e:
+            assert e.code == 'credits_exhausted', e.code
+        else:
+            raise AssertionError('no error')
+        assert len(attempts) == 1, attempts
+        assert slept == [], slept
+        print('OK')
+    """))
+
+
+def test_credits_exhausted_is_not_retried_on_the_async_transport():
+    _ok(_run("""
+        import asyncio
+        async def nosleep(s):
+            slept.append(s)
+        ac.asyncio.sleep = nosleep
+        def handler(request):
+            attempts.append(request)
+            return httpx.Response(429, json={'error': {'code': 'credits_exhausted'}})
+        async def main():
+            client = httpx.AsyncClient(transport=ac._AsyncErrorTranslatingTransport(
+                httpx.MockTransport(handler), ac._RetryPolicy(2, 60.0)))
+            r = await client.get('http://t.local/v1/spaces/')
+            assert r.status_code == 429
+        asyncio.run(main())
+        assert len(attempts) == 1, attempts
+        assert slept == [], slept
+        print('OK')
+    """))

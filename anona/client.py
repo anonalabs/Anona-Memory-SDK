@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import random
 import threading
 import time
@@ -260,6 +261,17 @@ class _RetryPolicy:
             return True
         return status >= 500 and request.method in _IDEMPOTENT_METHODS
 
+    def should_retry_response(
+        self, request: httpx.Request, response: httpx.Response, attempt: int
+    ) -> bool:
+        # ``credits_exhausted`` rides a 429 too, but it is a balance, not a
+        # window: no retry can succeed until the billing period resets, so
+        # retrying only spends the backoff and two more requests on the same
+        # answer.
+        if response.status_code == 429 and _error_code(response) == "credits_exhausted":
+            return False
+        return self.should_retry(request, response.status_code, attempt)
+
     def wait_for(self, response: httpx.Response, attempt: int) -> float:
         hinted = _server_retry_hint(response)
         if hinted is not None:
@@ -278,11 +290,15 @@ def _server_retry_hint(response: httpx.Response) -> int | None:
     header = response.headers.get("retry-after")
     if header:
         try:
-            return max(0, int(float(header)))
+            seconds = float(header)
         except ValueError:
             # An HTTP-date form is legal but the API never emits one; treating
             # it as "no hint" is better than parsing dates on the error path.
             return None
+        # ``float()`` accepts "inf", "nan" and "1e400", and ``int()`` of any of
+        # them raises OverflowError/ValueError out of the transport. A
+        # non-finite wait is no instruction at all, so it reads as no hint.
+        return max(0, int(seconds)) if math.isfinite(seconds) else None
     try:
         body = response.json()
     except Exception:
@@ -294,9 +310,22 @@ def _server_retry_hint(response: httpx.Response) -> int | None:
         return None
     for key in ("retry_after", "window_seconds"):
         value = error.get(key)
-        if isinstance(value, (int, float)):
+        # ``json`` parses a bare ``Infinity`` / ``NaN`` into a float, so the
+        # body needs the same finiteness guard as the header.
+        if isinstance(value, (int, float)) and math.isfinite(value):
             return max(0, int(value))
     return None
+
+
+def _error_code(response: httpx.Response) -> str | None:
+    """The ``error.code`` of an envelope response, or None."""
+    try:
+        body = response.json()
+    except Exception:
+        return None
+    error = body.get("error") if isinstance(body, dict) else None
+    code = error.get("code") if isinstance(error, dict) else None
+    return code if isinstance(code, str) else None
 
 
 def _observe_rate_limit(rate_limit: RateLimit, response: httpx.Response) -> None:
@@ -357,7 +386,7 @@ class _ErrorTranslatingTransport(httpx.BaseTransport):
             # from `.content` when the client reads it again.
             response.read()
             _observe_rate_limit(self._rate_limit, response)
-            if not self._policy.should_retry(request, response.status_code, attempt):
+            if not self._policy.should_retry_response(request, response, attempt):
                 return response
             delay = self._policy.wait_for(response, attempt)
             response.close()
@@ -390,7 +419,7 @@ class _AsyncErrorTranslatingTransport(httpx.AsyncBaseTransport):
                 raise _translate_transport_error(exc, request) from exc
             await response.aread()
             _observe_rate_limit(self._rate_limit, response)
-            if not self._policy.should_retry(request, response.status_code, attempt):
+            if not self._policy.should_retry_response(request, response, attempt):
                 return response
             delay = self._policy.wait_for(response, attempt)
             await response.aclose()
