@@ -171,9 +171,23 @@ export class HttpClient {
   }
 
   private url(path: string, query?: Record<string, unknown>): string {
-    const url = new URL(path, this.opts.baseUrl);
+    // Joined as strings, not `new URL(path, baseUrl)`: every path starts with
+    // `/`, and URL resolution makes a leading slash replace the base's whole
+    // path — so a base of `https://proxy.example.com/anona` sent requests to
+    // `https://proxy.example.com/v1/...`, past the prefix the proxy serves.
+    const url = new URL(this.opts.baseUrl.replace(/\/+$/, "") + path);
     for (const [key, value] of Object.entries(query ?? {})) {
-      if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+      if (value === undefined || value === null) continue;
+      // An array is sent as a repeated key (`tags=a&tags=b`), which is what the
+      // API's list query parameters read. `String(["a","b"])` is `a,b`:
+      // one tag nobody has, and a filtered list that is silently empty.
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (item !== undefined && item !== null) url.searchParams.append(key, String(item));
+        }
+      } else {
+        url.searchParams.set(key, String(value));
+      }
     }
     return url.toString();
   }
@@ -278,8 +292,12 @@ export class HttpClient {
 
       lastError = await this.parseError(response);
       this.observeRateLimit(response, lastError.retryAfter);
+      // `credits_exhausted` also arrives as a 429, but it is a balance, not a
+      // window: nothing succeeds until the billing period resets, so a retry
+      // only adds requests and backoff in front of the same error.
       if (
         !RETRYABLE(response.status, idempotent) ||
+        lastError.code === "credits_exhausted" ||
         attempt === this.opts.maxRetries
       )
         throw lastError;

@@ -250,10 +250,41 @@ done
 
 # ── credentials ──────────────────────────────────────────────────────────────
 
+# Single-quote a value for config.env. The file is meant to be sourced
+# (`. ~/.anona/config.env`, as the skill tells the agent to), so an unquoted
+# value is shell code: a space id with a space in it ran its second word as a
+# command, and one holding `$(...)` executed it. Inside single quotes nothing is
+# special except the quote itself, which is written as '\''.
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# Read config.env back as data, never by sourcing it. Only the two names this
+# installer writes are honoured; both the quoted form above and the unquoted
+# form older installers wrote are understood, and neither is executed.
+read_config() {
+  local line name value
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ANONA_API_KEY=*|ANONA_SPACE_ID=*) ;;
+      *) continue ;;
+    esac
+    name="${line%%=*}"
+    value="${line#*=}"
+    case "$value" in
+      \'*\')
+        value="${value#\'}"
+        value="${value%\'}"
+        value="${value//"'\''"/"'"}"
+        ;;
+    esac
+    case "$name" in
+      ANONA_API_KEY)  [ -n "$API_KEY" ]  || API_KEY="$value" ;;
+      ANONA_SPACE_ID) [ -n "$SPACE_ID" ] || SPACE_ID="$value" ;;
+    esac
+  done < "$CONFIG_FILE"
+}
+
 if [ -z "$API_KEY" ] && [ -r "$CONFIG_FILE" ]; then
-  # shellcheck disable=SC1090
-  . "$CONFIG_FILE" || true
-  API_KEY="${ANONA_API_KEY:-}"
+  read_config || true
 fi
 
 # /dev/tty exists even with no controlling terminal, and only opening it says
@@ -288,8 +319,8 @@ if [ -n "$API_KEY" ]; then
   mkdir -p "$CONFIG_DIR"
   {
     printf '# Written by the Anona skills installer. Mode 600.\n'
-    printf 'ANONA_API_KEY=%s\n' "$API_KEY"
-    if [ -n "$SPACE_ID" ]; then printf 'ANONA_SPACE_ID=%s\n' "$SPACE_ID"; fi
+    printf 'ANONA_API_KEY=%s\n' "$(shq "$API_KEY")"
+    if [ -n "$SPACE_ID" ]; then printf 'ANONA_SPACE_ID=%s\n' "$(shq "$SPACE_ID")"; fi
   } > "$CONFIG_FILE"
   chmod 600 "$CONFIG_FILE"
   info "credentials written to ${CONFIG_FILE}"
