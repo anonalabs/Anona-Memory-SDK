@@ -24,6 +24,7 @@ codex:${HOME}/.codex:skills
 opencode:${HOME}/.opencode:skills
 cursor:${HOME}/.cursor:skills
 hermes:${HOME}/.hermes:skills
+openclaw:${OPENCLAW_STATE_DIR:-${HOME}/.openclaw}:skills
 "
 
 APP=""
@@ -51,7 +52,7 @@ Usage:
   install.sh [options]
 
 Options:
-  --app <name|all>     claude, codex, opencode, cursor, hermes, or all.
+  --app <name|all>     claude, codex, opencode, cursor, hermes, openclaw, or all.
                        Default: every one already present on this machine.
   --skill <name>       anona-memory or anona-memory-sdk. Repeatable.
                        Default: both.
@@ -371,6 +372,12 @@ if [ "$mcp_done" = "0" ] && [ "$WITH_MCP" = "1" ]; then
   say "        url: \"${MCP_URL}\""
   say "        headers:"
   say "          Authorization: \"Bearer \${env:ANONA_API_KEY}\""
+  say ""
+  say "  OpenClaw, in openclaw.json on the node machine (openclaw config file):"
+  say "    nodeHost: { mcp: { servers: { anona: {"
+  say "      url: \"${MCP_URL}\", transport: \"streamable-http\","
+  say "      headers: { Authorization: \"Bearer \${ANONA_API_KEY}\" } } } } }"
+  say "    then: openclaw node restart"
   say ""
   say "  Anything else: point your client at ${MCP_URL} with that same header."
   say ""

@@ -670,7 +670,7 @@ is personal — the server only reaches spaces you are a member of.
 
 Two installable [Agent Skills](https://docs.anonalabs.com/integrations/skills)
 that teach a coding agent to use Anona without being told to — recall before a
-task, record after it — in Claude Code, Codex, Hermes, OpenCode or Cursor.
+task, record after it — in Claude Code, Codex, Hermes, OpenClaw, OpenCode or Cursor.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/anonalabs/Anona-Memory-SDK/main/skills/install.sh | bash
