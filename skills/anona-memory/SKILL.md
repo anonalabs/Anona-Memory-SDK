@@ -45,6 +45,11 @@ Check, in this order, and use the first that works:
    profile. If `anona status` reports a signed-in account instead, they refuse
    — that credential is scoped to MCP — so on an account go back to 1 or 2.
 
+   **Check `record`'s exit code.** A non-zero exit means nothing was stored:
+   short, context-free content often extracts to no fact at all. Record it
+   again with a sentence saying what the thing is or why it matters. A stored
+   write prints the memory ids.
+
 4. **None of these.** You can create a profile yourself; it needs no account,
    no email and no card, and it holds memories for 72 hours:
 

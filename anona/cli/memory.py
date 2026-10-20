@@ -22,6 +22,7 @@ import sys
 import httpx
 
 from anona import AnonaClient, AnonaError
+from anona._record_outcome import NOTHING_EXTRACTED, stored_ids, stored_something
 
 from .proxy import _bearer
 from .store import load
@@ -121,6 +122,13 @@ def _fail(exc: AnonaError) -> int:
     return 1
 
 
+# A write that stored nothing is not an error -- the server did what it was
+# asked -- so it cannot share `_fail`'s exit code, and it must not share
+# success's either. Its own code is what lets `anona record ... || handle` in a
+# shell script tell the two apart.
+NOTHING_EXTRACTED_EXIT = 3
+
+
 def run_record(base_url: str, content: str, space: str | None) -> int:
     got = _token_and_space(space)
     if got is None:
@@ -128,10 +136,29 @@ def run_record(base_url: str, content: str, space: str | None) -> int:
     token, space = got
     try:
         with AnonaClient(api_key=token, base_url=base_url) as client:
-            client.record(space_id=space, content=content)
+            result = client.record(space_id=space, content=content)
     except AnonaError as exc:
         return _fail(exc)
-    print(f"Stored in space '{space}'.")
+    # A 201 means the write was accepted, not that anything was stored:
+    # extraction runs over the content and short, context-free statements
+    # often produce nothing. This verb printed "Stored" for all of them and
+    # exited 0, so an agent recording a terse fact was told it had been kept
+    # when it had not -- silent data loss reported as success.
+    if not stored_something(result):
+        print(NOTHING_EXTRACTED.format(space_id=space), file=sys.stderr)
+        return NOTHING_EXTRACTED_EXIT
+    ids = stored_ids(result)
+    if not ids:
+        # Accepted for background extraction: there is no outcome yet, and no
+        # id to name. The CLI never asks for this today, but a server that
+        # starts queueing a write on its own must not read as empty.
+        print(f"Queued in space '{space}'. Extraction runs in the background.")
+        return 0
+    # The ids, because they are what `anona` cannot otherwise tell you and
+    # what every other surface needs to edit or delete the memory. One item
+    # usually extracts to more than one memory, so the count is not noise.
+    noun = "memory" if len(ids) == 1 else "memories"
+    print(f"Stored {len(ids)} {noun} in space '{space}': {', '.join(_printable(i) for i in ids)}")
     return 0
 
 

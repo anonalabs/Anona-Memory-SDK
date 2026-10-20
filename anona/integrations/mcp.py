@@ -24,6 +24,7 @@ import os
 import sys
 
 from anona import AnonaClient, AnonaError
+from anona._record_outcome import NOTHING_EXTRACTED, stored_something
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -42,16 +43,6 @@ SPACE_ENV_VAR = "ANONA_SPACE_ID"
 
 mcp = FastMCP("Anona Memory")
 
-# What record reports when the engine accepted the write but extraction produced
-# no facts — the same signal the remote MCP server surfaces. The API returns
-# success even when nothing was stored, and the handler used to answer "Stored" for all of them,
-# so ~44% of short, context-free writes were silently misreported as stored.
-_NOTHING_EXTRACTED = (
-    "Nothing was stored in space '{space_id}': no facts could be extracted from "
-    "that content. Short, context-free statements often extract to nothing — "
-    "re-record it with a sentence of context (what the thing is, or why it "
-    "matters), which usually fixes it."
-)
 
 # One reused client for the whole stdio process, keyed on (api_key, base_url).
 # A fresh AnonaClient per tool call opened a new TLS connection pool each time;
@@ -77,25 +68,6 @@ def _client() -> AnonaClient:
         _client_key = key
     return _client_singleton
 
-
-def _stored_something(result: dict) -> bool:
-    """Whether a record actually persisted a memory, read off the API response.
-
-    ``memory_ids`` is the full set the write created; ``memory_id`` is the
-    singular fallback. A queued/async write (``job_id`` present, or a pending
-    status) has not extracted yet, so it must not be reported as empty either.
-    """
-    if not isinstance(result, dict):
-        return True
-    if result.get("memory_ids") or result.get("memory_id"):
-        return True
-    if result.get("job_id") or result.get("status") in (
-        "processing",
-        "pending",
-        "queued",
-    ):
-        return True
-    return False
 
 
 def _resolve_space(space_id: str | None) -> str:
@@ -150,8 +122,8 @@ def record(
     # Report what actually happened. The engine acknowledges a write even when
     # extraction produced no memory, so a bare "Stored" would be a lie ~44% of
     # the time on short, context-free content.
-    if not _stored_something(result):
-        return _NOTHING_EXTRACTED.format(space_id=space)
+    if not stored_something(result):
+        return NOTHING_EXTRACTED.format(space_id=space)
     return f"Stored in space '{space}'."
 
 
