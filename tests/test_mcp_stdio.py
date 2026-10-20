@@ -68,6 +68,22 @@ def test_record_reports_nothing_extracted_when_empty():
     """))
 
 
+def test_record_prefers_the_servers_own_message():
+    # `status: nothing_extracted` carries a `message` saying what to do, and
+    # the server's wording is the one a model should be handed -- so it can be
+    # improved server-side without an SDK release.
+    _ok(_run("""
+        with respx.mock:
+            respx.post(f'{BASE}/v1/record').mock(return_value=httpx.Response(
+                201, json={'memory_id': None, 'memory_ids': None,
+                           'status': 'nothing_extracted',
+                           'message': 'No facts could be extracted. Add context.'}))
+            out = m.record('Thanks!', space_id=SPACE)
+            assert out == 'No facts could be extracted. Add context.', out
+            print('OK')
+    """))
+
+
 def test_record_reports_stored_for_queued_write():
     _ok(_run("""
         with respx.mock:

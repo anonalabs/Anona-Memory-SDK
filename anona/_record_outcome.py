@@ -7,6 +7,19 @@ context-free statements come back that way. A caller that reads only the
 status code reports those as stored, which is silent data loss dressed as
 success.
 
+**The verdict is read off the ids, not off `status`** — the same decision the
+server makes, and for the server's own stated reason: the engine has no
+failure shape, so a status field has been wrong about this before and an
+`"stored"` that stored nothing is exactly the bug being guarded against. A
+guard that trusted the status would depend on the server-side fix for it
+being deployed everywhere, which is the one thing it cannot assume. `status:
+"nothing_extracted"` and empty ids always coincide, so believing the ids
+costs nothing and survives a deployment that predates the status.
+
+What the server IS believed about is the **wording**: `message` accompanies
+that status and carries measured advice about what to do, so it is shown
+verbatim where present and only restated here when absent.
+
 This lives on its own, outside `integrations.mcp`, for two reasons. That
 module imports FastMCP, which ships in the optional `[mcp]` extra, so the CLI
 cannot import from it without making an optional dependency mandatory. And
@@ -16,15 +29,20 @@ the two surfaces that ask it must not each carry their own copy to drift.
 
 from __future__ import annotations
 
-# What to say when the write landed and extraction found nothing. It names the
-# usual cause, because the useful next action is to re-record with context
-# rather than to retry the same sentence.
-NOTHING_EXTRACTED = (
+# Said only when the server said nothing itself. The server sets `message` on
+# exactly this status and its wording is the one to show; this is for a
+# deployment that predates that field, so that an older server still produces
+# an explanation rather than a bare non-zero exit.
+NOTHING_EXTRACTED_FALLBACK = (
     "Nothing was stored in space '{space_id}': no facts could be extracted from "
     "that content. Short, context-free statements often extract to nothing — "
     "re-record it with a sentence of context (what the thing is, or why it "
     "matters), which usually fixes it."
 )
+
+# Statuses that mean extraction has not run yet, so there is no outcome to
+# report and no ids to name.
+_QUEUED_STATUSES = ("processing", "pending", "queued")
 
 
 def stored_ids(result: object) -> list[str]:
@@ -58,20 +76,33 @@ def is_queued(result: object) -> bool:
     """
     if not isinstance(result, dict):
         return False
-    return bool(result.get("job_id")) or result.get("status") in (
-        "processing",
-        "pending",
-        "queued",
-    )
+    return bool(result.get("job_id")) or result.get("status") in _QUEUED_STATUSES
 
 
 def stored_something(result: object) -> bool:
     """Whether a record persisted a memory, read off the API response.
 
-    A non-dict is treated as stored: this is a guard against an unexpected
+    The ids decide. `status` is deliberately not consulted: see the module
+    docstring — a status field has been wrong about this, and the ids cannot
+    be. A non-dict is treated as stored: this is a guard against an unexpected
     response shape, and inventing a failure the API did not report would be
     worse than the thing it protects against.
     """
     if not isinstance(result, dict):
         return True
     return bool(stored_ids(result)) or is_queued(result)
+
+
+def nothing_extracted_message(result: object, space_id: str) -> str:
+    """Why nothing was stored, in the server's own words where it gave them.
+
+    The server sets `message` on exactly this outcome and it says what to do.
+    Preferring it means the advice can be improved server-side without a
+    client release, and it keeps this package from carrying another copy of
+    wording the server already owns.
+    """
+    if isinstance(result, dict):
+        message = result.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    return NOTHING_EXTRACTED_FALLBACK.format(space_id=space_id)
