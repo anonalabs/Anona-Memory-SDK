@@ -24,7 +24,7 @@ import os
 import sys
 
 from anona import AnonaClient, AnonaError
-from anona._record_outcome import NOTHING_EXTRACTED, stored_something
+from anona._record_outcome import nothing_extracted_message, stored_something
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -123,7 +123,7 @@ def record(
     # extraction produced no memory, so a bare "Stored" would be a lie ~44% of
     # the time on short, context-free content.
     if not stored_something(result):
-        return NOTHING_EXTRACTED.format(space_id=space)
+        return nothing_extracted_message(result, space)
     return f"Stored in space '{space}'."
 
 

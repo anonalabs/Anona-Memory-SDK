@@ -22,7 +22,11 @@ import sys
 import httpx
 
 from anona import AnonaClient, AnonaError
-from anona._record_outcome import NOTHING_EXTRACTED, stored_ids, stored_something
+from anona._record_outcome import (
+    nothing_extracted_message,
+    stored_ids,
+    stored_something,
+)
 
 from .proxy import _bearer
 from .store import load
@@ -145,7 +149,11 @@ def run_record(base_url: str, content: str, space: str | None) -> int:
     # exited 0, so an agent recording a terse fact was told it had been kept
     # when it had not -- silent data loss reported as success.
     if not stored_something(result):
-        print(NOTHING_EXTRACTED.format(space_id=space), file=sys.stderr)
+        # The server's own `message` where it sent one: it carries measured
+        # advice about what to do, and showing it means that advice can be
+        # improved server-side without a CLI release. Sanitized like any other
+        # server text reaching a terminal.
+        print(_printable(nothing_extracted_message(result, space)), file=sys.stderr)
         return NOTHING_EXTRACTED_EXIT
     ids = stored_ids(result)
     if not ids:

@@ -146,7 +146,10 @@ def test_record_that_stored_nothing_is_not_reported_as_success(tmp_path):
         def do_POST(self):
             self.rfile.read(int(self.headers["content-length"]))
             data = json.dumps({"memory_id": None, "memory_ids": None,
-                               "status": "stored"}).encode()
+                               "status": "nothing_extracted",
+                               "message": "No facts could be extracted from that "
+                                          "content, so nothing was stored in space "
+                                          "'default'. Add a sentence of context."}).encode()
             self.send_response(201)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(data)))
@@ -157,8 +160,60 @@ def test_record_that_stored_nothing_is_not_reported_as_success(tmp_path):
         assert rc != 0, "an empty write must not exit 0"
         assert rc == 3, rc
         assert "Stored" not in out, out
+        # The SERVER's message, verbatim -- not a copy of the wording kept here.
+        assert "No facts could be extracted" in err, err
+        assert "Add a sentence of context." in err, err
+        print("OK")
+    """, tmp_path))
+
+
+def test_an_older_server_without_the_status_is_still_caught(tmp_path):
+    # The honest `status`/`message` pair is itself a fix that has to be
+    # deployed. Until it is everywhere, an empty write arrives as
+    # `status: "stored"` with no ids and no message -- which is the bug this
+    # whole verb guards against, so the guard cannot depend on the server-side
+    # fix being live. The ids decide, and the wording falls back to ours.
+    ok(_run("""
+        creds(temp_hours=60)
+        def do_POST(self):
+            self.rfile.read(int(self.headers["content-length"]))
+            data = json.dumps({"memory_id": None, "memory_ids": None,
+                               "status": "stored"}).encode()
+            self.send_response(201)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        H.do_POST = do_POST
+        rc, out, err = run_main(["record", "Thanks!"])
+        assert rc == 3, rc
+        assert "Stored" not in out, out
         assert "Nothing was stored in space 'default'" in err, err
         assert "sentence of context" in err, err
+        print("OK")
+    """, tmp_path))
+
+
+def test_the_servers_message_is_stripped_of_terminal_escapes(tmp_path):
+    # `message` is server text printed to a terminal, so it goes through the
+    # same sanitizer as memory content and ids.
+    ok(_run("""
+        creds(temp_hours=60)
+        def do_POST(self):
+            self.rfile.read(int(self.headers["content-length"]))
+            evil = "nothing stored\x1b[2K\x1b[1Gspoofed: verified OK"
+            data = json.dumps({"status": "nothing_extracted",
+                               "message": evil}).encode()
+            self.send_response(201)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        H.do_POST = do_POST
+        rc, out, err = run_main(["record", "x"])
+        assert rc == 3, rc
+        assert "\x1b" not in err, repr(err)
+        assert "spoofed: verified OK" in err, repr(err)
         print("OK")
     """, tmp_path))
 
