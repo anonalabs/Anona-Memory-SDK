@@ -89,13 +89,43 @@ describe("anona command", () => {
     expect(await main(["mcp"], t)).toBe(0);
     expect(JSON.parse(t.o()).id).toBe(1);
   });
-  it("--base-url beats the stored deployment, in both spellings", async () => {
-    seed("http://127.0.0.1:1"); // stored deployment is dead
+  it("mcp refuses a --base-url the credential was not issued for, in both spellings", async () => {
+    seed("https://memory.anonalabs.com");
     for (const argv of [["--base-url", as.base, "mcp"], [`--base-url=${as.base}`, "mcp"]]) {
-      as.hits.length = 0;
       const t = io(line);
-      await main(argv, t);
-      expect(as.count("/mcp"), argv.join(" ")).toBe(1);
+      expect(await main(argv, t), argv.join(" ")).toBe(1);
+      expect(t.e()).toContain(`the stored credential is for https://memory.anonalabs.com, not ${as.base}`);
+      expect(t.e()).toContain(`anona login --base-url ${as.base}`);
+      expect(t.o()).toBe("");
+    }
+    // The point: the token never reached the named host.
+    expect(as.count("/mcp")).toBe(0);
+  });
+  it("mcp refuses ANONA_BASE_URL naming another deployment, like the flag", async () => {
+    seed("https://memory.anonalabs.com");
+    process.env.ANONA_BASE_URL = as.base;
+    const t = io(line);
+    expect(await main(["mcp"], t)).toBe(1);
+    expect(t.e()).toContain("the stored credential is for https://memory.anonalabs.com");
+    expect(as.count("/mcp")).toBe(0);
+  });
+  it("naming the credential's own deployment is not a switch", async () => {
+    seed(as.base);
+    process.env.ANONA_BASE_URL = as.base;
+    const t = io(line);
+    expect(await main(["--base-url", as.base + "/", "mcp"], t)).toBe(0);
+    expect(as.count("/mcp")).toBe(1);
+  });
+  it("refuses plain http to a remote host for mcp, start and login", async () => {
+    seed("http://memory.anonalabs.com");
+    let t = io(line);
+    expect(await main(["mcp"], t)).toBe(1);
+    expect(t.e()).toContain("must be https://");
+    rmSync(credentialsPath());
+    for (const argv of [["start"], ["login", "--no-browser"]]) {
+      t = io();
+      expect(await main([...argv, "--base-url", "http://memory.anonalabs.com"], t), argv.join(" ")).toBe(1);
+      expect(t.e()).toContain("must be https://");
     }
   });
   it("login honours ANONA_BASE_URL and --no-browser, and reports a bad deployment", async () => {

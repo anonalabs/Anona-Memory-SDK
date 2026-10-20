@@ -4,6 +4,7 @@ import { runLogin, type LoginOptions } from "./login.js";
 import { runProxy } from "./proxy.js";
 import { withCredentialLock } from "./tokens.js";
 import { clearCredentials, DEFAULT_BASE_URL, isSignedIn, liveTempToken, loadCredentials } from "./store.js";
+import { checkTransport, resolveTarget, TargetError } from "./target.js";
 import { describeDeadline, runStart } from "./temp.js";
 
 export interface IO {
@@ -24,6 +25,17 @@ const USAGE = `usage: anona [--base-url URL] <command>
 
 function defaultBaseUrl(): string {
   return process.env.ANONA_BASE_URL || DEFAULT_BASE_URL;
+}
+
+/** Runs `fn`; a TargetError becomes `anona: <message>` on stderr and exit 1. */
+function guarded(io: IO, fn: () => Promise<number> | number): Promise<number> | number {
+  try {
+    return fn();
+  } catch (exc) {
+    if (!(exc instanceof TargetError)) throw exc;
+    io.stderr.write(`anona: ${exc.message}\n`);
+    return 1;
+  }
 }
 
 function status(io: IO): number {
@@ -90,9 +102,18 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
     io.stderr.write("anona: --force only applies to logout\n");
     return 2;
   }
-  if (command === "start") return runStart(baseUrl || defaultBaseUrl(), io);
+  // What the user named, if anything. Only `start` and `login` may follow it to
+  // a new deployment; `mcp` holds a credential and is pinned to the deployment
+  // that issued it (resolveTarget).
+  const requested = baseUrl || process.env.ANONA_BASE_URL || undefined;
+  if (command === "start") {
+    const base = baseUrl || defaultBaseUrl();
+    return guarded(io, () => (checkTransport(base), runStart(base, io)));
+  }
   if (command === "login") {
     const base = baseUrl || defaultBaseUrl();
+    const refused = guarded(io, () => (checkTransport(base), 0));
+    if (refused !== 0) return refused;
     io.stdout.write(`Signing in to ${base}\n`);
     const stored = loadCredentials();
     if (stored && stored.baseUrl.replace(/\/+$/, "") !== base.replace(/\/+$/, "")) {
@@ -136,9 +157,8 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
     });
   }
   if (command === "status") return status(io);
-  // mcp: a credential belongs to the deployment that issued it, so talk to that
-  // one unless the user explicitly named another.
+  // mcp: a credential belongs to the deployment that issued it. Naming another
+  // is refused on stderr; stdout is the client's JSON-RPC stream.
   const stored = loadCredentials();
-  const base = baseUrl || stored?.baseUrl || defaultBaseUrl();
-  return runProxy(base, io.stdin, io.stdout, io.stderr);
+  return guarded(io, () => runProxy(resolveTarget(requested, stored?.baseUrl), io.stdin, io.stdout, io.stderr));
 }
