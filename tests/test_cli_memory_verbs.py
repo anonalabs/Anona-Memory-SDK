@@ -28,7 +28,11 @@ class H(BaseHTTPRequestHandler):
         elif self.path.endswith("retrieve"):
             out = {"results": [{"content": "the user prefers pnpm"}]}
         else:
-            out = {"id": "m1", "status": "ok"}
+            # The real /v1/record body. The stub used to answer
+            # {"id": "m1", "status": "ok"} -- a shape the API never sends,
+            # which is how every record case here passed while the verb was
+            # unable to tell a stored write from an empty one.
+            out = {"memory_id": "m1", "memory_ids": ["m1"], "status": "stored"}
         data = json.dumps(out).encode()
         self.send_response(200)
         self.send_header("content-type", "application/json")
@@ -101,6 +105,106 @@ def test_temp_profile_record_defaults_to_the_default_space(tmp_path):
         assert auth == "Bearer anona_tmp_TESTTOKEN", auth
         assert body["space_id"] == "default", body
         assert "default" in out, out
+        print("OK")
+    """, tmp_path))
+
+
+def test_record_reports_what_was_stored_and_names_the_ids(tmp_path):
+    # The ids are the only thing the CLI knows and the caller does not, and
+    # they are what every other surface needs to read, edit or delete the
+    # memory. One item routinely extracts to more than one memory, so the
+    # count carries information too.
+    ok(_run("""
+        creds(temp_hours=60)
+        def do_POST(self):
+            self.rfile.read(int(self.headers["content-length"]))
+            data = json.dumps({"memory_id": "m1",
+                               "memory_ids": ["m1", "m2"],
+                               "status": "stored"}).encode()
+            self.send_response(201)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        H.do_POST = do_POST
+        rc, out, err = run_main(["record", "the user prefers pnpm"])
+        assert rc == 0, (rc, err)
+        assert "Stored 2 memories in space 'default'" in out, out
+        assert "m1" in out and "m2" in out, out
+        print("OK")
+    """, tmp_path))
+
+
+def test_record_that_stored_nothing_is_not_reported_as_success(tmp_path):
+    # A 201 is acceptance, not storage: extraction runs over the content and
+    # short, context-free statements often produce nothing. The verb printed
+    # "Stored" and exited 0 for those, so an agent was told a fact had been
+    # kept when it had not. Exit code AND stderr, because a shell script reads
+    # one and a person reads the other.
+    ok(_run("""
+        creds(temp_hours=60)
+        def do_POST(self):
+            self.rfile.read(int(self.headers["content-length"]))
+            data = json.dumps({"memory_id": None, "memory_ids": None,
+                               "status": "stored"}).encode()
+            self.send_response(201)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        H.do_POST = do_POST
+        rc, out, err = run_main(["record", "Thanks!"])
+        assert rc != 0, "an empty write must not exit 0"
+        assert rc == 3, rc
+        assert "Stored" not in out, out
+        assert "Nothing was stored in space 'default'" in err, err
+        assert "sentence of context" in err, err
+        print("OK")
+    """, tmp_path))
+
+
+def test_a_queued_write_is_not_reported_as_empty(tmp_path):
+    # A write accepted for background extraction has no ids yet. That is a
+    # third outcome, and calling it empty would be the same bug pointing the
+    # other way.
+    ok(_run("""
+        creds(temp_hours=60)
+        def do_POST(self):
+            self.rfile.read(int(self.headers["content-length"]))
+            data = json.dumps({"job_id": "j1", "status": "processing"}).encode()
+            self.send_response(201)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        H.do_POST = do_POST
+        rc, out, err = run_main(["record", "x"])
+        assert rc == 0, (rc, err)
+        assert "Nothing was stored" not in err, err
+        assert "Queued in space 'default'" in out, out
+        print("OK")
+    """, tmp_path))
+
+
+def test_record_strips_terminal_escapes_from_returned_ids(tmp_path):
+    # An id is server text printed to a terminal, so it goes through the same
+    # sanitizer as memory content.
+    ok(_run("""
+        creds(temp_hours=60)
+        def do_POST(self):
+            self.rfile.read(int(self.headers["content-length"]))
+            evil = "m1\x1b[2K\x1b[1Gspoofed: verified OK"
+            data = json.dumps({"memory_ids": [evil], "status": "stored"}).encode()
+            self.send_response(201)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        H.do_POST = do_POST
+        rc, out, err = run_main(["record", "x"])
+        assert rc == 0, (rc, err)
+        assert "\x1b" not in out, repr(out)
+        assert "spoofed: verified OK" in out, repr(out)
         print("OK")
     """, tmp_path))
 
