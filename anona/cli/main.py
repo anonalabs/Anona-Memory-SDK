@@ -7,7 +7,7 @@ import os
 import sys
 import time
 
-from . import login, proxy, store, temp, tokens
+from . import login, proxy, store, target, temp, tokens
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -61,6 +61,11 @@ def _default_base_url() -> str:
     return os.environ.get("ANONA_BASE_URL") or store.DEFAULT_BASE_URL
 
 
+def _refuse(exc: target.TargetError) -> int:
+    print(f"anona: {exc}", file=sys.stderr)
+    return 1
+
+
 def _status() -> int:
     c = store.load()
     if c is None:
@@ -94,14 +99,25 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     base_url = getattr(args, "base_url", None)
     no_browser = getattr(args, "no_browser", False)
+    # What the user named, if anything. Only `start` and `login` may follow it
+    # to a new deployment; everything else holds a credential and is pinned to
+    # the deployment that issued it (target.resolve).
+    requested = base_url or os.environ.get("ANONA_BASE_URL") or None
     if args.command == "start":
-        return temp.run_start(base_url or _default_base_url())
+        base = base_url or _default_base_url()
+        try:
+            target.check_transport(base)
+        except target.TargetError as exc:
+            return _refuse(exc)
+        return temp.run_start(base)
     if args.command in ("record", "retrieve", "reason"):
         from . import memory
 
-        # Like `mcp`: a credential belongs to the deployment that issued it.
         held = store.load()
-        base = base_url or (held.base_url if held else None) or _default_base_url()
+        try:
+            base = target.resolve(requested, held.base_url if held else None)
+        except target.TargetError as exc:
+            return _refuse(exc)
         if args.command == "record":
             return memory.run_record(base, args.content, args.space)
         if args.command == "reason":
@@ -109,6 +125,10 @@ def main(argv: list[str] | None = None) -> int:
         return memory.run_retrieve(base, args.query, args.space)
     if args.command == "login":
         base = base_url or _default_base_url()
+        try:
+            target.check_transport(base)
+        except target.TargetError as exc:
+            return _refuse(exc)
         print(f"Signing in to {base}")
         stored = store.load()
         if stored and stored.base_url.rstrip("/") != base.rstrip("/"):
@@ -154,10 +174,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "status":
         return _status()
-    # mcp: a credential belongs to the deployment that issued it, so talk to
-    # that one unless the user explicitly named another.
+    # mcp: a credential belongs to the deployment that issued it. Naming
+    # another is refused on stderr; stdout is the client's JSON-RPC stream.
     stored = store.load()
-    base = base_url or (stored.base_url if stored else None) or _default_base_url()
+    try:
+        base = target.resolve(requested, stored.base_url if stored else None)
+    except target.TargetError as exc:
+        return _refuse(exc)
     return proxy.run_proxy(base, sys.stdin, sys.stdout, sys.stderr)
 
 
