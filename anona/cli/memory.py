@@ -175,14 +175,24 @@ def _fail(exc: AnonaError, base_url: str) -> int:
     if getattr(exc, "transport", False):
         # The detail embeds the repr of the underlying httpx error; the useful
         # half is the last clause, and the whole thing is long and noisy.
+        #
+        # The host is sanitized too. `check_transport` constrains the scheme
+        # and so most of the string, but it is still a value that reached us
+        # from `--base-url` or ANONA_BASE_URL -- which is exactly the vector
+        # target.py exists for, an agent following a URL out of a page it
+        # read -- and _printable costs nothing.
         print(
-            f"anona: could not reach {_host_of(base_url)}: "
+            f"anona: could not reach {_printable(_host_of(base_url))}: "
             f"{_printable(_transport_reason(exc))}",
             file=sys.stderr,
         )
         return 1
     if exc.code:
-        line = f"anona: {exc.code}: {_printable(_message_of(exc))}"
+        # `code` is server-supplied text on its way to a terminal, like the
+        # message and the ids, so it goes through the same sanitizer. It is
+        # read straight off `error.code` in the response body, and nothing
+        # between there and here constrains it to the documented vocabulary.
+        line = f"anona: {_printable(exc.code)}: {_printable(_message_of(exc))}"
         request_id = exc.request_id or _request_id_of(exc)
         if request_id:
             line += f" (request_id {_printable(request_id)})"

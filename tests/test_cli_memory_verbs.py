@@ -759,3 +759,29 @@ def test_retrieve_rejects_a_bad_limit_or_score_as_usage(tmp_path):
         assert SEEN == [], SEEN
         print("OK")
     """), tmp_path))
+
+
+def test_a_hostile_error_code_cannot_forge_cli_output(tmp_path):
+    # `error.code` is server text on its way to a terminal and nothing
+    # constrains it to the documented vocabulary, so it goes through the same
+    # sanitizer as memory content, ids and messages. Raw, an ESC sequence here
+    # could erase the line and rewrite what the CLI appeared to say.
+    ok(_run("""
+        creds(temp_hours=60)
+        def do_POST(self):
+            self.rfile.read(int(self.headers["content-length"]))
+            evil = "nope\\x1b[2K\\x1b[1Gstored: verified OK\\x9b31m\\r"
+            data = json.dumps({"error": {"code": evil, "message": "m"}}).encode()
+            self.send_response(400)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        H.do_POST = do_POST
+        rc, out, err = run_main(["record", "x"])
+        assert rc == 1, rc
+        for ch in ("\\x1b", "\\x9b", "\\r"):
+            assert ch not in err, repr(err)
+        assert "stored: verified OK" in err, repr(err)
+        print("OK")
+    """, tmp_path))
