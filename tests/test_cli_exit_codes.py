@@ -7,9 +7,7 @@ exited 0.
 """
 from __future__ import annotations
 
-import json
 import textwrap
-import time
 
 from _cli import ok, run_cli
 
