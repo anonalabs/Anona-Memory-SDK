@@ -16,6 +16,7 @@ giving the CLI an API key, which is a server-side decision, not a flag.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 
@@ -170,21 +171,64 @@ def run_record(base_url: str, content: str, space: str | None) -> int:
     return 0
 
 
-def run_retrieve(base_url: str, query: str, space: str | None) -> int:
+def _score(m: dict) -> str:
+    # Three significant figures, not a fixed number of decimals: relevance is
+    # close to two-valued (~1.1 for a near-verbatim match, ~1e-4 for a correct
+    # paraphrase), and two decimals would print every paraphrase hit as 0.00.
+    s = m.get("relevance_score")
+    return "-" if not isinstance(s, (int, float)) else f"{s:.3g}"
+
+
+def run_retrieve(
+    base_url: str,
+    query: str,
+    space: str | None,
+    *,
+    as_json: bool = False,
+    limit: int | None = None,
+    min_score: float | None = None,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    session_id: str | None = None,
+) -> int:
     got = _token_and_space(space)
     if got is None:
         return 1
     token, space = got
+    # Only what the caller named: an unset filter is omitted, never sent as a
+    # default, so a bare `anona retrieve` sends exactly what it always has.
+    kwargs = {
+        k: v
+        for k, v in (
+            ("limit", limit),
+            ("min_score", min_score),
+            ("user_id", user_id),
+            ("agent_id", agent_id),
+            ("session_id", session_id),
+        )
+        if v is not None
+    }
     try:
         with AnonaClient(api_key=token, base_url=base_url) as client:
-            items = client.retrieve(space_id=space, query=query)
+            items = client.retrieve(space_id=space, query=query, **kwargs)
     except AnonaError as exc:
         return _fail(exc)
+    if as_json:
+        # The rows exactly as the API returned them. json.dumps escapes every
+        # control character (ensure_ascii), so this is terminal-safe without
+        # _printable, and the content still round-trips.
+        doc: dict = {"results": list(items)}
+        if items.searched is not None:
+            doc["searched"] = items.searched
+        print(json.dumps(doc))
+        return 0
     if not items:
         print("No memories matched.")
         return 0
     for i, m in enumerate(items, 1):
-        print(f"{i}. {_printable(m.get('content') or m.get('text') or '')}")
+        short = str(m.get("memory_id") or m.get("id") or "-")[:8]
+        content = m.get("content") or m.get("text") or ""
+        print(f"{i}. {_score(m)}  {_printable(short)}  {_printable(content)}")
     return 0
 
 

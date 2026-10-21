@@ -3,11 +3,28 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import sys
 import time
 
 from . import login, proxy, store, target, temp, tokens
+
+
+def _limit(value: str) -> int:
+    # The API's own bound, checked here so a bad value is a usage error (exit 2)
+    # rather than a 422 that reads like a server failure.
+    n = int(value)
+    if not 1 <= n <= 100:
+        raise argparse.ArgumentTypeError("must be between 1 and 100")
+    return n
+
+
+def _min_score(value: str) -> float:
+    x = float(value)
+    if not (x >= 0 and math.isfinite(x)):
+        raise argparse.ArgumentTypeError("must be a number, 0 or more")
+    return x
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -42,6 +59,16 @@ def _parser() -> argparse.ArgumentParser:
     ret = sub.add_parser("retrieve", parents=[common], help="Search your memories (no MCP needed)")
     ret.add_argument("query", help="What to search for")
     ret.add_argument("--space", default=None, help="Space to search (required when signed in)")
+    ret.add_argument("--json", action="store_true", help="Print the API response as one JSON document")
+    ret.add_argument("--limit", type=_limit, default=None, help="At most this many memories (1-100, default 10)")
+    ret.add_argument(
+        "--min-score",
+        type=_min_score,
+        default=None,
+        help="Drop memories scoring below this. Scores are near two-valued; see the docs before setting one",
+    )
+    for scope in ("user", "agent", "session"):
+        ret.add_argument(f"--{scope}-id", default=None, help=f"Only memories recorded with this {scope}_id")
     rsn = sub.add_parser("reason", parents=[common], help="Ask a question and get a synthesized answer")
     rsn.add_argument("query", help="The question to answer from your memories")
     rsn.add_argument("--space", default=None, help="Space to reason over (required when signed in)")
@@ -122,7 +149,17 @@ def main(argv: list[str] | None = None) -> int:
             return memory.run_record(base, args.content, args.space)
         if args.command == "reason":
             return memory.run_reason(base, args.query, args.space)
-        return memory.run_retrieve(base, args.query, args.space)
+        return memory.run_retrieve(
+            base,
+            args.query,
+            args.space,
+            as_json=args.json,
+            limit=args.limit,
+            min_score=args.min_score,
+            user_id=args.user_id,
+            agent_id=args.agent_id,
+            session_id=args.session_id,
+        )
     if args.command == "login":
         base = base_url or _default_base_url()
         try:
