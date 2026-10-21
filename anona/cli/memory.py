@@ -1,17 +1,18 @@
 """`anona record`, `anona retrieve` and `anona reason`: the non-MCP path.
 
-MCP is the primary surface and these are deliberately not documented as the
-main way in. They exist for two cases: somebody who will not enable MCP at
-all, and the session before a client restart has loaded the MCP tools.
+MCP is the primary surface for an agent. These exist for a script, a quick
+check from a terminal, somebody who will not enable MCP, and the session
+before a client restart has loaded the MCP tools.
 
-`--space` is optional because a temporary profile's space is hardcoded to
-"default" server-side.
+Two credentials work here. An API key -- from `--api-key`,
+ANONA_API_KEY or ~/.anona/config.env, resolved in credential.py and bound to a
+host in target.for_api_key -- needs a space named, because an account can hold
+many and none is implied. Without a key, the stored temporary-profile token is
+used, and `--space` defaults to the profile's one space, "default".
 
-These verbs are temporary-profile-only, and that is a property of the
-credential rather than a choice: `anona login` mints an MCP-scoped OAuth token
-and the data plane refuses it, so there is no account credential the CLI holds
-that /v1/record would accept. Giving an account the same three verbs means
-giving the CLI an API key, which is a server-side decision, not a flag.
+The `anona login` token is deliberately NOT one of them: it is MCP-scoped and
+the data plane refuses it, so that an MCP credential cannot be replayed
+against the REST API. MCP and these verbs are decoupled on purpose.
 """
 
 from __future__ import annotations
@@ -62,8 +63,21 @@ def _printable_block(text: object) -> str:
     return _UNSAFE_BLOCK.sub(" ", str(text))
 
 
-def _token_and_space(space: str | None) -> tuple[str, str] | None:
-    """(token, space), or None after printing why it cannot proceed.
+# A missing, refused or rejected credential: no credential at all, an MCP
+# login with no API key beside it, a host the credential may not go to, or a
+# 401. Distinct from 1 (the request was made and failed) so a script can tell
+# "fix the credential" from "try again".
+AUTH_EXIT = 4
+
+_KEY_ROUTE = (
+    "an API key: pass --api-key, set ANONA_API_KEY, or put ANONA_API_KEY in "
+    "~/.anona/config.env (create a key in the dashboard under API keys)"
+)
+
+
+def _token_and_space(space: str | None) -> tuple[str, str] | int:
+    """(token, space) off the stored temp profile, or the exit code after
+    printing why it cannot proceed.
 
     Token precedence comes from `proxy._bearer`, which already decides that a
     signed-in OAuth credential beats a temp token. Re-deriving that rule here
@@ -72,22 +86,22 @@ def _token_and_space(space: str | None) -> tuple[str, str] | None:
     """
     if load() is None:
         print(
-            "Not signed in. Run `anona start` for a temporary profile with no "
-            "account, or `anona login` to use an existing one.",
+            f"anona: no credential. Use {_KEY_ROUTE};\n"
+            "or run `anona start` for a temporary profile with no account.",
             file=sys.stderr,
         )
-        return None
+        return AUTH_EXIT
     with httpx.Client(timeout=30.0) as hc:
         try:
             token, is_temp = _bearer(hc)
         except NotLoggedIn as exc:
             print(f"anona: {exc}", file=sys.stderr)
-            return None
+            return AUTH_EXIT
         except httpx.HTTPError as exc:
             # _bearer refreshes with a raw httpx.Client, outside the SDK's
             # transport-error translation, so this one can really fire.
             print(f"anona: could not refresh the login ({type(exc).__name__}).", file=sys.stderr)
-            return None
+            return 1
     if not is_temp:
         # A login mints an MCP-scoped OAuth token (`typ=mcp_access`), and the
         # data plane rejects any token carrying a `typ` -- deliberately, so an
@@ -106,17 +120,26 @@ def _token_and_space(space: str | None) -> tuple[str, str] | None:
         # mention of `anona start`, which is the third option and the one the
         # server cannot know about.
         print(
-            "`record`, `retrieve` and `reason` work on a temporary profile "
-            "(`anona start`).\n"
-            "A signed-in account reaches memory over MCP (`anona mcp`), or with "
-            "an API key\nand the SDK -- the login credential is scoped to MCP "
-            "and the REST API refuses it.",
+            "anona: the `anona login` credential is for MCP (`anona mcp`) only; "
+            "the REST API refuses it.\n"
+            f"`record`, `retrieve` and `reason` need {_KEY_ROUTE};\n"
+            "or a temporary profile (`anona start`).",
             file=sys.stderr,
         )
-        return None
+        return AUTH_EXIT
     if space is None:
         space = "default"  # a temp profile's only space, fixed server-side
     return token, space
+
+
+def _credential(space: str | None, api_key: str | None) -> tuple[str, str] | int:
+    if api_key is not None:
+        # The caller (main) resolved the key, bound its host and required the
+        # space before getting here.
+        if space is None:
+            raise ValueError("an API key needs a space")
+        return api_key, space
+    return _token_and_space(space)
 
 
 # An input the server is certain to reject is rejected here instead, and like
@@ -187,6 +210,7 @@ def _fail(exc: AnonaError, base_url: str) -> int:
             file=sys.stderr,
         )
         return 1
+    rc = AUTH_EXIT if exc.status_code == 401 else 1
     if exc.code:
         # `code` is server-supplied text on its way to a terminal, like the
         # message and the ids, so it goes through the same sanitizer. It is
@@ -197,7 +221,7 @@ def _fail(exc: AnonaError, base_url: str) -> int:
         if request_id:
             line += f" (request_id {_printable(request_id)})"
         print(line, file=sys.stderr)
-        return 1
+        return rc
     # No code: not an envelope the API produced -- an edge page, a proxy, or a
     # body that did not parse. The status is all there is, and saying so is
     # honest.
@@ -205,7 +229,7 @@ def _fail(exc: AnonaError, base_url: str) -> int:
         f"anona: the server answered HTTP {exc.status_code}: {_printable(exc.detail)}",
         file=sys.stderr,
     )
-    return 1
+    return rc
 
 
 def _transport_reason(exc: AnonaError) -> str:
@@ -281,13 +305,13 @@ def _with_field_errors(message: str, error: dict) -> str:
 NOTHING_EXTRACTED_EXIT = 3
 
 
-def run_record(base_url: str, content: str, space: str | None) -> int:
+def run_record(base_url: str, content: str, space: str | None, *, api_key: str | None = None) -> int:
     empty = _reject_empty("memory", content)
     if empty is not None:
         return empty
-    got = _token_and_space(space)
-    if got is None:
-        return 1
+    got = _credential(space, api_key)
+    if isinstance(got, int):
+        return got
     token, space = got
     try:
         with AnonaClient(api_key=token, base_url=base_url, on_retry=_retry_notice) as client:
@@ -340,13 +364,14 @@ def run_retrieve(
     user_id: str | None = None,
     agent_id: str | None = None,
     session_id: str | None = None,
+    api_key: str | None = None,
 ) -> int:
     empty = _reject_empty("query", query)
     if empty is not None:
         return empty
-    got = _token_and_space(space)
-    if got is None:
-        return 1
+    got = _credential(space, api_key)
+    if isinstance(got, int):
+        return got
     token, space = got
     # Only what the caller named: an unset filter is omitted, never sent as a
     # default, so a bare `anona retrieve` sends exactly what it always has.
@@ -385,13 +410,13 @@ def run_retrieve(
     return 0
 
 
-def run_reason(base_url: str, query: str, space: str | None) -> int:
+def run_reason(base_url: str, query: str, space: str | None, *, api_key: str | None = None) -> int:
     empty = _reject_empty("question", query)
     if empty is not None:
         return empty
-    got = _token_and_space(space)
-    if got is None:
-        return 1
+    got = _credential(space, api_key)
+    if isinstance(got, int):
+        return got
     token, space = got
     # A synthesis is an agent loop over the space, not a lookup: it runs tens
     # of seconds and sometimes past a minute. Without this the command looks
