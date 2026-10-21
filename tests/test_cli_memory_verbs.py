@@ -345,7 +345,13 @@ def test_server_error_is_a_message_not_a_traceback(tmp_path):
         srv.shutdown(); srv.server_close()
         rc, out, err = run_main(["record", "x"])
         assert rc == 1, rc
-        assert "anona:" in err and "HTTP 503" in err, err
+        # NOT "the server answered HTTP 503": the server is shut down, so no
+        # server answered. The SDK gives a transport failure an informational
+        # 503 so one `except` catches everything, and reporting that verbatim
+        # pointed people at the wrong end of the wire.
+        assert "could not reach" in err, err
+        assert "refused" in err.lower(), err
+        assert "HTTP 503" not in err, err
         assert "Traceback" not in err, err
         print("OK")
     """, tmp_path))
@@ -494,7 +500,135 @@ def test_reason_server_error_is_a_message_not_a_traceback(tmp_path):
         srv.shutdown(); srv.server_close()
         rc, out, err = run_main(["reason", "x"])
         assert rc == 1, rc
-        assert "anona:" in err and "HTTP 503" in err, err
+        # NOT "the server answered HTTP 503": the server is shut down, so no
+        # server answered. The SDK gives a transport failure an informational
+        # 503 so one `except` catches everything, and reporting that verbatim
+        # pointed people at the wrong end of the wire.
+        assert "could not reach" in err, err
+        assert "refused" in err.lower(), err
+        assert "HTTP 503" not in err, err
+        assert "Traceback" not in err, err
+        print("OK")
+    """, tmp_path))
+
+
+# --- ANO-428: what a failure looks like, and what it exits with -------------
+#
+# Three different things used to print as "the server answered HTTP N" and
+# exit 1: a refused connection, a 422 the caller could fix, and a real server
+# error. An agent scripting on the exit code and parsing stderr could tell
+# none of them apart.
+
+
+def test_a_refused_connection_is_not_reported_as_an_http_answer(tmp_path):
+    ok(_run("""
+        creds(temp_hours=60)
+        srv.shutdown(); srv.server_close()
+        rc, out, err = run_main(["record", "x"])
+        assert rc == 1, rc
+        assert "could not reach" in err, err
+        assert "refused" in err.lower(), err
+        # The SDK's informational 503 must not be read back as an answer.
+        assert "HTTP 503" not in err and "the server answered" not in err, err
+        print("OK")
+    """, tmp_path))
+
+
+def test_an_api_error_reports_its_code_not_a_python_dict(tmp_path):
+    # The code is the documented, stable handle; it used to be buried inside a
+    # dict repr -- single quotes and all, so neither the JSON the docs show
+    # nor anything a script can read.
+    ok(_run("""
+        creds(temp_hours=60)
+        def do_POST(self):
+            self.rfile.read(int(self.headers["content-length"]))
+            data = json.dumps({"error": {"code": "validation_error",
+                "message": "Request validation failed",
+                "errors": [{"loc": ["body", "content"],
+                            "msg": "String should have at least 1 character"}],
+                "request_id": "req_abc123"}}).encode()
+            self.send_response(422)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        H.do_POST = do_POST
+        rc, out, err = run_main(["record", "x"])
+        assert rc == 1, rc
+        assert err.startswith("anona: validation_error:"), err
+        assert "content: String should have at least 1 character" in err, err
+        assert "request_id req_abc123" in err, err
+        # No Python repr: the giveaway is the dict's own punctuation.
+        assert "{'" not in err and "'code'" not in err, err
+        print("OK")
+    """, tmp_path))
+
+
+def test_a_retry_says_so_while_it_waits(tmp_path):
+    # Two rate-limit waits were 6 seconds of total silence, which reads as a
+    # hung command -- and the obvious reaction, Ctrl-C, throws away the
+    # attempt that was about to succeed.
+    ok(_run("""
+        creds(temp_hours=60)
+        STATE = {"n": 0}
+        def do_POST(self):
+            self.rfile.read(int(self.headers["content-length"]))
+            STATE["n"] += 1
+            if STATE["n"] <= 2:
+                data = json.dumps({"error": {"code": "rate_limited"}}).encode()
+                self.send_response(429)
+                self.send_header("retry-after", "1")
+            else:
+                data = json.dumps({"memory_ids": ["m1"], "status": "stored"}).encode()
+                self.send_response(201)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        H.do_POST = do_POST
+        rc, out, err = run_main(["record", "x"])
+        assert rc == 0, (rc, err)
+        assert err.count("rate limited, retrying in") == 2, err
+        assert "(1/2)" in err and "(2/2)" in err, err
+        # The notices are stderr, so a piped stdout still carries only the result.
+        assert "retrying" not in out, out
+        print("OK")
+    """, tmp_path))
+
+
+def test_empty_input_is_refused_locally_and_costs_nothing(tmp_path):
+    # A metered round trip to be told what we already know. Exit 2, not 1: the
+    # request was never made, so this is a usage mistake, not a failed call.
+    ok(_run("""
+        creds(temp_hours=60)
+        for argv, word in ((["record", ""], "memory"),
+                           (["retrieve", "   "], "query"),
+                           (["reason", ""], "question")):
+            rc, out, err = run_main(argv)
+            assert rc == 2, (argv, rc)
+            assert f"the {word} is empty" in err, (argv, err)
+            assert SEEN == [], "nothing may be sent: %r" % SEEN
+        print("OK")
+    """, tmp_path))
+
+
+def test_a_server_error_with_no_envelope_still_reports_its_status(tmp_path):
+    # Not every failure is one of ours: an edge page or a proxy answers with
+    # no envelope and so no code, and the status is then all there is.
+    ok(_run("""
+        creds(temp_hours=60)
+        def do_POST(self):
+            self.rfile.read(int(self.headers["content-length"]))
+            data = b"<html>502 Bad Gateway</html>"
+            self.send_response(500)
+            self.send_header("content-type", "text/html")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        H.do_POST = do_POST
+        rc, out, err = run_main(["record", "x"])
+        assert rc == 1, rc
+        assert "HTTP 500" in err, err
         assert "Traceback" not in err, err
         print("OK")
     """, tmp_path))
@@ -625,3 +759,29 @@ def test_retrieve_rejects_a_bad_limit_or_score_as_usage(tmp_path):
         assert SEEN == [], SEEN
         print("OK")
     """), tmp_path))
+
+
+def test_a_hostile_error_code_cannot_forge_cli_output(tmp_path):
+    # `error.code` is server text on its way to a terminal and nothing
+    # constrains it to the documented vocabulary, so it goes through the same
+    # sanitizer as memory content, ids and messages. Raw, an ESC sequence here
+    # could erase the line and rewrite what the CLI appeared to say.
+    ok(_run("""
+        creds(temp_hours=60)
+        def do_POST(self):
+            self.rfile.read(int(self.headers["content-length"]))
+            evil = "nope\\x1b[2K\\x1b[1Gstored: verified OK\\x9b31m\\r"
+            data = json.dumps({"error": {"code": evil, "message": "m"}}).encode()
+            self.send_response(400)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        H.do_POST = do_POST
+        rc, out, err = run_main(["record", "x"])
+        assert rc == 1, rc
+        for ch in ("\\x1b", "\\x9b", "\\r"):
+            assert ch not in err, repr(err)
+        assert "stored: verified OK" in err, repr(err)
+        print("OK")
+    """, tmp_path))

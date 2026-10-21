@@ -27,6 +27,13 @@ def _min_score(value: str) -> float:
     return x
 
 
+# It said "required when signed in", which is backwards: these verbs refuse a
+# signed-in credential outright (memory._token_and_space), so the one state in
+# which it was described as required is the state in which the command does
+# not run at all. A temporary profile has exactly one space.
+_SPACE_HELP = "Space to {verb} (temporary profile only; defaults to `default`)"
+
+
 def _parser() -> argparse.ArgumentParser:
     # Both flags are accepted before OR after the command, like the Node CLI.
     # SUPPRESS matters: with a real default on the subparser's copy, argparse
@@ -51,14 +58,24 @@ def _parser() -> argparse.ArgumentParser:
         description="Anona Memory: sign in, connect MCP clients, and record, retrieve or reason over memories.",
         parents=[common],
     )
+    # The docs tell people to check they have 0.20.0 or later, and `pip
+    # install` over an older copy reports success while leaving it in place --
+    # so "which version am I running" is the first question a broken install
+    # asks, and argparse answered it with a usage error on exit 2.
+    p.add_argument(
+        "--version",
+        action="version",
+        version=f"anona {_version()}",
+        help="print the installed version and exit",
+    )
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("start", parents=[common], help="Create a temporary profile with no account")
     rec = sub.add_parser("record", parents=[common], help="Store a memory (no MCP needed)")
     rec.add_argument("content", help="The fact to store, as a complete sentence")
-    rec.add_argument("--space", default=None, help="Space to write to (required when signed in)")
+    rec.add_argument("--space", default=None, help=_SPACE_HELP.format(verb="write to"))
     ret = sub.add_parser("retrieve", parents=[common], help="Search your memories (no MCP needed)")
     ret.add_argument("query", help="What to search for")
-    ret.add_argument("--space", default=None, help="Space to search (required when signed in)")
+    ret.add_argument("--space", default=None, help=_SPACE_HELP.format(verb="search"))
     ret.add_argument("--json", action="store_true", help="Print the API response as one JSON document")
     ret.add_argument("--limit", type=_limit, default=None, help="At most this many memories (1-100, default 10)")
     ret.add_argument(
@@ -71,7 +88,7 @@ def _parser() -> argparse.ArgumentParser:
         ret.add_argument(f"--{scope}-id", default=None, help=f"Only memories recorded with this {scope}_id")
     rsn = sub.add_parser("reason", parents=[common], help="Ask a question and get a synthesized answer")
     rsn.add_argument("query", help="The question to answer from your memories")
-    rsn.add_argument("--space", default=None, help="Space to reason over (required when signed in)")
+    rsn.add_argument("--space", default=None, help=_SPACE_HELP.format(verb="reason over"))
     sub.add_parser("login", parents=[common], help="Approve access in a browser and store a credential")
     lo = sub.add_parser("logout", parents=[common], help="Delete the stored credential")
     lo.add_argument(
@@ -84,6 +101,24 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
+def _version() -> str:
+    """The version of the code that is actually running.
+
+    `anona.__version__`, NOT `importlib.metadata.version("anona")`. The
+    metadata answers for the installed *distribution*, which is a different
+    question and can give a different answer: run from a source tree that is
+    ahead of (or simply unrelated to) an installed copy and the metadata
+    reports the installed one. Measured here during ANO-428 -- a checkout at
+    0.20.4 printed `anona 0.13.1`, which is the worst possible answer for a
+    flag whose entire job is to tell someone which code they have.
+    `__version__` is pinned to pyproject.toml by a test, so it cannot drift
+    from the release either.
+    """
+    from anona import __version__
+
+    return __version__
+
+
 def _default_base_url() -> str:
     return os.environ.get("ANONA_BASE_URL") or store.DEFAULT_BASE_URL
 
@@ -93,16 +128,35 @@ def _refuse(exc: target.TargetError) -> int:
     return 1
 
 
-def _status() -> int:
+# An expired profile is gone and so is everything in it. It read as success,
+# which is how a scripted `anona status && anona record ...` walked straight
+# into a write with no credential behind it.
+EXPIRED_EXIT = 1
+
+
+def _status(requested: str | None = None) -> int:
     c = store.load()
     if c is None:
         print("Not logged in. Run `anona login`.")
         return 1
+    # `--base-url` was read and then ignored here, so `anona status --base-url
+    # https://other` described the stored deployment while naming another --
+    # the one shape of wrong answer a status command must never give. Every
+    # other credential-holding command already refuses a mismatch; this is the
+    # same rule, not a new one.
+    if requested is not None:
+        try:
+            target.resolve(requested, c.base_url)
+        except target.TargetError as exc:
+            return _refuse(exc)
     if c.temp_token and c.temp_expires_at is not None:
         # The only warning an unclaimed profile gets: it has no email address.
         print(f"Temporary profile for {c.base_url}: {temp.describe_deadline(c.temp_expires_at)}.")
         if c.temp_expires_at > time.time():
             print("Run `anona login` to claim it before then.")
+        elif not c.signed_in:
+            # Expired, and nothing else to fall back on.
+            return EXPIRED_EXIT
         if not c.signed_in:
             return 0
     elif not c.signed_in:
@@ -210,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Logged out.")
         return 0
     if args.command == "status":
-        return _status()
+        return _status(requested)
     # mcp: a credential belongs to the deployment that issued it. Naming
     # another is refused on stderr; stdout is the client's JSON-RPC stream.
     stored = store.load()

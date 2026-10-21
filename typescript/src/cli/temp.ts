@@ -56,10 +56,14 @@ export async function runStart(
   if (existing !== null && liveTempToken(existing) !== null) {
     // Creation is rate limited per address, and a second profile would orphan
     // the first one's memories.
+    // Non-zero, because nothing was created: a script running `anona start`
+    // to guarantee itself a fresh profile got exit 0 and a profile belonging
+    // to an earlier run. Refusal, not success -- the same code as the
+    // signed-in refusal just above.
     io.stdout.write("A temporary profile already exists; not creating another.\n");
     io.stdout.write(`It ${describeDeadline(existing.tempExpiresAt as number)}.\n`);
     io.stdout.write("Run `anona login` before then to keep it.\n");
-    return 0;
+    return 1;
   }
   let deadline: number;
   try {

@@ -66,10 +66,15 @@ def run_start(base_url: str) -> int:
     ):
         # Creation is rate limited per address, and a second profile would
         # orphan the first one's memories.
+        #
+        # Non-zero, because nothing was created: a script that runs `anona
+        # start` to guarantee itself a fresh profile got exit 0 and a profile
+        # belonging to someone else's earlier run. It is refusal, not success,
+        # and it is the same exit code as the signed-in refusal just above.
         print("A temporary profile already exists; not creating another.")
         print(f"It {describe_deadline(existing.temp_expires_at)}.")
         print("Run `anona login` before then to keep it.")
-        return 0
+        return 1
     try:
         try:
             resp = httpx.post(base_url.rstrip("/") + "/v1/temp/profiles", timeout=30)
