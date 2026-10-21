@@ -124,7 +124,7 @@ def _token_and_space(space: str | None) -> tuple[str, str] | int:
         print(
             "anona: the `anona login` credential is for MCP (`anona mcp`) only; "
             "the REST API refuses it.\n"
-            f"`record`, `retrieve` and `reason` need {_KEY_ROUTE};\n"
+            f"`record`, `retrieve`, `reason` and the other data commands need {_KEY_ROUTE};\n"
             "or a temporary profile (`anona start`).",
             file=sys.stderr,
         )
