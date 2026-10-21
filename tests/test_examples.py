@@ -26,6 +26,7 @@ line names — is absent, the same way the adapter suites do.
 """
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import subprocess
@@ -298,3 +299,100 @@ def test_every_example_is_listed_in_the_readme():
     on_disk = sorted(p.name for p in _EXAMPLES.glob("*.py"))
     unlinked = [name for name in on_disk if name not in readme]
     assert not unlinked, f"examples/ scripts nobody links to: {unlinked}"
+
+
+def _deleting_examples() -> list[Path]:
+    """Every example script that destroys a space."""
+    out = []
+    for path in sorted(_EXAMPLES.glob("*.py")):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "delete_space"
+            ):
+                out.append(path)
+                break
+    return out
+
+
+def test_an_example_never_deletes_a_space_its_caller_named():
+    """A destructive script must not take its space id from the environment.
+
+    Every scenario script ends in `delete_space`, so whatever names that space
+    is what gets destroyed. They used to read `ANONA_SPACE_ID` — which the
+    README told people to export — so `ANONA_SPACE_ID=my-space` plus any
+    example deleted `my-space`, in production, with no prompt. The id is
+    generated per run instead, and this asserts the two can never meet again.
+    """
+    assert _deleting_examples(), "no example calls delete_space; did the API change?"
+
+    offenders = [
+        path.name
+        for path in _deleting_examples()
+        if "ANONA_SPACE_ID" in path.read_text()
+    ]
+    assert not offenders, (
+        "these examples delete a space whose id can come from the caller's "
+        f"environment: {offenders}"
+    )
+
+
+def test_a_deleting_example_generates_its_space_id_per_run():
+    """Not just caller-proof — a fresh id, so two runs never fight.
+
+    A constant id would satisfy the test above while still letting one run
+    delete the space another run is mid-way through using.
+    """
+    stale = [
+        path.name
+        for path in _deleting_examples()
+        if "uuid.uuid4()" not in path.read_text()
+    ]
+    assert not stale, (
+        f"these examples delete a space with a fixed id: {stale} — generate it "
+        "per run with uuid.uuid4() so concurrent runs cannot collide"
+    )
+
+
+def test_an_example_only_ever_deletes_the_space_it_built():
+    """The deleted name must be the variable the script derived itself.
+
+    `space_routing.py` is the reason this is separate: it also PUTs a charter
+    and topics onto its space, so a caller-supplied id there rewrote their
+    routing configuration before anything was deleted. Both halves have to
+    read from a locally-built id.
+    """
+    for path in _deleting_examples():
+        tree = ast.parse(path.read_text())
+        # Names bound from f-strings at module level: the generated space ids.
+        built = {
+            target.id
+            for node in tree.body
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.JoinedStr)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        }
+        assert built, f"{path.name} builds no space id of its own"
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "delete_space"
+                and node.args
+            ):
+                arg = node.args[0]
+                # Either the generated name, or a loop variable over the
+                # generated names (space_routing deletes two).
+                if isinstance(arg, ast.Name) and arg.id not in built:
+                    assert any(
+                        isinstance(n, ast.For)
+                        and isinstance(n.target, ast.Name)
+                        and n.target.id == arg.id
+                        and any(
+                            isinstance(e, ast.Name) and e.id in built
+                            for e in ast.walk(n.iter)
+                        )
+                        for n in ast.walk(tree)
+                    ), f"{path.name} deletes '{arg.id}', which it did not build"

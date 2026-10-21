@@ -10,11 +10,15 @@ answer across everything the space holds. `get_context` is `retrieve` shaped
 for prompts — one ready-to-paste string instead of ranked rows.
 """
 import os
+import uuid
 
 from anona import AnonaClient
 
 client = AnonaClient(api_key=os.environ["ANONA_API_KEY"])
-space = os.environ.get("ANONA_SPACE_ID", "examples-basics")
+# A fresh space per run, deleted at the end. The id is generated here and
+# never read from the environment: this script deletes the space it is about
+# to create, so taking the name from a caller would make it delete theirs.
+space = f"examples-basics-{uuid.uuid4().hex[:8]}"
 
 client.record(space_id=space, content="Dana leads the mobile team and prefers RFC-style proposals.")
 client.record(space_id=space, content="The mobile team ships on a two-week train, cutting on Mondays.")

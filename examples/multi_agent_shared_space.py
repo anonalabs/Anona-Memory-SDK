@@ -9,11 +9,15 @@ writer agent can share one space, keep their own working notes separate, and
 still hand knowledge across when a read asks without a scope.
 """
 import os
+import uuid
 
 from anona import AnonaClient
 
 client = AnonaClient(api_key=os.environ["ANONA_API_KEY"])
-space = os.environ.get("ANONA_SPACE_ID", "examples-multi-agent")
+# A fresh space per run, deleted at the end. The id is generated here and
+# never read from the environment: this script deletes the space it is about
+# to create, so taking the name from a caller would make it delete theirs.
+space = f"examples-multi-agent-{uuid.uuid4().hex[:8]}"
 
 # The researcher stores what it found, under its own agent scope.
 client.record(

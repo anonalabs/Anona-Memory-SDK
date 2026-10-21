@@ -11,12 +11,16 @@ fresh message list, and the assistant still knows.
 """
 import os
 import time
+import uuid
 
 from openai import OpenAI
 
 from anona import AnonaClient
 
-space = os.environ.get("ANONA_SPACE_ID", "examples-proxy")
+# A fresh space per run, deleted at the end. The id is generated here and
+# never read from the environment: this script deletes the space it is about
+# to create, so taking the name from a caller would make it delete theirs.
+space = f"examples-proxy-{uuid.uuid4().hex[:8]}"
 base_url = os.environ.get("ANONA_BASE_URL", "https://api.anonalabs.com")
 
 llm = OpenAI(

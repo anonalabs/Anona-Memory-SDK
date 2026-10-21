@@ -52,8 +52,27 @@ import type {
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 /** Mirrors the API's total-per-request cap. */
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+/**
+ * Video gets its own, higher per-file cap: 25 MB is a few seconds of it at any
+ * real bitrate. Mirroring only the general cap was worse than no check at all —
+ * it rejected locally a clip the API would have accepted, naming a limit that
+ * does not apply to video, so the modality the higher cap exists for could not
+ * be reached through the SDK.
+ */
+export const MAX_VIDEO_BYTES = 64 * 1024 * 1024;
+/** Total-per-request cap for a request that carries any video. */
+export const MAX_VIDEO_UPLOAD_BYTES = 100 * 1024 * 1024;
 /** Mirrors the API's per-request file count cap. */
 export const MAX_FILES = 20;
+
+/**
+ * Extensions the video caps apply to. Matched on the filename suffix, because
+ * that is what the API dispatches on — not the content type a client sends.
+ */
+export const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".mkv"];
+
+const isVideo = (filename: string): boolean =>
+  VIDEO_EXTENSIONS.some((ext) => filename.toLowerCase().endsWith(ext));
 
 export interface UploadFile {
   /** File bytes. A Node Buffer is a Uint8Array, so it works unchanged. */
@@ -63,7 +82,7 @@ export interface UploadFile {
 
 export interface UploadOptions {
   spaceId: string;
-  /** 1–20 files, 25 MB each, 50 MB total. */
+  /** 1–20 files; 25 MB each and 50 MB total, or 64 MB / 100 MB for video. */
   files: UploadFile[];
   /**
    * Retain strategy. Defaults server-side to the space's file-RAG strategy,
@@ -1202,21 +1221,28 @@ export class Anona {
       throw new Error(`Anona: at most ${MAX_FILES} files per upload, got ${files.length}.`);
     }
 
+    // A request carrying any video is allowed the larger total, so one clip
+    // does not have to fit inside the document budget. Decided over all the
+    // filenames before anything is measured, exactly as the API decides it.
+    const hasVideo = files.some((file) => isVideo(file.filename));
+    const totalCap = hasVideo ? MAX_VIDEO_UPLOAD_BYTES : MAX_UPLOAD_BYTES;
+
     let total = 0;
     for (const file of files) {
       const size = byteLength(file.data);
-      if (size > MAX_FILE_BYTES) {
+      const cap = isVideo(file.filename) ? MAX_VIDEO_BYTES : MAX_FILE_BYTES;
+      if (size > cap) {
         throw new Error(
           `Anona: '${file.filename}' is ${Math.floor(size / 1024 / 1024)} MB, over the ` +
-            `${MAX_FILE_BYTES / 1024 / 1024} MB per-file limit.`,
+            `${cap / 1024 / 1024} MB per-file limit.`,
         );
       }
       total += size;
     }
-    if (total > MAX_UPLOAD_BYTES) {
+    if (total > totalCap) {
       throw new Error(
         `Anona: upload totals ${Math.floor(total / 1024 / 1024)} MB, over the ` +
-          `${MAX_UPLOAD_BYTES / 1024 / 1024} MB per-request limit.`,
+          `${totalCap / 1024 / 1024} MB per-request limit.`,
       );
     }
 

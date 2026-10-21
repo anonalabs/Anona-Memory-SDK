@@ -10,11 +10,15 @@ only see that customer. Scoped search is strict — it never returns another
 user's memories, nor memories stored without a scope.
 """
 import os
+import uuid
 
 from anona import AnonaClient
 
 client = AnonaClient(api_key=os.environ["ANONA_API_KEY"])
-space = os.environ.get("ANONA_SPACE_ID", "examples-support-bot")
+# A fresh space per run, deleted at the end. The id is generated here and
+# never read from the environment: this script deletes the space it is about
+# to create, so taking the name from a caller would make it delete theirs.
+space = f"examples-support-bot-{uuid.uuid4().hex[:8]}"
 
 # Two customers talk to the bot on the same day.
 client.record(space_id=space, content="Alice's subscription renews on the 3rd of each month.", user_id="alice")

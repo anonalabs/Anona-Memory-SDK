@@ -18,6 +18,7 @@ Routing matches against each space's profile, which is REST-only today — the
 SDK does not model it yet, so this script sets it with a plain HTTP call.
 """
 import os
+import uuid
 
 import httpx
 
@@ -27,7 +28,10 @@ BASE_URL = os.environ.get("ANONA_BASE_URL", "https://api.anonalabs.com")
 KEY = os.environ["ANONA_API_KEY"]
 
 client = AnonaClient(api_key=KEY, base_url=BASE_URL)
-billing = os.environ.get("ANONA_SPACE_ID", "examples-routing-billing")
+# A fresh space per run, deleted at the end. The id is generated here and
+# never read from the environment: this script deletes the space it is about
+# to create, so taking the name from a caller would make it delete theirs.
+billing = f"examples-routing-billing-{uuid.uuid4().hex[:8]}"
 oncall = f"{billing}-oncall"
 
 for space in (billing, oncall):

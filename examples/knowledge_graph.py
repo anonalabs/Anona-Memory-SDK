@@ -10,11 +10,15 @@ same memory, weighted by how often. Edges are not typed predicates; read them
 as "these keep showing up together", which is exactly what a UI needs.
 """
 import os
+import uuid
 
 from anona import AnonaClient
 
 client = AnonaClient(api_key=os.environ["ANONA_API_KEY"])
-space = os.environ.get("ANONA_SPACE_ID", "examples-graph")
+# A fresh space per run, deleted at the end. The id is generated here and
+# never read from the environment: this script deletes the space it is about
+# to create, so taking the name from a caller would make it delete theirs.
+space = f"examples-graph-{uuid.uuid4().hex[:8]}"
 
 for fact in [
     "Mira owns the payments service and reviews every schema change.",
