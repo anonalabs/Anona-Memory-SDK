@@ -29,7 +29,7 @@ class H(BaseHTTPRequestHandler):
             out = {"results": [{"content": "the user prefers pnpm"}]}
         else:
             # The real /v1/record body. The stub used to answer
-            # {"id": "m1", "status": "ok"} -- a shape the API never sends,
+            # {"id": "m1", "status": "ok"} -- a shape the gateway never sends,
             # which is how every record case here passed while the verb was
             # unable to tell a stored write from an empty one.
             out = {"memory_id": "m1", "memory_ids": ["m1"], "status": "stored"}
@@ -272,7 +272,8 @@ def test_temp_profile_retrieve_prints_results(tmp_path):
         path, auth, body = SEEN[-1]
         assert body["space_id"] == "default", body
         assert body["query"] == "package manager", body
-        assert "1. the user prefers pnpm" in out, out
+        # No id or score in this stub row, so each prints as "-".
+        assert "1. -  -  the user prefers pnpm" in out, out
         print("OK")
     """, tmp_path))
 
@@ -497,3 +498,130 @@ def test_reason_server_error_is_a_message_not_a_traceback(tmp_path):
         assert "Traceback" not in err, err
         print("OK")
     """, tmp_path))
+
+
+# --- retrieve is usable by an agent ---------------------------------------
+
+_ROWS_SERVER = """
+ROWS = [
+    {"memory_id": "3f2a9c1e-0000-4000-8000-000000000001", "content": "the user prefers pnpm",
+     "relevance_score": 1.0978, "created_at": "2026-10-19T10:00:00Z", "timestamp": None,
+     "user_id": "alice", "agent_id": None, "session_id": None, "memory_type": "world"},
+    {"memory_id": "9b7d0e44-0000-4000-8000-000000000002", "content": "builds run on Node 22",
+     "relevance_score": 0.00006, "created_at": "2026-10-19T10:01:00Z", "timestamp": None,
+     "user_id": "alice", "agent_id": None, "session_id": None, "memory_type": "observation"},
+]
+EXTRA = {}
+def do_POST(self):
+    body = json.loads(self.rfile.read(int(self.headers["content-length"])) or b"{}")
+    SEEN.append((self.path, self.headers.get("authorization"), body))
+    data = json.dumps({"results": ROWS, **EXTRA}).encode()
+    self.send_response(200)
+    self.send_header("content-type", "application/json")
+    self.send_header("content-length", str(len(data)))
+    self.end_headers()
+    self.wfile.write(data)
+H.do_POST = do_POST
+"""
+
+
+def _rows(body):
+    return _ROWS_SERVER + textwrap.dedent(body)
+
+
+def test_retrieve_flags_pass_straight_through(tmp_path):
+    ok(_run(_rows("""
+        creds(temp_hours=60)
+        rc, out, err = run_main(["retrieve", "pm", "--limit", "3", "--min-score", "0.1",
+                                 "--user-id", "alice", "--agent-id", "coder", "--session-id", "s1"])
+        assert rc == 0, (rc, err)
+        body = SEEN[-1][2]
+        assert (body["limit"], body["min_score"]) == (3, 0.1), body
+        assert (body["user_id"], body["agent_id"], body["session_id"]) == ("alice", "coder", "s1"), body
+        print("OK")
+    """), tmp_path))
+
+
+def test_retrieve_without_flags_sends_no_floor_and_no_scope(tmp_path):
+    ok(_run(_rows("""
+        creds(temp_hours=60)
+        rc, _, err = run_main(["retrieve", "pm"])
+        assert rc == 0, (rc, err)
+        body = SEEN[-1][2]
+        for k in ("min_score", "user_id", "agent_id", "session_id"):
+            assert k not in body, (k, body)
+        print("OK")
+    """), tmp_path))
+
+
+def test_retrieve_json_is_the_api_rows_and_nothing_else_on_stdout(tmp_path):
+    ok(_run(_rows("""
+        creds(temp_hours=60)
+        rc, out, err = run_main(["retrieve", "pm", "--json"])
+        assert rc == 0, (rc, err)
+        doc = json.loads(out)  # one document: anything else on stdout fails here
+        assert doc == {"results": ROWS}, doc
+        print("OK")
+    """), tmp_path))
+
+
+def test_retrieve_json_carries_searched_on_a_routed_read(tmp_path):
+    ok(_run(_rows("""
+        creds(temp_hours=60)
+        EXTRA["searched"] = [{"space_id": "default", "confidence": 0.9, "stage": "rule", "reason": "r"}]
+        rc, out, err = run_main(["retrieve", "pm", "--json"])
+        assert rc == 0, (rc, err)
+        assert json.loads(out)["searched"] == EXTRA["searched"], out
+        print("OK")
+    """), tmp_path))
+
+
+def test_retrieve_json_with_no_match_is_still_a_document(tmp_path):
+    ok(_run(_rows("""
+        creds(temp_hours=60)
+        ROWS.clear()
+        rc, out, err = run_main(["retrieve", "pm", "--json"])
+        assert rc == 0, (rc, err)
+        assert json.loads(out) == {"results": []}, out
+        print("OK")
+    """), tmp_path))
+
+
+def test_retrieve_json_cannot_carry_a_terminal_escape(tmp_path):
+    ok(_run(_rows("""
+        creds(temp_hours=60)
+        ROWS[0]["content"] = "benign\\x1b[2Kspoofed\\x9b31m\\r\\n"
+        rc, out, err = run_main(["retrieve", "pm", "--json"])
+        assert rc == 0, (rc, err)
+        for ch in ("\\x1b", "\\x9b", "\\r"):
+            assert ch not in out, repr(out)
+        # Escaped, not dropped: the document still round-trips to the real content.
+        assert json.loads(out)["results"][0]["content"] == ROWS[0]["content"]
+        print("OK")
+    """), tmp_path))
+
+
+def test_retrieve_text_shows_score_and_short_id(tmp_path):
+    ok(_run(_rows("""
+        creds(temp_hours=60)
+        rc, out, err = run_main(["retrieve", "pm"])
+        assert rc == 0, (rc, err)
+        lines = out.splitlines()
+        assert lines[0] == "1. 1.1  3f2a9c1e  the user prefers pnpm", lines
+        assert lines[1] == "2. 6e-05  9b7d0e44  builds run on Node 22", lines
+        print("OK")
+    """), tmp_path))
+
+
+def test_retrieve_rejects_a_bad_limit_or_score_as_usage(tmp_path):
+    ok(_run(_rows("""
+        creds(temp_hours=60)
+        for argv in (["--limit", "0"], ["--limit", "101"], ["--limit", "x"], ["--min-score", "-1"], ["--min-score", "nan"]):
+            try:
+                rc, out, err = run_main(["retrieve", "pm"] + argv)
+            except SystemExit as e:
+                rc = e.code
+            assert rc == 2, (argv, rc)
+        assert SEEN == [], SEEN
+        print("OK")
+    """), tmp_path))
