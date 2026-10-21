@@ -1,4 +1,6 @@
-"""The `anona` command: start, login, logout, status, mcp, record, retrieve, reason."""
+"""The `anona` command: start, login, logout, status, mcp, record, retrieve,
+reason, and the resource verbs in verbs.py (spaces, memories, jobs, profile,
+model, user-profile, usage)."""
 
 from __future__ import annotations
 
@@ -10,7 +12,7 @@ import sys
 import time
 from datetime import datetime
 
-from . import config_env, credential, login, proxy, store, target, temp, tokens
+from . import config_env, credential, login, proxy, store, target, temp, tokens, verbs
 
 
 def _limit(value: str) -> int:
@@ -119,7 +121,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     p = _Parser(
         prog="anona",
-        description="Anona Memory: sign in, connect MCP clients, and record, retrieve or reason over memories.",
+        description=(
+            "Anona Memory: sign in, connect MCP clients, record, retrieve or reason over "
+            "memories, and manage spaces, memories and jobs."
+        ),
         parents=[common],
     )
     # The docs tell people to check they have 0.20.0 or later, and `pip
@@ -211,6 +216,7 @@ def _parser() -> argparse.ArgumentParser:
         help="fast lets a current memory model answer alone; thorough always reads the memories under it",
     )
     _scope_flags(rsn, "Reason only over memories recorded with")
+    verbs.add_parsers(sub, common, _SPACE_HELP, _API_KEY_HELP, _JSON_HELP)
     sub.add_parser("login", parents=[common], help="Approve access in a browser and store a credential")
     lo = sub.add_parser("logout", parents=[common], help="Delete the stored credential")
     lo.add_argument(
@@ -269,6 +275,52 @@ def _refuse_key(exc: target.TargetError) -> int:
     # vector this refusal exists for, so it is sanitized like server text.
     print(f"anona: {_safe(exc)}", file=sys.stderr)
     return AUTH_EXIT
+
+
+def _data_credential(
+    args: argparse.Namespace,
+    base_url: str | None,
+    requested: str | None,
+    *,
+    need_space: bool,
+) -> tuple[str, str | None, str | None] | int:
+    """(base URL, space, API key or None) for a data-plane verb, or the exit code.
+
+    Local only: config.env, the environment and the stored file are read, and
+    nothing is sent. With an API key the host is bound by target.for_api_key
+    and, when the verb addresses a space, one must be named; without one the
+    stored temporary profile's deployment is used and its space defaults later
+    (memory._token_and_space), once the token is read.
+    """
+    config = config_env.load()
+    key = credential.find_api_key(args.api_key, config)
+    space = getattr(args, "space", None)
+    if key is None:
+        held = store.load()
+        try:
+            base = target.resolve(requested, held.base_url if held else None)
+        except target.TargetError as exc:
+            # A credential refused a host is an auth failure here.
+            return _refuse_key(exc)
+        return base, space, None
+    if need_space:
+        # An account can hold many spaces and none is implied: picking one
+        # for the caller is how a write lands somewhere nobody looks.
+        space = credential.find_space(space, config)
+        if space is None:
+            print(
+                "anona: an API key needs a space. Pass --space, or set "
+                "ANONA_SPACE_ID (in the environment or ~/.anona/config.env). "
+                "Nothing was sent.",
+                file=sys.stderr,
+            )
+            return USAGE_EXIT
+    url, url_source = credential.find_base_url(base_url, config)
+    try:
+        base = target.for_api_key(url, url_source, key.source)
+    except target.TargetError as exc:
+        return _refuse_key(exc)
+    return base, space, key.key
 
 
 # An expired profile is gone and so is everything in it. It read as success,
@@ -384,35 +436,10 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return USAGE_EXIT
-        config = config_env.load()
-        key = credential.find_api_key(args.api_key, config)
-        space = args.space
-        api_key = None
-        if key is not None:
-            # An account can hold many spaces and none is implied: picking
-            # one for the caller is how a write lands somewhere nobody looks.
-            space = credential.find_space(args.space, config)
-            if space is None:
-                print(
-                    "anona: an API key needs a space. Pass --space, or set "
-                    "ANONA_SPACE_ID (in the environment or ~/.anona/config.env). "
-                    "Nothing was sent.",
-                    file=sys.stderr,
-                )
-                return USAGE_EXIT
-            url, url_source = credential.find_base_url(base_url, config)
-            try:
-                base = target.for_api_key(url, url_source, key.source)
-            except target.TargetError as exc:
-                return _refuse_key(exc)
-            api_key = key.key
-        else:
-            held = store.load()
-            try:
-                base = target.resolve(requested, held.base_url if held else None)
-            except target.TargetError as exc:
-                # A credential refused a host is an auth failure here.
-                return _refuse_key(exc)
+        got = _data_credential(args, base_url, requested, need_space=True)
+        if isinstance(got, int):
+            return got
+        base, space, api_key = got
         scope = {"user_id": args.user_id, "agent_id": args.agent_id, "session_id": args.session_id}
         if args.command == "record":
             return memory.run_record(
@@ -445,6 +472,19 @@ def main(argv: list[str] | None = None) -> int:
             api_key=api_key,
             **scope,
         )
+    if args.command in verbs.COMMANDS:
+        # Usage first, as above: nothing is looked up or sent for a command
+        # that is wrong.
+        bad = verbs.precheck(args)
+        if bad is not None:
+            return bad
+        got = _data_credential(
+            args, base_url, requested, need_space=verbs.verb_of(args) in verbs.SPACE_VERBS
+        )
+        if isinstance(got, int):
+            return got
+        base, space, api_key = got
+        return verbs.run(args, base, space, api_key)
     if args.command == "login":
         base = base_url or _default_base_url()
         try:

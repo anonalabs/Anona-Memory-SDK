@@ -615,6 +615,14 @@ stdout) and the API's own request fields as flags: `record` takes `-` for stdin,
 takes `--tags`, `--tags-match` and the time filters; `reason` takes `--depth`.
 An unset flag is omitted from the request, never sent as a default.
 
+The same credential reaches the rest of the API through thin wrappers over the
+client: `anona spaces list|create|get`, `anona memories list|edit|delete|history`,
+`anona jobs get|cancel`, `anona profile`, `anona model ID`,
+`anona user-profile USER_ID` and `anona usage`. Each takes `--json` too, and
+prints full ids in plain mode so the next command can use them. The two that
+destroy something, `memories delete` and `jobs cancel`, do nothing without
+`--yes`: they exit 2, say what would have gone, and never prompt.
+
 `retrieve` lists the memories that match. `reason` reads across them and answers
 in prose — ask it when no single memory holds the answer. It is an agent loop
 rather than a lookup, so it takes tens of seconds and says so on stderr while it

@@ -52,6 +52,27 @@ class H(BaseHTTPRequestHandler):
         self.send_header("content-length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+    def _other(self):
+        # The resource verbs (GET / PATCH / DELETE). Same status switch; a
+        # success is an empty object, which every renderer must survive.
+        self.rfile.read(int(self.headers.get("content-length") or 0))
+        SEEN.append((self.path, self.headers.get("authorization"), {}))
+        status = MODE["status"]
+        if status == 401:
+            out = {"error": {"code": "invalid_api_key", "message": "Invalid API key."}}
+        elif status >= 400:
+            out = {"error": {"code": "internal_error", "message": "Something broke."}}
+        else:
+            out = {}
+        data = json.dumps(out).encode()
+        self.send_response(status)
+        if status >= 500:
+            self.send_header("retry-after", "0")
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+    do_GET = do_PATCH = do_DELETE = _other
     def log_message(self, *a): pass
 
 srv = HTTPServer(("127.0.0.1", 0), H)
@@ -455,6 +476,8 @@ def test_status_without_a_key_is_unchanged(tmp_path):
 def test_the_key_never_appears_in_output(tmp_path):
     ok(_run("""
         SECRET = "anona_live_SECRETSECRET"
+        def base_flags(flag):
+            return ["--space", "s", "--base-url", BASE] + flag
         def check(argv, want_rc):
             rc, out, err = run_main(argv)
             assert rc == want_rc, (argv, rc, out, err)
@@ -490,6 +513,50 @@ def test_the_key_never_appears_in_output(tmp_path):
             del os.environ["ANONA_API_KEY"]
             check([verb, "x", "--space", "s", "--base-url", "http://evil.example"] + flag + extra, 4)
             check([verb, "x", "--space", "s", "--base-url", "http://127.0.0.1:1"] + flag + extra, 1)
+        # The resource verbs, the same way. `needs` is whether a missing space
+        # is a usage error; `blank` is the command with its text emptied.
+        resource = [
+            (["spaces", "list"], False, None),
+            (["spaces", "create", "fresh", "--description", "d"], False, ["spaces", "create", " "]),
+            (["spaces", "get", "notes"], False, None),
+            (["memories", "list", "--limit", "5", "--offset", "1", "--q", "x", "--type", "world",
+              "--no-prefer-observations", "--user-id", "u"], True, None),
+            (["memories", "edit", "m1", "--text", "t", "--reason", "r"], True,
+             ["memories", "edit", "m1", "--text", " "]),
+            (["memories", "delete", "m1", "--yes"], True, ["memories", "delete", "m1"]),
+            (["memories", "history", "m1"], True, None),
+            (["jobs", "get", "j1"], True, None),
+            (["jobs", "cancel", "j1", "--yes"], True, ["jobs", "cancel", "j1"]),
+            (["profile"], True, None),
+            (["model", "mm1"], True, None),
+            (["user-profile", "alice", "--limit", "3"], True, None),
+            (["usage"], False, None),
+        ]
+        for argv, needs, blank in resource:
+          for extra in ([], ["--json"]):
+            space = ["--space", "s"] if needs else []
+            MODE["status"] = 200
+            check(argv + space + ["--base-url", BASE] + flag + extra, 0)
+            MODE["status"] = 401
+            check(argv + space + ["--base-url", BASE] + flag + extra, 4)
+            MODE["status"] = 500
+            check(argv + space + ["--base-url", BASE] + flag + extra, 1)
+            if needs:
+                check(argv + ["--base-url", BASE] + flag + extra, 2)
+            if blank:
+                check(blank + space + ["--base-url", BASE] + flag + extra, 2)
+            os.environ["ANONA_API_KEY"] = SECRET
+            check(argv + space + ["--base-url", BASE] + extra, 4)
+            del os.environ["ANONA_API_KEY"]
+            check(argv + space + ["--base-url", "http://evil.example"] + flag + extra, 4)
+            check(argv + space + ["--base-url", "http://127.0.0.1:1"] + flag + extra, 1)
+        # An id pasted from the wrong place is echoed back redacted.
+        check(["memories", "delete", SECRET] + base_flags(flag), 2)
+        check(["jobs", "cancel", SECRET] + base_flags(flag), 2)
+        MODE["status"] = 200
+        check(["memories", "delete", SECRET, "--yes"] + base_flags(flag), 0)
+        check(["memories", "edit", SECRET, "--text", "t"] + base_flags(flag), 0)
+        check(["memories", "list", "--limit", SECRET] + base_flags(flag), 2)
         # A key pasted into the wrong flag is echoed by the usage error, and
         # must come back redacted.
         base = ["--space", "s", "--base-url", BASE] + flag
