@@ -8,7 +8,7 @@ import os
 import sys
 import time
 
-from . import login, proxy, store, target, temp, tokens
+from . import config_env, credential, login, proxy, store, target, temp, tokens
 
 
 def _limit(value: str) -> int:
@@ -27,18 +27,33 @@ def _min_score(value: str) -> float:
     return x
 
 
-# It said "required when signed in", which is backwards: these verbs refuse a
-# signed-in credential outright (memory._token_and_space), so the one state in
-# which it was described as required is the state in which the command does
-# not run at all. A temporary profile has exactly one space.
-_SPACE_HELP = "Space to {verb} (temporary profile only; defaults to `default`)"
+# Not "required when signed in": an `anona login` credential is refused by
+# these verbs outright (memory._token_and_space), so the state that needs a
+# space is an API key, and that is what it says. A temporary profile has
+# exactly one space.
+_SPACE_HELP = (
+    "Space to {verb}. Required with an API key unless ANONA_SPACE_ID is set; "
+    "a temporary profile uses `default`"
+)
+_API_KEY_HELP = (
+    "API key for this command (else $ANONA_API_KEY, else ~/.anona/config.env). "
+    "Visible to other local users in the process list; prefer the variable"
+)
+
+
+class _Parser(argparse.ArgumentParser):
+    """argparse echoes an unrecognised argument verbatim, which for
+    `anona start --api-key <key>` is the key. Errors are redacted first."""
+
+    def error(self, message):  # type: ignore[override]
+        super().error(credential.redact(message))
 
 
 def _parser() -> argparse.ArgumentParser:
     # Both flags are accepted before OR after the command, like the Node CLI.
     # SUPPRESS matters: with a real default on the subparser's copy, argparse
     # overwrites a value given before the command with that default.
-    common = argparse.ArgumentParser(add_help=False)
+    common = _Parser(add_help=False)
     # No default here, so `mcp` can tell "the user said so" from "nobody said
     # anything" to prefer the stored deployment.
     common.add_argument(
@@ -53,7 +68,7 @@ def _parser() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         help="login: only print the URL; do not try to open it",
     )
-    p = argparse.ArgumentParser(
+    p = _Parser(
         prog="anona",
         description="Anona Memory: sign in, connect MCP clients, and record, retrieve or reason over memories.",
         parents=[common],
@@ -73,9 +88,11 @@ def _parser() -> argparse.ArgumentParser:
     rec = sub.add_parser("record", parents=[common], help="Store a memory (no MCP needed)")
     rec.add_argument("content", help="The fact to store, as a complete sentence")
     rec.add_argument("--space", default=None, help=_SPACE_HELP.format(verb="write to"))
+    rec.add_argument("--api-key", default=None, help=_API_KEY_HELP)
     ret = sub.add_parser("retrieve", parents=[common], help="Search your memories (no MCP needed)")
     ret.add_argument("query", help="What to search for")
     ret.add_argument("--space", default=None, help=_SPACE_HELP.format(verb="search"))
+    ret.add_argument("--api-key", default=None, help=_API_KEY_HELP)
     ret.add_argument("--json", action="store_true", help="Print the API response as one JSON document")
     ret.add_argument("--limit", type=_limit, default=None, help="At most this many memories (1-100, default 10)")
     ret.add_argument(
@@ -89,6 +106,7 @@ def _parser() -> argparse.ArgumentParser:
     rsn = sub.add_parser("reason", parents=[common], help="Ask a question and get a synthesized answer")
     rsn.add_argument("query", help="The question to answer from your memories")
     rsn.add_argument("--space", default=None, help=_SPACE_HELP.format(verb="reason over"))
+    rsn.add_argument("--api-key", default=None, help=_API_KEY_HELP)
     sub.add_parser("login", parents=[common], help="Approve access in a browser and store a credential")
     lo = sub.add_parser("logout", parents=[common], help="Delete the stored credential")
     lo.add_argument(
@@ -96,7 +114,8 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also abandon an unclaimed temporary profile (it cannot be recovered)",
     )
-    sub.add_parser("status", parents=[common], help="Show whether you are signed in")
+    st = sub.add_parser("status", parents=[common], help="Show whether you are signed in")
+    st.add_argument("--api-key", default=None, help="Describe this key's source instead of the usual lookup")
     sub.add_parser("mcp", parents=[common], help="Run the stdio MCP proxy for a client to launch")
     return p
 
@@ -128,13 +147,66 @@ def _refuse(exc: target.TargetError) -> int:
     return 1
 
 
+# record/retrieve/reason: a credential that is missing, refused or refused a
+# host exits 4, not 1, so a script can tell "fix the credential"
+# from "the request failed".
+AUTH_EXIT = 4
+USAGE_EXIT = 2
+
+
+def _safe(text: object) -> str:
+    from .memory import _printable
+
+    return _printable(credential.redact(str(text)))
+
+
+def _refuse_key(exc: target.TargetError) -> int:
+    # The URL in the message came from a flag or a variable, which is the
+    # vector this refusal exists for, so it is sanitized like server text.
+    print(f"anona: {_safe(exc)}", file=sys.stderr)
+    return AUTH_EXIT
+
+
 # An expired profile is gone and so is everything in it. It read as success,
 # which is how a scripted `anona status && anona record ...` walked straight
 # into a write with no credential behind it.
 EXPIRED_EXIT = 1
 
 
-def _status(requested: str | None = None) -> int:
+def _status(
+    requested: str | None = None,
+    *,
+    base_url_flag: str | None = None,
+    api_key_flag: str | None = None,
+) -> int:
+    config = config_env.load()
+    key = credential.find_api_key(api_key_flag, config)
+    if key is None:
+        return _store_status(requested)
+    # The data verbs' credential. The source and a prefix only: this output
+    # ends up in pastes and logs.
+    print(
+        f"API key for record/retrieve/reason: {key.display()} "
+        f"(from {target.SOURCE_NAMES[key.source]})."
+    )
+    url, url_source = credential.find_base_url(base_url_flag, config)
+    try:
+        base = target.for_api_key(url, url_source, key.source)
+    except target.TargetError as exc:
+        return _refuse_key(exc)
+    print(f"It is sent to {_safe(base)}.")
+    space = credential.find_space(None, config)
+    print(f"Space: {_safe(space)}." if space else "Space: none set; pass --space or set ANONA_SPACE_ID.")
+    if store.load() is None:
+        print("No `anona login` credential is stored (that one is for `anona mcp`).")
+        return 0
+    # The stored credential is still worth describing: it is what `anona mcp`
+    # uses. Its exit code does not decide this one -- the key works either way.
+    _store_status(None)
+    return 0
+
+
+def _store_status(requested: str | None = None) -> int:
     c = store.load()
     if c is None:
         print("Not logged in. Run `anona login`.")
@@ -194,25 +266,50 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in ("record", "retrieve", "reason"):
         from . import memory
 
-        held = store.load()
-        try:
-            base = target.resolve(requested, held.base_url if held else None)
-        except target.TargetError as exc:
-            return _refuse(exc)
+        config = config_env.load()
+        key = credential.find_api_key(args.api_key, config)
+        space = args.space
+        api_key = None
+        if key is not None:
+            # An account can hold many spaces and none is implied: picking
+            # one for the caller is how a write lands somewhere nobody looks.
+            space = credential.find_space(args.space, config)
+            if space is None:
+                print(
+                    "anona: an API key needs a space. Pass --space, or set "
+                    "ANONA_SPACE_ID (in the environment or ~/.anona/config.env). "
+                    "Nothing was sent.",
+                    file=sys.stderr,
+                )
+                return USAGE_EXIT
+            url, url_source = credential.find_base_url(base_url, config)
+            try:
+                base = target.for_api_key(url, url_source, key.source)
+            except target.TargetError as exc:
+                return _refuse_key(exc)
+            api_key = key.key
+        else:
+            held = store.load()
+            try:
+                base = target.resolve(requested, held.base_url if held else None)
+            except target.TargetError as exc:
+                # A credential refused a host is an auth failure here.
+                return _refuse_key(exc)
         if args.command == "record":
-            return memory.run_record(base, args.content, args.space)
+            return memory.run_record(base, args.content, space, api_key=api_key)
         if args.command == "reason":
-            return memory.run_reason(base, args.query, args.space)
+            return memory.run_reason(base, args.query, space, api_key=api_key)
         return memory.run_retrieve(
             base,
             args.query,
-            args.space,
+            space,
             as_json=args.json,
             limit=args.limit,
             min_score=args.min_score,
             user_id=args.user_id,
             agent_id=args.agent_id,
             session_id=args.session_id,
+            api_key=api_key,
         )
     if args.command == "login":
         base = base_url or _default_base_url()
@@ -264,7 +361,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Logged out.")
         return 0
     if args.command == "status":
-        return _status(requested)
+        return _status(requested, base_url_flag=base_url, api_key_flag=args.api_key)
     # mcp: a credential belongs to the deployment that issued it. Naming
     # another is refused on stderr; stdout is the client's JSON-RPC stream.
     stored = store.load()

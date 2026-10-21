@@ -600,10 +600,14 @@ anona status                                  # what is stored, and until when
 `anona start` needs no signup: it creates a profile that holds memories for 72
 hours, and `anona login` claims it into a real account with everything it holds.
 
-`record`, `retrieve` and `reason` work **on a temporary profile only**. A login
-mints a credential scoped to MCP, which the REST API rejects on purpose, so on
-a signed-in account those three refuse and point at the two paths that do work:
-`anona mcp` with a client, or an API key with this SDK.
+`record`, `retrieve` and `reason` take an **API key** — from `--api-key`,
+`ANONA_API_KEY` or `~/.anona/config.env`, in that order — or, with none of
+those, the temporary profile. With a key, name the space with `--space` or
+`ANONA_SPACE_ID`. A key from the environment or `config.env` is sent only to
+`api.anonalabs.com` or `memory.anonalabs.com` unless the server is named in the
+same place (`--base-url` beside `--api-key`, or `ANONA_BASE_URL` beside the
+key). The `anona login` credential is scoped to MCP, which the REST API rejects
+on purpose, so these three never use it.
 
 `retrieve` lists the memories that match. `reason` reads across them and answers
 in prose — ask it when no single memory holds the answer. It is an agent loop

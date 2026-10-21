@@ -75,7 +75,7 @@ def _run(body, tmp_path, timeout=30):
 def test_record_with_no_credential_says_what_to_do(tmp_path):
     ok(_run("""
         rc, out, err = run_main(["record", "the user prefers pnpm"])
-        assert rc == 1, rc
+        assert rc == 4, rc  # an auth failure exits 4
         assert "anona start" in err, err
         assert SEEN == [], SEEN
         print("OK")
@@ -290,7 +290,7 @@ def test_a_signed_in_account_is_refused_before_the_request(tmp_path):
         for argv in (["record", "x"], ["retrieve", "x"], ["reason", "x"],
                      ["record", "x", "--space", "work"]):
             rc, out, err = run_main(argv)
-            assert rc == 1, (argv, rc)
+            assert rc == 4, (argv, rc)  # an auth failure exits 4
             assert "temporary profile" in err, (argv, err)
             # It must name both ways an account DOES reach memory, or the
             # message is a refusal with nowhere to go.
@@ -307,7 +307,7 @@ def test_naming_a_space_does_not_buy_past_the_refusal(tmp_path):
     ok(_run("""
         creds(signed_in=True)
         rc, out, err = run_main(["record", "x", "--space", "work"])
-        assert rc == 1, rc
+        assert rc == 4, rc  # an auth failure exits 4
         assert "--space" not in err, "must not suggest --space is the fix: %r" % err
         assert SEEN == [], SEEN
         print("OK")
@@ -321,7 +321,7 @@ def test_a_login_beside_a_live_temp_token_is_still_a_login(tmp_path):
     ok(_run("""
         creds(temp_hours=60, signed_in=True)
         rc, out, err = run_main(["record", "x"])
-        assert rc == 1, rc
+        assert rc == 4, rc  # an auth failure exits 4
         assert "temporary profile" in err, err
         assert SEEN == [], SEEN
         print("OK")
@@ -332,7 +332,7 @@ def test_expired_temp_profile_is_a_message_not_a_traceback(tmp_path):
     ok(_run("""
         creds(temp_hours=-1)
         rc, out, err = run_main(["record", "x"])
-        assert rc == 1, rc
+        assert rc == 4, rc  # an auth failure exits 4
         assert "expired" in err, err
         assert SEEN == [], SEEN
         print("OK")

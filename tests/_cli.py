@@ -44,7 +44,11 @@ def run_cli(snippet: str, env: dict | None = None, timeout: int = 30) -> subproc
     # PYTHONOPTIMIZE would strip every bare `assert` from the snippet, so every
     # test would pass having checked nothing. Remove it whether it is inherited
     # or passed in `env`: no case may run with assertions off.
-    full_env = {**os.environ, **(env or {})}
+    # Nor may a key or space from the shell running the suite leak in: an
+    # inherited ANONA_API_KEY outranks the temp token every other case sets up,
+    # and would be sent to the case's local server.
+    inherited = {k: v for k, v in os.environ.items() if k not in ("ANONA_API_KEY", "ANONA_SPACE_ID")}
+    full_env = {**inherited, **(env or {})}
     full_env.pop("PYTHONOPTIMIZE", None)
     return subprocess.run(
         [sys.executable, "-c", header + textwrap.dedent(snippet)],

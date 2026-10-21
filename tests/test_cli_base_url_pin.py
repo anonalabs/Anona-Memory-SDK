@@ -72,7 +72,7 @@ def test_data_verbs_refuse_a_base_url_the_credential_was_not_issued_for(tmp_path
         temp_profile("https://memory.anonalabs.com")
         for argv in (["record", "x"], ["retrieve", "x"], ["reason", "x"]):
             rc, out, err = run_main(argv + ["--base-url", BASE])
-            assert rc == 1, (argv, rc, out, err)
+            assert rc == 4, (argv, rc, out, err)  # an auth failure exits 4
             assert "the stored credential is for https://memory.anonalabs.com, not " + BASE in err, err
             assert "anona login --base-url " + BASE in err, err
         assert SEEN == [], SEEN
@@ -99,7 +99,7 @@ def test_env_var_is_refused_like_the_flag(tmp_path):
         temp_profile("https://memory.anonalabs.com")
         os.environ["ANONA_BASE_URL"] = BASE
         rc, _, err = run_main(["record", "x"])
-        assert rc == 1 and "the stored credential is for" in err, (rc, err)
+        assert rc == 4 and "the stored credential is for" in err, (rc, err)
         rc, _, err = run_main(["mcp"], stdin=TOOLS_LIST)
         assert rc == 1 and "the stored credential is for" in err, (rc, err)
         assert SEEN == [], SEEN
@@ -143,7 +143,7 @@ def test_a_stored_plain_http_deployment_is_refused_before_any_request(tmp_path):
     ok(_run("""
         temp_profile("http://memory.anonalabs.com")
         rc, _, err = run_main(["record", "x"])
-        assert rc == 1 and "https://" in err, (rc, err)
+        assert rc == 4 and "https://" in err, (rc, err)
         rc, _, err = run_main(["mcp"], stdin=TOOLS_LIST)
         assert rc == 1 and "https://" in err, (rc, err)
         print("OK")
