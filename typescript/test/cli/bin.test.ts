@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { buildSync } from "esbuild";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { json, seed, startAs, useTempHome, type FakeAs } from "./helpers.js";
@@ -14,11 +15,26 @@ import { json, seed, startAs, useTempHome, type FakeAs } from "./helpers.js";
 const here = dirname(fileURLToPath(import.meta.url));
 let dir = "";
 let bin = "";
+// The same define tsup applies, so what this builds is what ships. Without
+// it `--version` would print "unknown" here and pass a test asserting only
+// that it printed *something* -- the in-process test cannot see this at all,
+// because the define does not apply under vitest.
+const PKG_VERSION = (
+  JSON.parse(readFileSync(resolve(here, "../../package.json"), "utf8")) as { version: string }
+).version;
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "anona-bin-"));
   bin = join(dir, "cli.mjs");
-  buildSync({ entryPoints: [resolve(here, "../../src/cli/bin.ts")], bundle: true, platform: "node", format: "esm", outfile: bin, logLevel: "silent" });
+  buildSync({
+    entryPoints: [resolve(here, "../../src/cli/bin.ts")],
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    outfile: bin,
+    logLevel: "silent",
+    define: { __ANONA_VERSION__: JSON.stringify(PKG_VERSION) },
+  });
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -38,6 +54,23 @@ describe("bundled anona bin", () => {
   let as: FakeAs;
   beforeEach(async () => void (as = await startAs()));
   afterEach(() => as.close());
+
+  it("--version prints the package version on stdout, exit 0", async () => {
+    // Pinned against package.json, not against "some string": the build-time
+    // define is the whole mechanism, and a bundle that lost it still prints
+    // a plausible line.
+    const r = await exec(["--version"], home.dir());
+    expect(r.code).toBe(0);
+    expect(r.out.trim()).toBe(`anona ${PKG_VERSION}`);
+    expect(r.err).toBe("");
+  });
+
+  it("--help prints usage on stdout, exit 0", async () => {
+    const r = await exec(["--help"], home.dir());
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("usage: anona");
+    expect(r.err).toBe("");
+  });
 
   it("mcp: stdout is JSON-RPC and nothing else, stderr carries the diagnostics", async () => {
     seed(as.base, { access: "SECRET-TOK" });

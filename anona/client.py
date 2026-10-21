@@ -148,6 +148,14 @@ class AnonaError(Exception):
     ``retry_after`` is populated on a 429 from the ``Retry-After`` header (or
     the error body's own ``retry_after`` / ``window_seconds``), in seconds.
 
+    ``transport`` is True when **no server answered at all** — a refused
+    connection, a dropped socket, a timeout. Those are reported with an
+    informational ``status_code`` (408 or 503) so that one ``except`` catches
+    everything, which leaves them indistinguishable from a real 503 the API
+    sent on purpose. They are not the same failure and should not be reported
+    the same way: a caller that prints "the server answered 503" when nothing
+    answered sends people looking at the wrong end of the wire.
+
     The ``(status_code, detail)`` positional signature is unchanged, so
     ``except AnonaError as e: e.status_code`` keeps working.
     """
@@ -160,12 +168,14 @@ class AnonaError(Exception):
         code: str | None = None,
         request_id: str | None = None,
         retry_after: int | None = None,
+        transport: bool = False,
     ):
         self.status_code = status_code
         self.detail = detail
         self.code = code
         self.request_id = request_id
         self.retry_after = retry_after
+        self.transport = transport
         super().__init__(f"Anona API error {status_code}: {detail}")
 
 
@@ -215,8 +225,13 @@ def _translate_transport_error(
             f"Request to {request.url} timed out. If this operation is expected "
             f"to run long (e.g. reason on a large space), pass a larger "
             f"timeout= to AnonaClient. ({exc!r})",
+            transport=True,
         )
-    return AnonaError(503, f"Could not reach the Anona API at {request.url}: {exc!r}")
+    return AnonaError(
+        503,
+        f"Could not reach the Anona API at {request.url}: {exc!r}",
+        transport=True,
+    )
 
 
 # Methods that can be re-sent without changing the result if the first attempt
@@ -243,11 +258,31 @@ class _RetryPolicy:
     caller who would rather fail fast passes ``max_retries=0``.
 
     A blind backoff — no server hint, i.e. a 5xx — stays small and jittered.
+
+A retry is otherwise invisible: the call simply takes seconds longer than it
+should, with nothing on any stream to say why. ``on_retry`` is called just
+before each wait with ``(attempt, delay, status_code, max_retries)`` —
+``attempt`` 1-based — so a CLI can say "rate limited, retrying in 3 s (1/2)"
+instead of appearing to hang. It is best-effort: an exception raised by the
+callback must not turn a retryable response into a failed call, so it is
+swallowed.
     """
 
-    def __init__(self, max_retries: int, max_wait: float):
+    def __init__(self, max_retries: int, max_wait: float, on_retry=None):
         self.max_retries = max_retries
         self.max_wait = max_wait
+        self.on_retry = on_retry
+
+    def notify(self, attempt: int, delay: float, status: int) -> None:
+        """Tell the caller a wait is about to happen. Never raises."""
+        if self.on_retry is None:
+            return
+        try:
+            self.on_retry(attempt + 1, delay, status, self.max_retries)
+        except Exception:
+            # A reporting callback must not be able to fail the request it is
+            # merely describing.
+            pass
 
     def should_retry(self, request: httpx.Request, status: int, attempt: int) -> bool:
         if attempt >= self.max_retries:
@@ -389,6 +424,7 @@ class _ErrorTranslatingTransport(httpx.BaseTransport):
             if not self._policy.should_retry_response(request, response, attempt):
                 return response
             delay = self._policy.wait_for(response, attempt)
+            self._policy.notify(attempt, delay, response.status_code)
             response.close()
             time.sleep(delay)
             attempt += 1
@@ -422,6 +458,7 @@ class _AsyncErrorTranslatingTransport(httpx.AsyncBaseTransport):
             if not self._policy.should_retry_response(request, response, attempt):
                 return response
             delay = self._policy.wait_for(response, attempt)
+            self._policy.notify(attempt, delay, response.status_code)
             await response.aclose()
             await asyncio.sleep(delay)
             attempt += 1
@@ -681,6 +718,7 @@ class AnonaClient:
         timeout: float = 120.0,
         max_retries: int = 2,
         retry_max_wait: float = 60.0,
+        on_retry=None,
     ):
         # `max_retries` covers 429 on every method and 5xx on idempotent ones
         # only; see _RetryPolicy for why those are different rules. Pass 0 to
@@ -699,7 +737,7 @@ class AnonaClient:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
-        self._retry_policy = _RetryPolicy(max_retries, retry_max_wait)
+        self._retry_policy = _RetryPolicy(max_retries, retry_max_wait, on_retry)
         #: Budget reported by the most recent response. See :class:`RateLimit`.
         self.rate_limit = RateLimit()
         # Created lazily (first sync/async call) rather than both up front —

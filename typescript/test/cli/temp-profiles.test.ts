@@ -122,12 +122,14 @@ describe("anona start", () => {
     expect(loadCredentials()!.accessToken).toBe("OAUTH-A");
   });
 
-  it("guard live-profile-exists: a second is refused, exit 0, nothing sent, nothing overwritten", async () => {
+  it("guard live-profile-exists: a second is refused non-zero, nothing sent, nothing overwritten", async () => {
     seedTemp(as.base);
     created(iso(now() + 5 * HOUR), {});
     const before = readFileSync(credentialsPath(), "utf8");
     const t = io();
-    expect(await main(["--base-url", as.base, "start"], t)).toBe(0);
+    // Refusal, not success: nothing was created, and a script that runs
+    // `start` to guarantee a fresh profile must be able to tell.
+    expect(await main(["--base-url", as.base, "start"], t)).toBe(1);
     expect(t.o()).toContain("A temporary profile already exists; not creating another.");
     expect(t.o()).toContain("(in 71 hours)");
     expect(as.count("/v1/temp/profiles")).toBe(0);
@@ -250,7 +252,10 @@ describe("anona status with a temp profile", () => {
   it("guard still-live: an expired profile says expired and does not invite a claim", async () => {
     seedTemp("https://t.test", { tempExpiresAt: now() - 2 * HOUR });
     const t = io();
-    expect(await main(["status"], t)).toBe(0);
+    // Non-zero: the profile and everything in it are gone, so reporting
+    // success is how a scripted `anona status && ...` walks into a command
+    // with no credential behind it.
+    expect(await main(["status"], t)).toBe(1);
     expect(t.o()).toContain("expired ");
     expect(t.o()).not.toContain("claim it before then");
   });

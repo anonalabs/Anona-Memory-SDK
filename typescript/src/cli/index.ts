@@ -21,7 +21,21 @@ const USAGE = `usage: anona [--base-url URL] <command>
                         unclaimed temporary profile, which cannot be recovered)
   status                Show whether you are signed in
   mcp                   Run the stdio MCP proxy for a client to launch
+
+  --help, -h            Show this message
+  --version             Print the installed version
+
+The pip package additionally has record, retrieve and reason.
 `;
+
+// Replaced at build time by tsup (see tsup.config.ts). Declared so that the
+// unbundled source still type-checks and still runs under tsx/vitest, where
+// the define does not apply.
+declare const __ANONA_VERSION__: string | undefined;
+
+function packageVersion(): string {
+  return typeof __ANONA_VERSION__ === "string" ? __ANONA_VERSION__ : "unknown";
+}
 
 function defaultBaseUrl(): string {
   return process.env.ANONA_BASE_URL || DEFAULT_BASE_URL;
@@ -38,16 +52,31 @@ function guarded(io: IO, fn: () => Promise<number> | number): Promise<number> | 
   }
 }
 
-function status(io: IO): number {
+function status(io: IO, requested?: string): number {
   const c = loadCredentials();
   if (c === null) {
     io.stdout.write("Not logged in. Run `anona login`.\n");
     return 1;
   }
+  // `--base-url` was read and then ignored here, so `anona status --base-url
+  // https://other` described the stored deployment while naming another --
+  // the one shape of wrong answer a status command must never give. Every
+  // other credential-holding command already refuses a mismatch.
+  if (requested !== undefined) {
+    const refused = guarded(io, () => (resolveTarget(requested, c.baseUrl), 0));
+    if (refused !== 0) return refused as number;
+  }
   if (c.tempToken && c.tempExpiresAt !== undefined) {
     // The only warning an unclaimed profile gets: it has no email address.
     io.stdout.write(`Temporary profile for ${c.baseUrl}: ${describeDeadline(c.tempExpiresAt)}.\n`);
-    if (c.tempExpiresAt > Date.now() / 1000) io.stdout.write("Run `anona login` to claim it before then.\n");
+    if (c.tempExpiresAt > Date.now() / 1000) {
+      io.stdout.write("Run `anona login` to claim it before then.\n");
+    } else if (!isSignedIn(c)) {
+      // Expired and nothing to fall back on: it read as success, which is how
+      // a scripted `anona status && ...` walked into a command with no
+      // credential behind it.
+      return 1;
+    }
     if (!isSignedIn(c)) return 0;
   } else if (!isSignedIn(c)) {
     io.stdout.write("Not logged in. Run `anona login`.\n");
@@ -74,6 +103,8 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
   let baseUrl: string | undefined;
   let noBrowser = false;
   let force = false;
+  let helpWanted = false;
+  let versionWanted = false;
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] as string;
@@ -89,9 +120,25 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
       noBrowser = true;
     } else if (a === "--force") {
       force = true;
+    } else if (a === "--help" || a === "-h") {
+      helpWanted = true;
+    } else if (a === "--version" || a === "-V") {
+      versionWanted = true;
     } else {
       rest.push(a);
     }
+  }
+  // Asking for help is not a usage error. These went to the "unknown command"
+  // branch, so `anona --help` printed usage on stderr and exited 2 -- the npm
+  // binary could not print its own help successfully, and `--version` did not
+  // exist at all while the docs told people to check they were on 0.17.0+.
+  if (helpWanted) {
+    io.stdout.write(USAGE);
+    return 0;
+  }
+  if (versionWanted) {
+    io.stdout.write(`anona ${packageVersion()}\n`);
+    return 0;
   }
   const command = rest[0];
   if (rest.length !== 1 || !["start", "login", "logout", "status", "mcp"].includes(command as string)) {
@@ -156,7 +203,7 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
       return 0;
     });
   }
-  if (command === "status") return status(io);
+  if (command === "status") return status(io, requested);
   // mcp: a credential belongs to the deployment that issued it. Naming another
   // is refused on stderr; stdout is the client's JSON-RPC stream.
   const stored = loadCredentials();

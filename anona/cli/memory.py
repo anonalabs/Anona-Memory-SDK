@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -118,13 +119,149 @@ def _token_and_space(space: str | None) -> tuple[str, str] | None:
     return token, space
 
 
-def _fail(exc: AnonaError) -> int:
-    # The SDK translates transport failures into AnonaError too (408/503).
+# An input the server is certain to reject is rejected here instead, and like
+# any other usage mistake it exits 2 -- distinct from 1, which means the
+# request was made and failed. The round trip is not free: it is a metered
+# call, so sending a write that cannot succeed bills for the privilege of a
+# 422.
+EMPTY_INPUT_EXIT = 2
+
+
+def _reject_empty(what: str, value: str) -> int | None:
+    if value.strip():
+        return None
+    print(
+        f"anona: the {what} is empty. Nothing was sent -- the server rejects "
+        f"an empty {what}, and the request would still be billed.",
+        file=sys.stderr,
+    )
+    return EMPTY_INPUT_EXIT
+
+
+def _host_of(url: str) -> str:
+    parts = urlsplit(url)
+    return parts.netloc or url
+
+
+def _retry_notice(attempt: int, delay: float, status: int, total: int) -> None:
+    """Say that a wait is happening, while it happens.
+
+    Without this the CLI sits silent for the whole backoff -- two rate-limit
+    waits read as a hung command, and the obvious reaction is Ctrl-C, which
+    throws away the attempt that was about to succeed. stderr, so a piped
+    stdout still carries only the result.
+    """
+    reason = "rate limited" if status == 429 else f"server error {status}"
+    print(
+        f"anona: {reason}, retrying in {delay:.0f} s ({attempt}/{total})",
+        file=sys.stderr,
+    )
+
+
+def _fail(exc: AnonaError, base_url: str) -> int:
+    """Report a failed call in the terms of what actually went wrong.
+
+    Three different things used to print as "the server answered HTTP N".
+
+    A transport failure is not an HTTP answer at all: the SDK gives it an
+    informational 408/503 so that one `except` catches everything, and
+    reporting that verbatim told people a server had answered when nothing
+    had, pointing them at the wrong end of the wire.
+
+    An API error carries `code` -- the stable, documented handle -- and the
+    old line buried it inside a Python dict `repr`, single quotes and all,
+    which is neither the JSON the docs show nor something a script can read.
+    """
+    if getattr(exc, "transport", False):
+        # The detail embeds the repr of the underlying httpx error; the useful
+        # half is the last clause, and the whole thing is long and noisy.
+        print(
+            f"anona: could not reach {_host_of(base_url)}: "
+            f"{_printable(_transport_reason(exc))}",
+            file=sys.stderr,
+        )
+        return 1
+    if exc.code:
+        line = f"anona: {exc.code}: {_printable(_message_of(exc))}"
+        request_id = exc.request_id or _request_id_of(exc)
+        if request_id:
+            line += f" (request_id {_printable(request_id)})"
+        print(line, file=sys.stderr)
+        return 1
+    # No code: not an envelope the API produced -- an edge page, a proxy, or a
+    # body that did not parse. The status is all there is, and saying so is
+    # honest.
     print(
         f"anona: the server answered HTTP {exc.status_code}: {_printable(exc.detail)}",
         file=sys.stderr,
     )
     return 1
+
+
+def _transport_reason(exc: AnonaError) -> str:
+    """The cause, in words, out of the SDK's transport message."""
+    if exc.status_code == 408:
+        return "the request timed out"
+    detail = str(exc.detail)
+    # "... : ConnectError('[Errno 111] Connection refused')" -> the inside.
+    match = re.search(r"\w+\((?:'|\")(.*?)(?:'|\")\)", detail)
+    if match:
+        return match.group(1).replace("[Errno 111] ", "")
+    return detail
+
+
+def _request_id_of(exc: AnonaError) -> str | None:
+    """The request id out of the envelope, when the header did not carry it.
+
+    The SDK reads `X-Request-ID`, which is the right source; the envelope
+    carries its own `request_id` too, and that is the one thing support needs
+    to find the call in the logs, so losing it to a missing header would be a
+    poor trade.
+    """
+    detail = exc.detail
+    if isinstance(detail, dict):
+        error = detail.get("error")
+        if isinstance(error, dict):
+            value = error.get("request_id")
+            if isinstance(value, str) and value.strip():
+                return value
+    return None
+
+
+def _message_of(exc: AnonaError) -> str:
+    """The human half of an API error, however the SDK got hold of it."""
+    detail = exc.detail
+    if isinstance(detail, dict):
+        error = detail.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return _with_field_errors(message, error)
+        message = detail.get("message")
+        if isinstance(message, str) and message.strip():
+            return message
+    return str(detail)
+
+
+def _with_field_errors(message: str, error: dict) -> str:
+    """Append the offending fields, which are the whole content of a 422.
+
+    "Request validation failed" on its own does not say what is wrong with the
+    request, and the fields that do were inside the dict nobody could read.
+    """
+    errors = error.get("errors")
+    if not isinstance(errors, list):
+        return message
+    parts = []
+    for item in errors[:3]:
+        if not isinstance(item, dict):
+            continue
+        loc = item.get("loc")
+        field = ".".join(str(p) for p in loc[1:]) if isinstance(loc, list) and len(loc) > 1 else None
+        detail = item.get("msg")
+        if isinstance(detail, str):
+            parts.append(f"{field}: {detail}" if field else detail)
+    return f"{message} -- {'; '.join(parts)}" if parts else message
 
 
 # A write that stored nothing is not an error -- the server did what it was
@@ -135,15 +272,18 @@ NOTHING_EXTRACTED_EXIT = 3
 
 
 def run_record(base_url: str, content: str, space: str | None) -> int:
+    empty = _reject_empty("memory", content)
+    if empty is not None:
+        return empty
     got = _token_and_space(space)
     if got is None:
         return 1
     token, space = got
     try:
-        with AnonaClient(api_key=token, base_url=base_url) as client:
+        with AnonaClient(api_key=token, base_url=base_url, on_retry=_retry_notice) as client:
             result = client.record(space_id=space, content=content)
     except AnonaError as exc:
-        return _fail(exc)
+        return _fail(exc, base_url)
     # A 201 means the write was accepted, not that anything was stored:
     # extraction runs over the content and short, context-free statements
     # often produce nothing. This verb printed "Stored" for all of them and
@@ -191,6 +331,9 @@ def run_retrieve(
     agent_id: str | None = None,
     session_id: str | None = None,
 ) -> int:
+    empty = _reject_empty("query", query)
+    if empty is not None:
+        return empty
     got = _token_and_space(space)
     if got is None:
         return 1
@@ -209,10 +352,10 @@ def run_retrieve(
         if v is not None
     }
     try:
-        with AnonaClient(api_key=token, base_url=base_url) as client:
+        with AnonaClient(api_key=token, base_url=base_url, on_retry=_retry_notice) as client:
             items = client.retrieve(space_id=space, query=query, **kwargs)
     except AnonaError as exc:
-        return _fail(exc)
+        return _fail(exc, base_url)
     if as_json:
         # The rows exactly as the API returned them. json.dumps escapes every
         # control character (ensure_ascii), so this is terminal-safe without
@@ -233,6 +376,9 @@ def run_retrieve(
 
 
 def run_reason(base_url: str, query: str, space: str | None) -> int:
+    empty = _reject_empty("question", query)
+    if empty is not None:
+        return empty
     got = _token_and_space(space)
     if got is None:
         return 1
@@ -244,10 +390,10 @@ def run_reason(base_url: str, query: str, space: str | None) -> int:
     # only the answer.
     print(f"Reasoning over space '{space}'. This usually takes under a minute.", file=sys.stderr)
     try:
-        with AnonaClient(api_key=token, base_url=base_url) as client:
+        with AnonaClient(api_key=token, base_url=base_url, on_retry=_retry_notice) as client:
             answer = client.reason(space_id=space, query=query)
     except AnonaError as exc:
-        return _fail(exc)
+        return _fail(exc, base_url)
     if not answer or not answer.strip():
         # Distinct from an error and from "no memories matched": the call
         # succeeded and the space had nothing to build an answer from.
