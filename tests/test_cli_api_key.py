@@ -461,24 +461,46 @@ def test_the_key_never_appears_in_output(tmp_path):
             assert SECRET not in out and SECRET not in err, (argv, out, err)
             assert "SECRETSECRET" not in out + err, (argv, out, err)
         flag = ["--api-key", SECRET]
+        # Every verb plain, and again with --json and each of its request
+        # flags, through every outcome.
+        flags = {
+            "record": ["--tags", "a,b", "--timestamp", "2025-06-01T09:00:00Z",
+                       "--metadata", '{"k": "v"}', "--user-id", "u", "--agent-id", "a",
+                       "--session-id", "s"],
+            "retrieve": ["--tags", "a", "--tags-match", "all", "--as-of", "2026-01-01",
+                         "--occurred-after", "2025-01-01", "--occurred-before", "2025-12-31",
+                         "--user-id", "u"],
+            "reason": ["--depth", "thorough", "--user-id", "u"],
+        }
         for verb in ("record", "retrieve", "reason"):
-            extra = ["--json"] if verb == "retrieve" else []
+          for extra in ([], ["--json"] + flags[verb]):
             # success
             MODE["status"] = 200
             check([verb, "x", "--space", "s", "--base-url", BASE] + flag + extra, 0)
             # 401 and 500
             MODE["status"] = 401
-            check([verb, "x", "--space", "s", "--base-url", BASE] + flag, 4)
+            check([verb, "x", "--space", "s", "--base-url", BASE] + flag + extra, 4)
             MODE["status"] = 500
-            check([verb, "x", "--space", "s", "--base-url", BASE] + flag, 1)
+            check([verb, "x", "--space", "s", "--base-url", BASE] + flag + extra, 1)
             # usage error, refused host, refused transport, unreachable host
-            check([verb, "x", "--base-url", BASE] + flag, 2)
-            check([verb, "", "--space", "s", "--base-url", BASE] + flag, 2)
+            check([verb, "x", "--base-url", BASE] + flag + extra, 2)
+            check([verb, "", "--space", "s", "--base-url", BASE] + flag + extra, 2)
             os.environ["ANONA_API_KEY"] = SECRET
-            check([verb, "x", "--space", "s", "--base-url", BASE], 4)
+            check([verb, "x", "--space", "s", "--base-url", BASE] + extra, 4)
             del os.environ["ANONA_API_KEY"]
-            check([verb, "x", "--space", "s", "--base-url", "http://evil.example"] + flag, 4)
-            check([verb, "x", "--space", "s", "--base-url", "http://127.0.0.1:1"] + flag, 1)
+            check([verb, "x", "--space", "s", "--base-url", "http://evil.example"] + flag + extra, 4)
+            check([verb, "x", "--space", "s", "--base-url", "http://127.0.0.1:1"] + flag + extra, 1)
+        # A key pasted into the wrong flag is echoed by the usage error, and
+        # must come back redacted.
+        base = ["--space", "s", "--base-url", BASE] + flag
+        check(["record", "x", "--timestamp", SECRET] + base, 2)
+        check(["record", "x", "--metadata", SECRET] + base, 2)
+        check(["record", "x", "--tags", SECRET + ",,"] + base, 2)
+        check(["record", "--file", SECRET] + base, 2)
+        check(["record", "x", "--file", SECRET] + base, 2)
+        check(["retrieve", "x", "--as-of", SECRET] + base, 2)
+        check(["retrieve", "x", "--tags-match", SECRET, "--tags", "a"] + base, 2)
+        check(["reason", "x", "--depth", SECRET] + base, 2)
         os.environ["ANONA_API_KEY"] = SECRET
         check(["status"], 0)
         print("OK")

@@ -609,6 +609,12 @@ same place (`--base-url` beside `--api-key`, or `ANONA_BASE_URL` beside the
 key). The `anona login` credential is scoped to MCP, which the REST API rejects
 on purpose, so these three never use it.
 
+For scripts, all three take `--json` (the API response as one JSON document on
+stdout) and the API's own request fields as flags: `record` takes `-` for stdin,
+`--file`, `--tags`, `--timestamp`, `--metadata` and the scope ids; `retrieve`
+takes `--tags`, `--tags-match` and the time filters; `reason` takes `--depth`.
+An unset flag is omitted from the request, never sent as a default.
+
 `retrieve` lists the memories that match. `reason` reads across them and answers
 in prose — ask it when no single memory holds the answer. It is an agent loop
 rather than a lookup, so it takes tens of seconds and says so on stderr while it

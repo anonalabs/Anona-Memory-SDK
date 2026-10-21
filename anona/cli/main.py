@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import sys
 import time
+from datetime import datetime
 
 from . import config_env, credential, login, proxy, store, target, temp, tokens
 
@@ -25,6 +27,53 @@ def _min_score(value: str) -> float:
     if not (x >= 0 and math.isfinite(x)):
         raise argparse.ArgumentTypeError("must be a number, 0 or more")
     return x
+
+
+def _iso8601(value: str) -> str:
+    # Checked here so a typo is a usage error (exit 2) that sends nothing,
+    # rather than a metered round trip that comes back 422. The string is sent
+    # exactly as typed: parsing is only the check.
+    text = value.strip()
+    try:
+        datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "must be an ISO 8601 date or date-time, e.g. 2026-06-01 or 2026-06-01T09:00:00Z"
+        ) from None
+    return text
+
+
+def _tags(value: str) -> list[str]:
+    # Comma-separated, and the flag may be repeated: the lists add up. An empty
+    # entry (`a,,b`, a trailing comma) is a typo, never a tag.
+    tags = [t.strip() for t in value.split(",")]
+    if not all(tags):
+        raise argparse.ArgumentTypeError("must be a comma-separated list of non-empty tags")
+    return tags
+
+
+def _metadata(value: str) -> dict:
+    try:
+        parsed = json.loads(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a JSON object, e.g. '{\"source\": \"cli\"}'") from None
+    if not isinstance(parsed, dict):
+        raise argparse.ArgumentTypeError("must be a JSON object, not a list, string or number")
+    return parsed
+
+
+_JSON_HELP = "Print the API response as one JSON document on stdout"
+_TAGS_MATCH = ("any", "all", "any_strict", "all_strict", "exact")
+
+
+def _scope_flags(parser: argparse.ArgumentParser, lead: str) -> None:
+    for scope in ("user", "agent", "session"):
+        parser.add_argument(f"--{scope}-id", default=None, help=f"{lead} this {scope}_id")
+
+
+def _flat(lists: list[list[str]] | None) -> list[str] | None:
+    """`--tags a,b --tags c` -> ["a", "b", "c"]; unset stays None (omitted)."""
+    return None if lists is None else [t for group in lists for t in group]
 
 
 # Not "required when signed in": an `anona login` credential is refused by
@@ -86,14 +135,36 @@ def _parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("start", parents=[common], help="Create a temporary profile with no account")
     rec = sub.add_parser("record", parents=[common], help="Store a memory (no MCP needed)")
-    rec.add_argument("content", help="The fact to store, as a complete sentence")
+    rec.add_argument(
+        "content",
+        nargs="?",
+        default=None,
+        help="The fact to store, as a complete sentence; `-` reads it from stdin",
+    )
+    rec.add_argument("--file", default=None, metavar="PATH", help="Read the content from this file instead")
     rec.add_argument("--space", default=None, help=_SPACE_HELP.format(verb="write to"))
     rec.add_argument("--api-key", default=None, help=_API_KEY_HELP)
+    rec.add_argument("--json", action="store_true", help=_JSON_HELP)
+    rec.add_argument(
+        "--tags",
+        type=_tags,
+        action="append",
+        default=None,
+        help="Comma-separated tags to file the memory under; repeating the flag adds more",
+    )
+    rec.add_argument(
+        "--timestamp",
+        type=_iso8601,
+        default=None,
+        help="When the event happened (ISO 8601), not when it is recorded",
+    )
+    rec.add_argument("--metadata", type=_metadata, default=None, help="A JSON object stored with the memory")
+    _scope_flags(rec, "Record under")
     ret = sub.add_parser("retrieve", parents=[common], help="Search your memories (no MCP needed)")
     ret.add_argument("query", help="What to search for")
     ret.add_argument("--space", default=None, help=_SPACE_HELP.format(verb="search"))
     ret.add_argument("--api-key", default=None, help=_API_KEY_HELP)
-    ret.add_argument("--json", action="store_true", help="Print the API response as one JSON document")
+    ret.add_argument("--json", action="store_true", help=_JSON_HELP)
     ret.add_argument("--limit", type=_limit, default=None, help="At most this many memories (1-100, default 10)")
     ret.add_argument(
         "--min-score",
@@ -101,12 +172,45 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="Drop memories scoring below this. Scores are near two-valued; see the docs before setting one",
     )
-    for scope in ("user", "agent", "session"):
-        ret.add_argument(f"--{scope}-id", default=None, help=f"Only memories recorded with this {scope}_id")
+    _scope_flags(ret, "Only memories recorded with")
+    ret.add_argument(
+        "--tags",
+        type=_tags,
+        action="append",
+        default=None,
+        help="Only memories carrying these comma-separated tags; repeating the flag adds more",
+    )
+    ret.add_argument("--tags-match", choices=_TAGS_MATCH, default=None, help="How --tags must match (default: any)")
+    ret.add_argument(
+        "--as-of",
+        type=_iso8601,
+        default=None,
+        help="Only memories recorded at or before this instant (ISO 8601)",
+    )
+    ret.add_argument(
+        "--occurred-after",
+        type=_iso8601,
+        default=None,
+        help="Only memories about events at or after this (ISO 8601)",
+    )
+    ret.add_argument(
+        "--occurred-before",
+        type=_iso8601,
+        default=None,
+        help="Only memories about events at or before this (ISO 8601)",
+    )
     rsn = sub.add_parser("reason", parents=[common], help="Ask a question and get a synthesized answer")
     rsn.add_argument("query", help="The question to answer from your memories")
     rsn.add_argument("--space", default=None, help=_SPACE_HELP.format(verb="reason over"))
     rsn.add_argument("--api-key", default=None, help=_API_KEY_HELP)
+    rsn.add_argument("--json", action="store_true", help=_JSON_HELP)
+    rsn.add_argument(
+        "--depth",
+        choices=("fast", "thorough"),
+        default=None,
+        help="fast lets a current memory model answer alone; thorough always reads the memories under it",
+    )
+    _scope_flags(rsn, "Reason only over memories recorded with")
     sub.add_parser("login", parents=[common], help="Approve access in a browser and store a credential")
     lo = sub.add_parser("logout", parents=[common], help="Delete the stored credential")
     lo.add_argument(
@@ -266,6 +370,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in ("record", "retrieve", "reason"):
         from . import memory
 
+        # Usage first: a command that is wrong exits 2 before a credential is
+        # looked up, and so before anything could be sent.
+        content = ""
+        if args.command == "record":
+            got = memory.read_content(args.content, args.file)
+            if isinstance(got, int):
+                return got
+            content = got
+        if args.command == "retrieve" and args.tags_match is not None and args.tags is None:
+            print(
+                "anona: --tags-match needs --tags; there is nothing for it to match. Nothing was sent.",
+                file=sys.stderr,
+            )
+            return USAGE_EXIT
         config = config_env.load()
         key = credential.find_api_key(args.api_key, config)
         space = args.space
@@ -295,10 +413,23 @@ def main(argv: list[str] | None = None) -> int:
             except target.TargetError as exc:
                 # A credential refused a host is an auth failure here.
                 return _refuse_key(exc)
+        scope = {"user_id": args.user_id, "agent_id": args.agent_id, "session_id": args.session_id}
         if args.command == "record":
-            return memory.run_record(base, args.content, space, api_key=api_key)
+            return memory.run_record(
+                base,
+                content,
+                space,
+                api_key=api_key,
+                as_json=args.json,
+                tags=_flat(args.tags),
+                timestamp=args.timestamp,
+                metadata=args.metadata,
+                **scope,
+            )
         if args.command == "reason":
-            return memory.run_reason(base, args.query, space, api_key=api_key)
+            return memory.run_reason(
+                base, args.query, space, api_key=api_key, as_json=args.json, depth=args.depth, **scope
+            )
         return memory.run_retrieve(
             base,
             args.query,
@@ -306,10 +437,13 @@ def main(argv: list[str] | None = None) -> int:
             as_json=args.json,
             limit=args.limit,
             min_score=args.min_score,
-            user_id=args.user_id,
-            agent_id=args.agent_id,
-            session_id=args.session_id,
+            tags=_flat(args.tags),
+            tags_match=args.tags_match,
+            as_of=args.as_of,
+            occurred_after=args.occurred_after,
+            occurred_before=args.occurred_before,
             api_key=api_key,
+            **scope,
         )
     if args.command == "login":
         base = base_url or _default_base_url()
