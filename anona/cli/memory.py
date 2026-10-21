@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from dataclasses import asdict
 from urllib.parse import urlsplit
 
 import httpx
@@ -31,6 +32,7 @@ from anona._record_outcome import (
     stored_something,
 )
 
+from .credential import redact
 from .proxy import _bearer
 from .store import load
 from .tokens import NotLoggedIn
@@ -159,6 +161,58 @@ def _reject_empty(what: str, value: str) -> int | None:
         file=sys.stderr,
     )
     return EMPTY_INPUT_EXIT
+
+
+def read_content(positional: str | None, path: str | None) -> str | int:
+    """The text `record` stores: the argument, stdin for `-`, or `--file`.
+
+    Exactly one source. Naming two is ambiguous and naming none leaves nothing
+    to store, and both are usage errors that send nothing. An empty result is
+    left to run_record's own check, so all three sources share one message.
+    """
+    if positional is not None and path is not None:
+        print("anona: give the content or --file, not both. Nothing was sent.", file=sys.stderr)
+        return EMPTY_INPUT_EXIT
+    if path is not None:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            print(
+                # Redacted as well as sanitized: a key pasted into the wrong
+                # flag would otherwise be echoed straight back.
+                f"anona: could not read {_printable(redact(path))}: {type(exc).__name__}. "
+                "Nothing was sent.",
+                file=sys.stderr,
+            )
+            return EMPTY_INPUT_EXIT
+    if positional is None:
+        print(
+            "anona: nothing to record. Pass the content, `-` to read it from stdin, "
+            "or --file PATH. Nothing was sent.",
+            file=sys.stderr,
+        )
+        return EMPTY_INPUT_EXIT
+    if positional == "-":
+        return sys.stdin.read()
+    return positional
+
+
+def _emit_json(doc: object) -> None:
+    """One JSON document on stdout, and nothing else there.
+
+    Only ever called after the call succeeded, so a failure leaves stdout empty
+    and its one-line rendering on stderr. ensure_ascii escapes every control
+    character and every non-ASCII one, so this is terminal-safe without
+    _printable and the content still round-trips exactly.
+    """
+    print(json.dumps(doc, ensure_ascii=True))
+
+
+def _given(**values: object) -> dict:
+    """Only what the caller named: an unset flag is omitted, never sent as a
+    default, so a bare command sends exactly what it always has."""
+    return {k: v for k, v in values.items() if v is not None}
 
 
 def _host_of(url: str) -> str:
@@ -305,7 +359,20 @@ def _with_field_errors(message: str, error: dict) -> str:
 NOTHING_EXTRACTED_EXIT = 3
 
 
-def run_record(base_url: str, content: str, space: str | None, *, api_key: str | None = None) -> int:
+def run_record(
+    base_url: str,
+    content: str,
+    space: str | None,
+    *,
+    api_key: str | None = None,
+    as_json: bool = False,
+    tags: list[str] | None = None,
+    timestamp: str | None = None,
+    metadata: dict | None = None,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    session_id: str | None = None,
+) -> int:
     empty = _reject_empty("memory", content)
     if empty is not None:
         return empty
@@ -313,11 +380,28 @@ def run_record(base_url: str, content: str, space: str | None, *, api_key: str |
     if isinstance(got, int):
         return got
     token, space = got
+    kwargs = _given(
+        tags=tags,
+        timestamp=timestamp,
+        metadata=metadata,
+        user_id=user_id,
+        agent_id=agent_id,
+        session_id=session_id,
+    )
     try:
         with AnonaClient(api_key=token, base_url=base_url, on_retry=_retry_notice) as client:
-            result = client.record(space_id=space, content=content)
+            result = client.record(space_id=space, content=content, **kwargs)
     except AnonaError as exc:
         return _fail(exc, base_url)
+    if as_json:
+        # The response as the API returned it. The exit code still says what
+        # happened: a write that stored nothing exits 3 with its document on
+        # stdout and the server's advice on stderr, exactly as without --json.
+        _emit_json(result)
+        if not stored_something(result):
+            print(_printable(nothing_extracted_message(result, space)), file=sys.stderr)
+            return NOTHING_EXTRACTED_EXIT
+        return 0
     # A 201 means the write was accepted, not that anything was stored:
     # extraction runs over the content and short, context-free statements
     # often produce nothing. This verb printed "Stored" for all of them and
@@ -364,6 +448,11 @@ def run_retrieve(
     user_id: str | None = None,
     agent_id: str | None = None,
     session_id: str | None = None,
+    tags: list[str] | None = None,
+    tags_match: str | None = None,
+    as_of: str | None = None,
+    occurred_after: str | None = None,
+    occurred_before: str | None = None,
     api_key: str | None = None,
 ) -> int:
     empty = _reject_empty("query", query)
@@ -373,32 +462,30 @@ def run_retrieve(
     if isinstance(got, int):
         return got
     token, space = got
-    # Only what the caller named: an unset filter is omitted, never sent as a
-    # default, so a bare `anona retrieve` sends exactly what it always has.
-    kwargs = {
-        k: v
-        for k, v in (
-            ("limit", limit),
-            ("min_score", min_score),
-            ("user_id", user_id),
-            ("agent_id", agent_id),
-            ("session_id", session_id),
-        )
-        if v is not None
-    }
+    kwargs = _given(
+        limit=limit,
+        min_score=min_score,
+        user_id=user_id,
+        agent_id=agent_id,
+        session_id=session_id,
+        tags=tags,
+        tags_match=tags_match,
+        as_of=as_of,
+        occurred_after=occurred_after,
+        occurred_before=occurred_before,
+    )
     try:
         with AnonaClient(api_key=token, base_url=base_url, on_retry=_retry_notice) as client:
             items = client.retrieve(space_id=space, query=query, **kwargs)
     except AnonaError as exc:
         return _fail(exc, base_url)
     if as_json:
-        # The rows exactly as the API returned them. json.dumps escapes every
-        # control character (ensure_ascii), so this is terminal-safe without
-        # _printable, and the content still round-trips.
+        # The rows exactly as the API returned them; an empty result is
+        # {"results": []} with exit 0.
         doc: dict = {"results": list(items)}
         if items.searched is not None:
             doc["searched"] = items.searched
-        print(json.dumps(doc))
+        _emit_json(doc)
         return 0
     if not items:
         print("No memories matched.")
@@ -410,7 +497,18 @@ def run_retrieve(
     return 0
 
 
-def run_reason(base_url: str, query: str, space: str | None, *, api_key: str | None = None) -> int:
+def run_reason(
+    base_url: str,
+    query: str,
+    space: str | None,
+    *,
+    api_key: str | None = None,
+    as_json: bool = False,
+    depth: str | None = None,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    session_id: str | None = None,
+) -> int:
     empty = _reject_empty("question", query)
     if empty is not None:
         return empty
@@ -424,11 +522,18 @@ def run_reason(base_url: str, query: str, space: str | None, *, api_key: str | N
     # of the same work. stderr, so `anona reason ... > answer.md` still gets
     # only the answer.
     print(f"Reasoning over space '{space}'. This usually takes under a minute.", file=sys.stderr)
+    kwargs = _given(depth=depth, user_id=user_id, agent_id=agent_id, session_id=session_id)
     try:
         with AnonaClient(api_key=token, base_url=base_url, on_retry=_retry_notice) as client:
-            answer = client.reason(space_id=space, query=query)
+            # The receipt form: same request, same answer, plus what it was
+            # built from (`sources`), which --json is the only way to see.
+            receipt = client.reason_receipt(space_id=space, query=query, **kwargs)
     except AnonaError as exc:
         return _fail(exc, base_url)
+    if as_json:
+        _emit_json(asdict(receipt))
+        return 0
+    answer = receipt.insights
     if not answer or not answer.strip():
         # Distinct from an error and from "no memories matched": the call
         # succeeded and the space had nothing to build an answer from.
