@@ -409,3 +409,41 @@ def test_delete_document(client):
     )
     client.delete_document(SPACE, "file_1")
     assert route.called
+
+
+def test_upload_file_lets_video_past_the_general_cap(client):
+    """A 40 MB clip is legal and used to be refused locally.
+
+    The SDK mirrored the general 25 MB per-file cap and nothing else, so a
+    video between 25 MB and the API's own 64 MB video cap failed before any
+    request was made -- with a message naming the 25 MB limit, which is not
+    the limit that applies to it.
+    """
+    clip = b"x" * (client.MAX_FILE_BYTES + 1)
+    assert len(clip) < client.MAX_VIDEO_BYTES
+    # Raises nothing: the parts are built, so the upload would have been sent.
+    files, _ = client._upload_parts(clip, "meeting.mp4", None, None)
+    assert files[0][1][0] == "meeting.mp4"
+
+
+def test_upload_file_still_caps_video_at_the_video_limit(client):
+    """Higher, not unlimited -- past 64 MB a clip needs the S3 source."""
+    with pytest.raises(AnonaError) as exc:
+        client.upload_file(SPACE, b"x" * (client.MAX_VIDEO_BYTES + 1), filename="long.mp4")
+    assert exc.value.status_code == 413
+    assert "64 MB" in str(exc.value)
+
+
+def test_the_video_cap_is_chosen_by_extension_not_by_size(client):
+    """A non-video of the same size is still refused, and says 25 MB."""
+    with pytest.raises(AnonaError) as exc:
+        client.upload_file(SPACE, b"x" * (client.MAX_FILE_BYTES + 1), filename="scan.pdf")
+    assert exc.value.status_code == 413
+    assert "25 MB" in str(exc.value)
+
+
+def test_every_video_extension_gets_the_video_cap(client):
+    """All four the API routes to its video parser, upper- or lowercase."""
+    clip = b"x" * (client.MAX_FILE_BYTES + 1)
+    for name in ("a.mp4", "b.mov", "c.webm", "d.mkv", "E.MP4", "f.MoV"):
+        client._upload_parts(clip, name, None, None)  # must not raise

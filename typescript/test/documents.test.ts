@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { Anona, MAX_FILE_BYTES } from "../src/index.js";
+import {
+  Anona,
+  MAX_FILE_BYTES,
+  MAX_VIDEO_BYTES,
+  MAX_VIDEO_UPLOAD_BYTES,
+} from "../src/index.js";
 
 function stub(body: unknown, status = 200) {
   return vi.fn(
@@ -98,6 +103,79 @@ describe("uploadFiles", () => {
 
     await expect(anona.uploadFiles({ spaceId: "s", files })).rejects.toThrow(/at most 20/);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  // Video carries its own, higher caps at the API — 64 MB per file and 100 MB
+  // per request once any clip is in the set. The SDK mirrored only the general
+  // 25 MB / 50 MB pair, so a 40 MB recording that the API accepts, and that the
+  // docs publish as acceptable, was refused here before any request was made.
+
+  it("lets a video past the general per-file cap", async () => {
+    const fetchImpl = stub({ job_ids: ["job_1"] }, 202);
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+    const clip = { data: new Uint8Array(MAX_FILE_BYTES + 1), filename: "meeting.mp4" };
+
+    await anona.uploadFiles({ spaceId: "s", files: [clip] });
+    expect(fetchImpl).toHaveBeenCalled();
+  });
+
+  it("still caps a video at the video limit", async () => {
+    const fetchImpl = stub({});
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+    const huge = { data: new Uint8Array(MAX_VIDEO_BYTES + 1), filename: "long.mp4" };
+
+    await expect(anona.uploadFiles({ spaceId: "s", files: [huge] })).rejects.toThrow(
+      /64 MB per-file/,
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("picks the cap by extension, not by size", async () => {
+    // A non-video of the same size is still refused, and still says 25 MB:
+    // the video cap must not leak into the general one.
+    const fetchImpl = stub({});
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+    const pdf = { data: new Uint8Array(MAX_FILE_BYTES + 1), filename: "scan.pdf" };
+
+    await expect(anona.uploadFiles({ spaceId: "s", files: [pdf] })).rejects.toThrow(
+      /25 MB per-file/,
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("gives every video extension the video cap, in either case", async () => {
+    const fetchImpl = stub({ job_ids: ["job_1"] }, 202);
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+
+    for (const filename of ["a.mp4", "b.mov", "c.webm", "d.mkv", "E.MP4", "f.MoV"]) {
+      const clip = { data: new Uint8Array(MAX_FILE_BYTES + 1), filename };
+      await anona.uploadFiles({ spaceId: "s", files: [clip] });
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(6);
+  });
+
+  it("raises the request total only when a video is in the set", async () => {
+    // One clip must not have to fit inside the document budget, and a set of
+    // documents must not inherit the video total.
+    const fetchImpl = stub({ job_ids: ["job_1"] }, 202);
+    const anona = new Anona({ apiKey: "k", fetch: fetchImpl as never });
+    const clip = { data: new Uint8Array(MAX_VIDEO_BYTES), filename: "a.mp4" };
+    const doc = { data: new Uint8Array(MAX_FILE_BYTES), filename: "b.pdf" };
+
+    // 64 + 25 = 89 MB: over the 50 MB document total, under the 100 MB one.
+    await anona.uploadFiles({ spaceId: "s", files: [clip, doc] });
+    expect(fetchImpl).toHaveBeenCalled();
+
+    // And past 100 MB it is refused, naming the video total.
+    const docs = Array.from({ length: 3 }, (_, i) => ({
+      data: new Uint8Array(MAX_FILE_BYTES),
+      filename: `d${i}.pdf`,
+    }));
+    await expect(
+      anona.uploadFiles({ spaceId: "s", files: [clip, ...docs] }),
+    ).rejects.toThrow(
+      new RegExp(`${MAX_VIDEO_UPLOAD_BYTES / 1024 / 1024} MB per-request`),
+    );
   });
 
   it("rejects an empty file list before uploading", async () => {

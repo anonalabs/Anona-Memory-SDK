@@ -1710,6 +1710,30 @@ class AnonaClient:
     #: to get a 413 back.
     MAX_FILE_BYTES = 25 * 1024 * 1024
 
+    #: Video gets its own, higher cap, because 25 MB is a few seconds of it at
+    #: any real bitrate. Mirrored from the API's own video cap. Mirroring the
+    #: *general* cap alone was worse than having no check at all: it rejected a
+    #: 40 MB clip the API would have accepted, locally, with a message naming a
+    #: limit that does not apply to it — so the modality the higher cap exists
+    #: for was unreachable through the SDK.
+    MAX_VIDEO_BYTES = 64 * 1024 * 1024
+
+    #: Extensions the video cap applies to. Matched on the filename suffix,
+    #: because that is what the API dispatches on, not the content type the
+    #: client happens to send.
+    VIDEO_EXTENSIONS = frozenset({".mp4", ".mov", ".webm", ".mkv"})
+
+    @classmethod
+    def _file_cap(cls, name: str) -> int:
+        """The per-file byte cap that applies to ``name``."""
+        import os
+
+        return (
+            cls.MAX_VIDEO_BYTES
+            if os.path.splitext(name)[1].lower() in cls.VIDEO_EXTENSIONS
+            else cls.MAX_FILE_BYTES
+        )
+
     @classmethod
     def _upload_parts(
         cls,
@@ -1735,11 +1759,12 @@ class AnonaClient:
             content = file.read()
             name = filename or os.path.basename(str(getattr(file, "name", "upload")))
 
-        if len(content) > cls.MAX_FILE_BYTES:
+        cap = cls._file_cap(name)
+        if len(content) > cap:
             raise AnonaError(
                 413,
                 f"'{name}' is {len(content) // (1024 * 1024)} MB, over the "
-                f"{cls.MAX_FILE_BYTES // (1024 * 1024)} MB per-file limit.",
+                f"{cap // (1024 * 1024)} MB per-file limit.",
             )
 
         files = [("files", (name, content))]

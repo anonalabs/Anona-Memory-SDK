@@ -10,11 +10,15 @@ about one user — as data, or as a prompt-ready block — and `ask_about_user`
 answers a question from that user's memories only.
 """
 import os
+import uuid
 
 from anona import AnonaClient
 
 client = AnonaClient(api_key=os.environ["ANONA_API_KEY"])
-space = os.environ.get("ANONA_SPACE_ID", "examples-profiles")
+# A fresh space per run, deleted at the end. The id is generated here and
+# never read from the environment: this script deletes the space it is about
+# to create, so taking the name from a caller would make it delete theirs.
+space = f"examples-profiles-{uuid.uuid4().hex[:8]}"
 
 for fact in [
     "Priya is on the annual plan and pays by invoice.",

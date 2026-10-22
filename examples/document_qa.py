@@ -10,11 +10,15 @@ returns job ids, and a job reaching `completed` means that file is searchable.
 """
 import os
 import time
+import uuid
 
 from anona import AnonaClient, AnonaError
 
 client = AnonaClient(api_key=os.environ["ANONA_API_KEY"])
-space = os.environ.get("ANONA_SPACE_ID", "examples-document-qa")
+# A fresh space per run, deleted at the end. The id is generated here and
+# never read from the environment: this script deletes the space it is about
+# to create, so taking the name from a caller would make it delete theirs.
+space = f"examples-document-qa-{uuid.uuid4().hex[:8]}"
 try:
     client.create_space(space)
 except AnonaError:

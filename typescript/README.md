@@ -111,9 +111,10 @@ await anona.uploadFiles({
 });
 ```
 
-Limits: 25 MB per file, 50 MB per request, 20 files per request — all checked
-before anything is sent. Ingestion is asynchronous; poll the returned job ids
-with `getJob`.
+Limits: 25 MB per file and 50 MB per request, or 64 MB per file and 100 MB per
+request once any `.mp4` / `.mov` / `.webm` / `.mkv` is in the set; 20 files per
+request. All checked before anything is sent. Ingestion is asynchronous; poll
+the returned job ids with `getJob`.
 
 ## Correcting or retiring a memory
 

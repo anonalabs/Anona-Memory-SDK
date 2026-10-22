@@ -5,12 +5,17 @@ no shared harness — so you can read one and ignore the rest.
 
 ```bash
 export ANONA_API_KEY=anona_live_YOUR_KEY
-export ANONA_SPACE_ID=my-space          # optional; each script has a default
 python examples/memory_basics.py
 ```
 
-Every script creates a throwaway space and deletes it on the way out, so
-running them leaves nothing behind.
+Every scenario script generates its own space id (`examples-basics-3f9a1c08`),
+writes only there, and deletes only that space on the way out — so running them
+leaves nothing behind and two runs never collide. The id is deliberately **not**
+configurable: these scripts delete the space they create, and a script that took
+the name from its caller would delete the caller's space instead.
+
+To point an example at a space you already own, edit the one line that builds
+the id and drop the `delete_space` call at the bottom.
 
 ## Scenarios (SDK only)
 
@@ -28,13 +33,18 @@ The product, story by story. `pip install anona` is all these need.
 | [`multi_agent_shared_space.py`](multi_agent_shared_space.py) | A researcher and a writer share one space: `agent_id` separates their working sets, an unscoped read is the handoff. |
 | [`background_ingestion.py`](background_ingestion.py) | High-volume writes: `background=True` and `record_batch`, with `get_job` polling for the stored ids. |
 | [`knowledge_graph.py`](knowledge_graph.py) | The entity graph a space builds on its own: nodes, co-occurrence edges, and per-entity observations. |
-| [`space_routing.py`](space_routing.py) | Let Anona pick the space: `route="auto"` on a write and a read, `routed_to` / `searched` for which one it chose, and why an unanswerable question searches nothing. |
 | [`webhooks_and_settings.py`](webhooks_and_settings.py) | Configure a space: webhook lifecycle, proxy defaults, extraction settings. |
+| [`space_routing.py`](space_routing.py) | Let Anona pick the space: `route="auto"` on a write and a read, `routed_to` / `searched` for which one it chose, and why an unanswerable question searches nothing. |
 
 ## Framework adapters
 
 The same memory wired into an agent framework's own seam. These run a real
 agent loop, so each also needs that framework's model credentials.
+
+These are the scripts that do honour `ANONA_SPACE_ID` — set it to write into a
+space you already own. They only ever record and retrieve; none of them deletes
+a space or rewrites its settings, which is why taking the id from the
+environment is safe here and is not in the scenario scripts above.
 
 | Script | Install | Also needs |
 | --- | --- | --- |
