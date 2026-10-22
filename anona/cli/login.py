@@ -231,7 +231,44 @@ def _register(
     return oauth.register_client(meta, redirect_uri, client), True
 
 
-def run_login(base_url: str, open_browser: bool = True) -> int:
+class ScopeRefused(Abort):
+    """The deployment will not grant the command-line scope. Not fatal to a
+    combined login: the MCP approval still runs."""
+
+
+def _forget_temp(base_url: str) -> None:
+    """Drop a temporary profile the server has spent or refused from the MCP file.
+
+    The profile rides whichever approval runs first, and in a combined login
+    that is the command-line one -- whose credential has a file of its own. So
+    the token that approval claimed (or that the server said opens nothing)
+    still sits in `credentials.json`, and the MCP approval right after it would
+    resend a token the server has already burned. The MCP credential itself is
+    left exactly as it was; a file that held only the profile is removed.
+    """
+    try:
+        with tokens.credential_lock():
+            c = store.load()
+            if c is None or c.temp_token is None:
+                return
+            if c.base_url.rstrip("/") != base_url.rstrip("/"):
+                return
+            if c.signed_in:
+                c.temp_token = None
+                c.temp_expires_at = None
+                store.save(c)
+            else:
+                store.clear()
+    except (OSError, oauth.OAuthError):
+        # Recoverable: the next approval that sends it is refused and
+        # `_register` drops it (with a message), which is the same outcome.
+        pass
+
+
+def _approve(base_url: str, open_browser: bool, scope: str) -> int:
+    """One browser approval for one grant, stored in that grant's own file."""
+    cli = scope == oauth.CLI_SCOPE
+    where = store.cli_path() if cli else store.path()
     server = None
     try:
         with httpx.Client() as client:
@@ -241,13 +278,27 @@ def run_login(base_url: str, open_browser: bool = True) -> int:
             client_id, dropped_temp = _register(
                 meta, redirect_uri, client, _live_temp_token(base_url)
             )
-        verifier, challenge = oauth.new_pkce()
-        server.expected_state = secrets.token_urlsafe(32)
-        url = oauth.authorize_url(meta, client_id, redirect_uri, challenge, server.expected_state)
+            if cli and dropped_temp:
+                _forget_temp(base_url)
+            verifier, challenge = oauth.new_pkce()
+            server.expected_state = secrets.token_urlsafe(32)
+            url = oauth.authorize_url(
+                meta, client_id, redirect_uri, challenge, server.expected_state, scope=scope
+            )
+            if cli:
+                refusal = oauth.scope_refusal(url, client)
+                if refusal is not None:
+                    raise ScopeRefused(
+                        "this deployment does not issue command-line credentials "
+                        f"({refusal}). Nothing was saved for the command line."
+                    )
 
         # Printed unconditionally: webbrowser.open is False over SSH and in
         # containers, and True is not proof a window appeared.
-        print("Open this URL in a browser to sign in to Anona:")
+        if cli:
+            print("Open this URL in a browser to approve the Anona command line:")
+        else:
+            print("Open this URL in a browser to sign in to Anona:")
         print(f"\n  {url}\n")
         if open_browser:
             try:
@@ -259,15 +310,38 @@ def run_login(base_url: str, open_browser: bool = True) -> int:
         code = _await_callback(server, TIMEOUT_SECONDS)
         creds, claimed = _exchange(meta, client_id, redirect_uri, code, verifier)
         creds.base_url = base_url
+        if cli:
+            if claimed:
+                # Spent server-side, whatever happens to the token below.
+                _forget_temp(base_url)
+            if oauth.token_typ(creds.access_token) != oauth.CLI_ACCESS_TYP:
+                # A deployment that predates command-line tokens takes
+                # `scope=cli` and mints an MCP token anyway. The data plane
+                # refuses that on every call, so storing it would leave the
+                # CLI "signed in" to nothing -- and an MCP token is never used
+                # on REST as a fallback. Revoke the grant it opened, and say so.
+                try:
+                    with httpx.Client() as client:
+                        oauth.revoke(meta, creds.refresh_token, client)
+                except Exception:
+                    pass
+                raise ScopeRefused(
+                    "this deployment issued an MCP credential instead of a "
+                    "command-line one, so it does not support command-line "
+                    "sign-in yet. Nothing was saved for the command line; use "
+                    "an API key for record, retrieve and reason."
+                )
         try:
             # Under the refresh lock: a proxy that finishes rotating just after
             # this must not overwrite the credential the user just approved
             # with the old family's rotated pair.
-            with tokens.credential_lock():
+            with tokens.credential_lock(where):
                 # `dropped_temp` is the third case, and it must not carry:
                 # the server has already told us that token opens nothing, so
                 # writing it back only reproduces the dead end on the next run.
-                if not claimed and not dropped_temp:
+                # The command-line file never holds a profile at all: it stays
+                # in the MCP file, where `anona start` put it.
+                if not cli and not claimed and not dropped_temp:
                     # Carried across, not dropped. Only a server-confirmed
                     # claim spends the token; a login that claimed nothing —
                     # an account that already had an org, a refusal, no
@@ -288,12 +362,16 @@ def run_login(base_url: str, open_browser: bool = True) -> int:
                     ) == base_url.rstrip("/"):
                         creds.temp_token = stored.temp_token
                         creds.temp_expires_at = stored.temp_expires_at
-                store.save(creds)
+                if cli:
+                    store.save(creds, where)
+                else:
+                    store.save(creds)
         except OSError as exc:
+            again = "anona login --cli" if cli else "anona login"
             raise Abort(
                 f"Approval succeeded, but the credential could not be saved to "
-                f"{store.path()}: {exc.strerror or type(exc).__name__}. "
-                f"Fix that and run `anona login` again."
+                f"{where}: {exc.strerror or type(exc).__name__}. "
+                f"Fix that and run `{again}` again."
             ) from exc
     except (Abort, oauth.OAuthError) as exc:
         print(f"anona login: {exc}", file=sys.stderr)
@@ -301,5 +379,73 @@ def run_login(base_url: str, open_browser: bool = True) -> int:
     finally:
         if server is not None:
             server.server_close()
-    print("Signed in. MCP clients can now connect without an API key.")
+    if cli:
+        print(
+            "Signed in for the command line: record, retrieve, reason and the "
+            "other data commands now use this login."
+        )
+    else:
+        print("Signed in. MCP clients can now connect without an API key.")
+    return 0
+
+
+def run_login(base_url: str, open_browser: bool = True) -> int:
+    """The MCP approval alone: `anona login --mcp`, and the second half of
+    `anona login`. Stored in `credentials.json`, exactly as it always was."""
+    return _approve(base_url, open_browser, oauth.MCP_SCOPE)
+
+
+def run_cli_login(base_url: str, open_browser: bool = True) -> int:
+    """The command-line approval alone: `anona login --cli`, and the first half
+    of `anona login`. Stored in `cli-credentials.json`."""
+    return _approve(base_url, open_browser, oauth.CLI_SCOPE)
+
+
+_STEP_NAMES = {
+    "cli": "the command line (`anona login --cli`)",
+    "mcp": "MCP (`anona login --mcp`)",
+}
+
+
+def run_logins(
+    base_url: str, open_browser: bool = True, *, cli: bool = True, mcp: bool = True
+) -> int:
+    """Each requested approval in turn: the command line's, then MCP's.
+
+    Two approvals rather than one token for both, because the two grants differ
+    on purpose: the command-line token reaches the whole memory API,
+    deletes included, and is granted only to this machine's loopback; the MCP
+    token reaches only /mcp. One failing does not stop the other -- a
+    deployment that predates command-line tokens still gets its MCP sign-in --
+    and the exit code is non-zero only when everything asked for failed.
+
+    The command line goes first so that an unclaimed temporary profile is
+    claimed by the first approval and the MCP token is then minted for the
+    claimed account, never the one the claim replaced.
+    """
+    steps = [name for name, on in (("cli", cli), ("mcp", mcp)) if on]
+    results: dict[str, int] = {}
+    for i, step in enumerate(steps):
+        if len(steps) > 1:
+            label = "command line" if step == "cli" else "MCP"
+            print(f"\nApproval {i + 1} of {len(steps)}: {label}.", flush=True)
+        if step == "cli":
+            results[step] = run_cli_login(base_url, open_browser=open_browser)
+        else:
+            results[step] = run_login(base_url, open_browser=open_browser)
+        if results[step] != 0 and i + 1 < len(steps):
+            print("Continuing with the next approval.", file=sys.stderr, flush=True)
+    failed = [s for s in steps if results[s] != 0]
+    if len(steps) > 1 and failed and len(failed) < len(steps):
+        done = [s for s in steps if s not in failed]
+        print(
+            "Signed in for "
+            + " and ".join(_STEP_NAMES[s] for s in done)
+            + "; not for "
+            + " and ".join(_STEP_NAMES[s] for s in failed)
+            + ".",
+            file=sys.stderr,
+        )
+    if failed and len(failed) == len(steps):
+        return results[failed[-1]]
     return 0

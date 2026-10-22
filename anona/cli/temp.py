@@ -51,7 +51,11 @@ def describe_deadline(expires_at: float, now: float | None = None) -> str:
 
 def run_start(base_url: str) -> int:
     existing = store.load()
-    if existing is not None and existing.signed_in:
+    cli = store.load(store.cli_path())
+    # Either login counts: with the command-line one stored, the data
+    # commands would use it ahead of a new profile, which would then hold
+    # nothing and expire unseen.
+    if (existing is not None and existing.signed_in) or (cli is not None and cli.signed_in):
         print(
             "anona start: you are already signed in. Run `anona logout` first "
             "if you want a temporary profile instead.",

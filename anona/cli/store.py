@@ -1,9 +1,17 @@
-"""Where the OAuth credential lives on disk.
+"""Where the OAuth credentials live on disk.
 
 Separate from `~/.anona/config.env`, which holds an API key for the skill and
-for `anona-mcp`. The two are different credentials with different reach: a key
-works against REST, this does not. Keeping them in separate files means
-`anona logout` cannot silently destroy a key the user minted by hand.
+for `anona-mcp`. Keeping them in separate files means `anona logout` cannot
+silently destroy a key the user minted by hand.
+
+Two OAuth credentials, one file each. `credentials.json` is the MCP
+one (`typ=mcp_access`, accepted only on /mcp) and also carries an unclaimed
+temporary profile; `cli-credentials.json` is the command line's
+(`typ=cli_access`, accepted only on the REST data plane). Each has its own
+OAuth client, its own refresh family and its own lock, so refreshing or
+revoking one can never touch the other, and an MCP setup reads exactly the
+file it always did. The two share one JSON shape, and the Node CLI reads and
+writes the same files.
 """
 
 from __future__ import annotations
@@ -50,7 +58,14 @@ class Credentials:
 
 
 def path() -> Path:
+    """The MCP credential (and any temporary profile)."""
     return Path(os.path.expanduser("~")) / ".anona" / "credentials.json"
+
+
+def cli_path() -> Path:
+    """The command line's own credential, used by record/retrieve/reason and
+    the other data commands. Never holds a temporary profile."""
+    return Path(os.path.expanduser("~")) / ".anona" / "cli-credentials.json"
 
 
 def _opt(value, kind):
@@ -59,14 +74,14 @@ def _opt(value, kind):
     return value if isinstance(value, kind) and not isinstance(value, bool) else None
 
 
-def load() -> Credentials | None:
+def load(p: Path | None = None) -> Credentials | None:
     """The stored credential, or None when there is none that can be read.
 
     A corrupt or unreadable file reads as "logged out" rather than raising.
     This runs at the start of every `anona mcp` process, and a traceback there
     is an MCP client that fails to start with an error naming a JSON decoder.
     """
-    p = path()
+    p = p or path()
     try:
         raw = json.loads(p.read_text())
         return Credentials(
@@ -82,14 +97,14 @@ def load() -> Credentials | None:
         return None
 
 
-def save(c: Credentials) -> None:
+def save(c: Credentials, p: Path | None = None) -> None:
     """Write 0600, atomically.
 
     Atomic because refresh ROTATES: the server burns the old refresh token the
     moment the new one is issued. A half-written file at that instant leaves
     the user holding neither, and the only recovery is approving again.
     """
-    p = path()
+    p = p or path()
     p.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(p.parent, 0o700)
     doc: dict = {
@@ -105,7 +120,7 @@ def save(c: Credentials) -> None:
         doc["temp_token"] = c.temp_token
         doc["temp_expires_at"] = c.temp_expires_at
     payload = json.dumps(doc, indent=2)
-    fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=".credentials-")
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=f".{p.stem}-")
     try:
         # Wrap the fd first so it is closed even if fchmod raises.
         with os.fdopen(fd, "w") as f:
@@ -122,8 +137,8 @@ def save(c: Credentials) -> None:
         raise
 
 
-def clear() -> None:
+def clear(p: Path | None = None) -> None:
     try:
-        path().unlink()
+        (p or path()).unlink()
     except FileNotFoundError:
         pass

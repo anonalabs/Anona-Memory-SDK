@@ -1,9 +1,25 @@
-/** The `anona` command: start, login, logout, status, mcp. */
+/**
+ * The `anona` command: start, login, logout, status, mcp.
+ *
+ * `login` holds two credentials, each in its own file (store.ts): the command
+ * line's, which the pip package's data commands use, and MCP's. This package
+ * has no data commands of its own; it signs both in, out and reports them, so
+ * the two CLIs interoperate on the same files.
+ */
 import type { Readable } from "node:stream";
-import { runLogin, type LoginOptions } from "./login.js";
+import { runCliLogin, runLogin, runLogins, type LoginOptions } from "./login.js";
+import { discover, revoke } from "./oauth.js";
 import { runProxy } from "./proxy.js";
 import { withCredentialLock } from "./tokens.js";
-import { clearCredentials, DEFAULT_BASE_URL, isSignedIn, liveTempToken, loadCredentials } from "./store.js";
+import {
+  clearCredentials,
+  cliCredentialsPath,
+  DEFAULT_BASE_URL,
+  isSignedIn,
+  liveTempToken,
+  loadCredentials,
+  type Credentials,
+} from "./store.js";
 import { checkTransport, resolveTarget, TargetError } from "./target.js";
 import { describeDeadline, runStart } from "./temp.js";
 
@@ -16,8 +32,13 @@ export interface IO {
 const USAGE = `usage: anona [--base-url URL] <command>
 
   start                 Create a temporary profile with no account
-  login [--no-browser]  Approve access in a browser and store a credential
-  logout [--force]      Delete the stored credential (--force: also abandon an
+  login [--cli|--mcp] [--no-browser]
+                        Approve access in a browser: the command line, then
+                        MCP, each stored in its own file (--cli or --mcp: only
+                        that one)
+  logout [--cli|--mcp] [--force]
+                        Delete the stored credentials and revoke them (--cli or
+                        --mcp: only that one; --force: also abandon an
                         unclaimed temporary profile, which cannot be recovered)
   status                Show whether you are signed in
   mcp                   Run the stdio MCP proxy for a client to launch
@@ -52,7 +73,41 @@ function guarded(io: IO, fn: () => Promise<number> | number): Promise<number> | 
   }
 }
 
+/** The command-line login, described; null when there is none. */
+function cliStatus(io: IO, requested?: string): number | null {
+  const c = loadCredentials(cliCredentialsPath());
+  if (c === null || !isSignedIn(c)) return null;
+  if (requested !== undefined) {
+    const refused = guarded(io, () => (resolveTarget(requested, c.baseUrl), 0));
+    if (refused !== 0) return refused as number;
+  }
+  // Only what the file says: never a token or the client id, and no network
+  // call, which would rotate the refresh token just to look at it.
+  io.stdout.write(`Command-line login for ${c.baseUrl} (used by record, retrieve, reason and the other data commands).\n`);
+  const remaining = c.expiresAt - Date.now() / 1000;
+  if (remaining > 0) {
+    io.stdout.write(`Its access token expires in ${Math.floor(remaining / 60)} minutes and is renewed automatically.\n`);
+  } else {
+    io.stdout.write("Its access token has expired; a refresh is attempted on the next command.\n");
+  }
+  io.stdout.write("If a command reports an authorization failure, run `anona login --cli`.\n");
+  return 0;
+}
+
 function status(io: IO, requested?: string): number {
+  const cli = cliStatus(io, requested);
+  if (cli === null) return mcpStatus(io, requested);
+  if (cli !== 0) return cli;
+  if (loadCredentials() === null) {
+    io.stdout.write("No MCP credential is stored. Run `anona login --mcp` to connect MCP clients.\n");
+    return 0;
+  }
+  // A working command-line login decides the exit code.
+  mcpStatus(io, requested);
+  return 0;
+}
+
+function mcpStatus(io: IO, requested?: string): number {
   const c = loadCredentials();
   if (c === null) {
     io.stdout.write("Not logged in. Run `anona login`.\n");
@@ -97,12 +152,69 @@ function status(io: IO, requested?: string): number {
   return 0;
 }
 
+/**
+ * Delete the stored credential(s), then revoke each at the server. Local first
+ * and unconditionally, so a logout works offline; a refresh token that could
+ * not be revoked dies on its own after 30 unused days. Each file is removed
+ * under its own lock, so a refresh finishing just after cannot write it back.
+ */
+async function logout(io: IO, which: { cli: boolean; mcp: boolean; force: boolean }): Promise<number> {
+  if (which.mcp) {
+    const refused = await withCredentialLock(() => {
+      const held = loadCredentials();
+      if (held !== null && liveTempToken(held) !== null && !which.force) {
+        // The token is never printed, so this file is its only copy: deleting
+        // it strands the profile and everything in it until the server deletes
+        // it too. Checked first, so a refused logout removes nothing at all.
+        io.stderr.write(
+          `anona logout: this would abandon an unclaimed temporary profile (it ${describeDeadline(held.tempExpiresAt as number)}). ` +
+            "Run `anona login` to claim it, or `anona logout --force` to discard it. " +
+            "`anona logout --cli` removes only the command-line credential.\n",
+        );
+        return true;
+      }
+      return false;
+    });
+    if (refused) return 1;
+  }
+  const toRevoke: Credentials[] = [];
+  const take = (file?: string) => {
+    const held = loadCredentials(file);
+    if (held !== null && isSignedIn(held)) toRevoke.push(held);
+    clearCredentials(file);
+  };
+  if (which.cli) await withCredentialLock(() => take(cliCredentialsPath()), cliCredentialsPath());
+  if (which.mcp) await withCredentialLock(() => take());
+  let unrevoked = 0;
+  for (const c of toRevoke) {
+    try {
+      // Pinned like any stored credential: only to the deployment that issued it.
+      checkTransport(c.baseUrl);
+      if (!(await revoke(await discover(c.baseUrl), c.refreshToken))) unrevoked++;
+    } catch {
+      unrevoked++;
+    }
+  }
+  if (unrevoked > 0) {
+    io.stderr.write(
+      "anona logout: removed locally, but the server could not be told to revoke it; it expires after " +
+        "30 days unused, or revoke it now under Integrations -> MCP -> Connected apps in the dashboard.\n",
+    );
+  }
+  io.stdout.write(
+    which.cli && which.mcp ? "Logged out.\n" : which.cli ? "Logged out of the command line.\n" : "Logged out of MCP.\n",
+  );
+  return 0;
+}
+
 export async function main(argv: string[], io: IO, login: Partial<LoginOptions> = {}): Promise<number> {
   // None, not the resolved default: `mcp` must be able to tell "the user said
   // so" from "nobody said anything" to prefer the stored deployment.
   let baseUrl: string | undefined;
   let noBrowser = false;
   let force = false;
+  let onlyCli = false;
+  let onlyMcp = false;
   let helpWanted = false;
   let versionWanted = false;
   const rest: string[] = [];
@@ -120,6 +232,10 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
       noBrowser = true;
     } else if (a === "--force") {
       force = true;
+    } else if (a === "--cli") {
+      onlyCli = true;
+    } else if (a === "--mcp") {
+      onlyMcp = true;
     } else if (a === "--help" || a === "-h") {
       helpWanted = true;
     } else if (a === "--version" || a === "-V") {
@@ -149,6 +265,14 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
     io.stderr.write("anona: --force only applies to logout\n");
     return 2;
   }
+  if ((onlyCli || onlyMcp) && command !== "login" && command !== "logout") {
+    io.stderr.write("anona: --cli and --mcp only apply to login and logout\n");
+    return 2;
+  }
+  if (onlyCli && onlyMcp) {
+    io.stderr.write("anona: give --cli or --mcp, not both (neither means both)\n");
+    return 2;
+  }
   // What the user named, if anything. Only `start` and `login` may follow it to
   // a new deployment; `mcp` holds a credential and is pinned to the deployment
   // that issued it (resolveTarget).
@@ -162,8 +286,14 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
     const refused = guarded(io, () => (checkTransport(base), 0));
     if (refused !== 0) return refused;
     io.stdout.write(`Signing in to ${base}\n`);
+    const wantCli = !onlyMcp;
+    const wantMcp = !onlyCli;
+    const heldCli = wantCli ? loadCredentials(cliCredentialsPath()) : null;
+    if (heldCli && isSignedIn(heldCli) && heldCli.baseUrl.replace(/\/+$/, "") !== base.replace(/\/+$/, "")) {
+      io.stdout.write(`Note: the stored command-line credential is for ${heldCli.baseUrl}; this replaces it.\n`);
+    }
     const stored = loadCredentials();
-    if (stored && stored.baseUrl.replace(/\/+$/, "") !== base.replace(/\/+$/, "")) {
+    if (wantMcp && stored && stored.baseUrl.replace(/\/+$/, "") !== base.replace(/\/+$/, "")) {
       io.stdout.write(`Note: the stored credential is for ${stored.baseUrl}; this replaces it.\n`);
       // A profile belongs to the deployment that minted it, so its token cannot
       // be carried onto this one. But the token is never printed, so this file
@@ -176,33 +306,11 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
         );
       }
     }
-    return runLogin(base, {
-      ...login,
-      openBrowser: !noBrowser,
-      stdout: io.stdout,
-      stderr: io.stderr,
-    });
+    const opts: LoginOptions = { ...login, openBrowser: !noBrowser, stdout: io.stdout, stderr: io.stderr };
+    if (wantCli && wantMcp) return runLogins(base, opts);
+    return wantCli ? runCliLogin(base, opts) : runLogin(base, opts);
   }
-  if (command === "logout") {
-    // Under the refresh lock, so a refresh finishing just after cannot write
-    // the credential back.
-    return withCredentialLock(() => {
-      const held = loadCredentials();
-      if (held !== null && liveTempToken(held) !== null && !force) {
-        // The token is never printed, so this file is its only copy: deleting
-        // it strands the profile and everything in it until the server deletes
-        // it too.
-        io.stderr.write(
-          `anona logout: this would abandon an unclaimed temporary profile (it ${describeDeadline(held.tempExpiresAt as number)}). ` +
-            "Run `anona login` to claim it, or `anona logout --force` to discard it.\n",
-        );
-        return 1;
-      }
-      clearCredentials();
-      io.stdout.write("Logged out.\n");
-      return 0;
-    });
-  }
+  if (command === "logout") return logout(io, { cli: !onlyMcp, mcp: !onlyCli, force });
   if (command === "status") return status(io, requested);
   // mcp: a credential belongs to the deployment that issued it. Naming another
   // is refused on stderr; stdout is the client's JSON-RPC stream.

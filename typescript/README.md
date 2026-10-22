@@ -47,10 +47,12 @@ console.log(memories[0]?.content);
 ## `anona` command
 
 Installing the package also installs an `anona` binary: `anona login` signs in
-through the browser, `anona status` and `anona logout` manage the stored
-credential, and `anona mcp` is a stdio MCP server that forwards to Anona with
+through the browser (two approvals: the command line, then MCP; `--cli` or
+`--mcp` for one), `anona status` and `anona logout` manage the stored
+credentials, and `anona mcp` is a stdio MCP server that forwards to Anona with
 that credential, so an MCP client needs no API key. It reads and writes the same
-`~/.anona/credentials.json` as the Python package's `anona` command.
+`~/.anona/credentials.json` and `~/.anona/cli-credentials.json` as the Python
+package's `anona` command, whose data commands use the second.
 
 `anona start` makes a temporary profile with no account. It is deleted after 72
 hours unless you claim it with `anona login`; `anona status` shows the deadline,
@@ -61,7 +63,7 @@ npx @anona-labs/memory login
 claude mcp add anona -- npx -y @anona-labs/memory mcp
 ```
 
-The credential is MCP-only; the SDK still needs an API key.
+Neither credential works for the SDK, which still needs an API key.
 
 ## Vercel AI SDK
 

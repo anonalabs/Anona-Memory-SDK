@@ -9,8 +9,31 @@ import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { authorizeUrl, discover, newPkce, OAuthError, RegistrationRejected, registerClient, type ServerMetadata } from "./oauth.js";
-import { credentialsPath, liveTempToken, loadCredentials, saveCredentials, type Credentials } from "./store.js";
+import {
+  authorizeUrl,
+  CLI_ACCESS_TYP,
+  CLI_SCOPE,
+  discover,
+  MCP_SCOPE,
+  newPkce,
+  OAuthError,
+  RegistrationRejected,
+  registerClient,
+  revoke,
+  scopeRefusal,
+  tokenTyp,
+  type ServerMetadata,
+} from "./oauth.js";
+import {
+  clearCredentials,
+  cliCredentialsPath,
+  credentialsPath,
+  isSignedIn,
+  liveTempToken,
+  loadCredentials,
+  saveCredentials,
+  type Credentials,
+} from "./store.js";
 import { withCredentialLock } from "./tokens.js";
 
 export const TIMEOUT_SECONDS = 300;
@@ -292,37 +315,103 @@ export interface LoginOptions {
   stderr?: { write(s: string): unknown };
 }
 
-export async function runLogin(baseUrl: string, opts: LoginOptions = {}): Promise<number> {
+/** The deployment will not grant the command-line scope. Not fatal to a combined login. */
+export class ScopeRefused extends Abort {
+  constructor(message: string) {
+    super(message);
+    this.name = "ScopeRefused";
+  }
+}
+
+/**
+ * Drop a temporary profile the server has spent or refused from the MCP file.
+ *
+ * The profile rides whichever approval runs first, and in a combined login that
+ * is the command-line one, whose credential has a file of its own. Without this
+ * the MCP approval right after would resend a token the server already burned.
+ * The MCP credential itself is left as it was; a profile-only file is removed.
+ * Failure is recoverable (the next registration is refused and drops it).
+ */
+async function forgetTemp(baseUrl: string): Promise<void> {
+  try {
+    await withCredentialLock(() => {
+      const c = loadCredentials();
+      if (c === null || c.tempToken === undefined || !sameBase(c.baseUrl, baseUrl)) return;
+      if (isSignedIn(c)) {
+        delete c.tempToken;
+        delete c.tempExpiresAt;
+        saveCredentials(c);
+      } else {
+        clearCredentials();
+      }
+    });
+  } catch {
+    /* recoverable: see above */
+  }
+}
+
+async function approve(baseUrl: string, opts: LoginOptions, scope: string): Promise<number> {
   const out = opts.stdout ?? process.stdout;
   const err = opts.stderr ?? process.stderr;
+  const cli = scope === CLI_SCOPE;
+  const where = cli ? cliCredentialsPath() : credentialsPath();
   let lb: LoopbackServer | undefined;
   try {
     const meta = await discover(baseUrl);
     lb = await makeServer();
     const redirectUri = `http://127.0.0.1:${lb.port}${CALLBACK_PATH}`;
     const { clientId, droppedTemp } = await register(meta, redirectUri, storedTempToken(baseUrl), err);
+    if (cli && droppedTemp) await forgetTemp(baseUrl);
     const { verifier, challenge } = newPkce();
     const state = randomBytes(32).toString("base64url");
     lb.setState(state);
-    const url = authorizeUrl(meta, clientId, redirectUri, challenge, state);
+    const url = authorizeUrl(meta, clientId, redirectUri, challenge, state, scope);
+    if (cli) {
+      const refusal = await scopeRefusal(url);
+      if (refusal !== null) {
+        throw new ScopeRefused(
+          `this deployment does not issue command-line credentials (${refusal}). Nothing was saved for the command line.`,
+        );
+      }
+    }
 
     // Printed unconditionally: a spawn that fails silently (SSH, containers) is
     // indistinguishable from one that worked.
-    out.write("Open this URL in a browser to sign in to Anona:\n");
+    out.write(
+      cli
+        ? "Open this URL in a browser to approve the Anona command line:\n"
+        : "Open this URL in a browser to sign in to Anona:\n",
+    );
     out.write(`\n  ${url}\n\n`);
     if (opts.openBrowser !== false) (opts.opener ?? browser.open)(url);
     out.write("Waiting for approval...\n");
 
     const code = await awaitCallback(lb, opts.timeoutMs ?? TIMEOUT_SECONDS * 1000);
     const { creds, claimed } = await exchange(meta, clientId, redirectUri, code, verifier, baseUrl);
+    if (cli) {
+      // Spent server-side, whatever happens to the token below.
+      if (claimed) await forgetTemp(baseUrl);
+      if (tokenTyp(creds.accessToken) !== CLI_ACCESS_TYP) {
+        // A deployment that predates command-line tokens mints an MCP token
+        // for `scope=cli`. The data plane refuses that on every call, so it is
+        // never stored here, and never used on REST as a fallback.
+        await revoke(meta, creds.refreshToken).catch(() => false);
+        throw new ScopeRefused(
+          "this deployment issued an MCP credential instead of a command-line one, so it does not " +
+            "support command-line sign-in yet. Nothing was saved for the command line; use an API key " +
+            "for record, retrieve and reason.",
+        );
+      }
+    }
     try {
       // Under the refresh lock: a proxy that finishes rotating just after this
       // must not overwrite the credential the user just approved.
       await withCredentialLock(() => {
         // `droppedTemp` is the third case and must not carry: the server has
         // said that token opens nothing, so writing it back only reproduces the
-        // dead end on the next run.
-        if (!claimed && !droppedTemp) {
+        // dead end on the next run. The command-line file never holds a
+        // profile: it stays in the MCP file, where `anona start` put it.
+        if (!cli && !claimed && !droppedTemp) {
           // Carried across, not dropped. Only a server-confirmed claim spends
           // the token; a login that claimed nothing leaves the stored one as it
           // was, because the token is never printed and this file is its only
@@ -334,13 +423,13 @@ export async function runLogin(baseUrl: string, opts: LoginOptions = {}): Promis
             creds.tempExpiresAt = stored.tempExpiresAt;
           }
         }
-        saveCredentials(creds);
-      });
+        saveCredentials(creds, where);
+      }, where);
     } catch (e) {
       if (e instanceof OAuthError) throw e; // the lock timed out; not a disk fault
       throw new Abort(
-        `Approval succeeded, but the credential could not be saved to ${credentialsPath()}: ` +
-          `${(e as NodeJS.ErrnoException).code ?? "error"}. Fix that and run \`anona login\` again.`,
+        `Approval succeeded, but the credential could not be saved to ${where}: ` +
+          `${(e as NodeJS.ErrnoException).code ?? "error"}. Fix that and run \`anona login${cli ? " --cli" : ""}\` again.`,
       );
     }
   } catch (e) {
@@ -352,6 +441,58 @@ export async function runLogin(baseUrl: string, opts: LoginOptions = {}): Promis
   } finally {
     lb?.close();
   }
-  out.write("Signed in. MCP clients can now connect without an API key.\n");
+  out.write(
+    cli
+      ? "Signed in for the command line: the pip package's record, retrieve, reason and other data commands now use this login.\n"
+      : "Signed in. MCP clients can now connect without an API key.\n",
+  );
+  return 0;
+}
+
+/** The MCP approval alone: `anona login --mcp`, and the second half of `anona login`. */
+export async function runLogin(baseUrl: string, opts: LoginOptions = {}): Promise<number> {
+  return approve(baseUrl, opts, MCP_SCOPE);
+}
+
+/** The command-line approval alone: `anona login --cli`, and the first half of `anona login`. */
+export async function runCliLogin(baseUrl: string, opts: LoginOptions = {}): Promise<number> {
+  return approve(baseUrl, opts, CLI_SCOPE);
+}
+
+const STEP_NAMES = {
+  cli: "the command line (`anona login --cli`)",
+  mcp: "MCP (`anona login --mcp`)",
+} as const;
+
+/**
+ * Each requested approval in turn: the command line's, then MCP's. One failing
+ * does not stop the other, and the exit code is non-zero only when everything
+ * asked for failed. The command line goes first so an unclaimed temporary
+ * profile is claimed by the first approval and the MCP token is minted for the
+ * claimed account.
+ */
+export async function runLogins(
+  baseUrl: string,
+  opts: LoginOptions = {},
+  which: { cli?: boolean; mcp?: boolean } = {},
+): Promise<number> {
+  const out = opts.stdout ?? process.stdout;
+  const err = opts.stderr ?? process.stderr;
+  const steps = (["cli", "mcp"] as const).filter((s) => which[s] !== false);
+  const results = new Map<"cli" | "mcp", number>();
+  for (const [i, step] of steps.entries()) {
+    if (steps.length > 1) out.write(`\nApproval ${i + 1} of ${steps.length}: ${step === "cli" ? "command line" : "MCP"}.\n`);
+    const rc = step === "cli" ? await runCliLogin(baseUrl, opts) : await runLogin(baseUrl, opts);
+    results.set(step, rc);
+    if (rc !== 0 && i + 1 < steps.length) err.write("Continuing with the next approval.\n");
+  }
+  const failed = steps.filter((s) => results.get(s) !== 0);
+  if (steps.length > 1 && failed.length > 0 && failed.length < steps.length) {
+    const done = steps.filter((s) => !failed.includes(s));
+    err.write(
+      `Signed in for ${done.map((s) => STEP_NAMES[s]).join(" and ")}; not for ${failed.map((s) => STEP_NAMES[s]).join(" and ")}.\n`,
+    );
+  }
+  if (failed.length > 0 && failed.length === steps.length) return results.get(failed[failed.length - 1] as "cli" | "mcp") as number;
   return 0;
 }

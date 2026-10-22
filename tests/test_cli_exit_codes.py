@@ -147,10 +147,11 @@ def test_the_space_flag_does_not_claim_to_be_required_when_signed_in(tmp_path):
         rc, out, err = run_main(["record", "--help"])
         assert rc == 0, rc
         assert "required when signed in" not in out, out
-        # Now the state that needs a space is an API key; a
-        # temporary profile still has its one space. Help text wraps.
+        # The states that need a space are an API key and the command-line
+        # login (both reach an account); a temporary profile still has its
+        # one space. Help text wraps.
         flat = " ".join(out.split())
-        assert "Required with an API key unless ANONA_SPACE_ID is set" in flat, flat
+        assert "Required with an API key or `anona login` unless ANONA_SPACE_ID is set" in flat, flat
         assert "a temporary profile uses `default`" in flat, flat
         print("OK")
     """, tmp_path))

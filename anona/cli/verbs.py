@@ -18,17 +18,17 @@ import argparse
 import sys
 from collections.abc import Callable
 
-from anona import AnonaClient, AnonaError
+from anona import AnonaClient
 
 from .credential import redact
 from .memory import (
     EMPTY_INPUT_EXIT,
+    Bearer,
+    _invoke,
     _emit_json,
-    _fail,
     _given,
     _printable,
     _printable_block,
-    _retry_notice,
     _token_and_space,
 )
 
@@ -190,17 +190,16 @@ def run(args: argparse.Namespace, base_url: str, space: str | None, api_key: str
     if refused is not None:
         return refused
     if api_key is not None:
-        token = api_key
+        bearer = Bearer(api_key, space)
     else:
         got = _token_and_space(space)
         if isinstance(got, int):
             return got
-        token, space = got
-    try:
-        with AnonaClient(api_key=token, base_url=base_url, on_retry=_retry_notice) as client:
-            doc = _call(client, verb, args, space)
-    except AnonaError as exc:
-        return _fail(exc, base_url)
+        bearer = got
+        space = bearer.space
+    done, doc = _invoke(base_url, bearer, lambda client: _call(client, verb, args, space))
+    if not done:
+        return doc  # the exit code, already reported
     if args.json:
         _emit_json(doc)
         return 0

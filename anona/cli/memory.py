@@ -4,15 +4,19 @@ MCP is the primary surface for an agent. These exist for a script, a quick
 check from a terminal, somebody who will not enable MCP, and the session
 before a client restart has loaded the MCP tools.
 
-Two credentials work here. An API key -- from `--api-key`,
-ANONA_API_KEY or ~/.anona/config.env, resolved in credential.py and bound to a
-host in target.for_api_key -- needs a space named, because an account can hold
-many and none is implied. Without a key, the stored temporary-profile token is
-used, and `--space` defaults to the profile's one space, "default".
+Three credentials work here, highest first. An API key -- from
+`--api-key`, ANONA_API_KEY or ~/.anona/config.env, resolved in credential.py
+and bound to a host in target.for_api_key. Then the command-line login
+(`anona login --cli`, ~/.anona/cli-credentials.json, `typ=cli_access`),
+refreshed when due and once more after a 401. Both reach an account, which can
+hold many spaces with none implied, so both need a space named. Last, the
+stored temporary-profile token, where `--space` defaults to the profile's one
+space, "default".
 
-The `anona login` token is deliberately NOT one of them: it is MCP-scoped and
-the data plane refuses it, so that an MCP credential cannot be replayed
-against the REST API. MCP and these verbs are decoupled on purpose.
+The MCP login (~/.anona/credentials.json, `typ=mcp_access`) is deliberately
+NOT one of them, and is never a fallback: the data plane refuses it, so that
+an MCP credential cannot be replayed against the REST API. MCP and these verbs
+are decoupled on purpose.
 """
 
 from __future__ import annotations
@@ -20,7 +24,8 @@ from __future__ import annotations
 import json
 import re
 import sys
-from dataclasses import asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from urllib.parse import urlsplit
 
 import httpx
@@ -32,8 +37,9 @@ from anona._record_outcome import (
     stored_something,
 )
 
+from . import store, tokens
 from .credential import redact
-from .proxy import _bearer
+from .oauth import OAuthError
 from .store import load
 from .tokens import NotLoggedIn
 
@@ -77,71 +83,159 @@ _KEY_ROUTE = (
 )
 
 
-def _token_and_space(space: str | None) -> tuple[str, str] | int:
-    """(token, space) off the stored temp profile, or the exit code after
-    printing why it cannot proceed.
+_NO_CREDENTIAL = (
+    "anona: no credential. Run `anona login --cli` to sign in, or use "
+    f"{_KEY_ROUTE};\n"
+    "or run `anona start` for a temporary profile with no account."
+)
 
-    Token precedence comes from `proxy._bearer`, which already decides that a
-    signed-in OAuth credential beats a temp token. Re-deriving that rule here
-    is how the proxy and these verbs would disagree about which credential a
-    write used.
+
+@dataclass
+class Bearer:
+    """What a data command presents, and how to renew it after a 401.
+
+    `renew` is set only for the command-line login, the one credential here
+    that can be refreshed. It takes the refused token, so the refresh happens
+    only if what is stored is still that token (another process may already
+    have rotated it), and returns the new one or the exit code after printing
+    why it could not.
     """
-    if load() is None:
-        print(
-            f"anona: no credential. Use {_KEY_ROUTE};\n"
-            "or run `anona start` for a temporary profile with no account.",
-            file=sys.stderr,
-        )
-        return AUTH_EXIT
+
+    token: str = field(repr=False)
+    space: str | None
+    renew: Callable[[str], str | int] | None = None
+
+
+def _renew_cli(rejected: str) -> str | int:
     with httpx.Client(timeout=30.0) as hc:
         try:
-            token, is_temp = _bearer(hc)
-        except NotLoggedIn as exc:
-            print(f"anona: {exc}", file=sys.stderr)
+            return tokens.access_token(
+                hc,
+                force_refresh=True,
+                rejected=rejected,
+                p=store.cli_path(),
+                relogin=tokens.CLI_RELOGIN,
+            )
+        except NotLoggedIn:
+            print(
+                "anona: the server refused the command-line login and it could not "
+                "be renewed. Run `anona login --cli` to sign in again.",
+                file=sys.stderr,
+            )
             return AUTH_EXIT
-        except httpx.HTTPError as exc:
-            # _bearer refreshes with a raw httpx.Client, outside the SDK's
-            # transport-error translation, so this one can really fire.
-            print(f"anona: could not refresh the login ({type(exc).__name__}).", file=sys.stderr)
+        except (httpx.HTTPError, OAuthError) as exc:
+            print(f"anona: could not renew the command-line login ({type(exc).__name__}).", file=sys.stderr)
             return 1
-    if not is_temp:
-        # A login mints an MCP-scoped OAuth token (`typ=mcp_access`), and the
-        # data plane rejects any token carrying a `typ` -- deliberately, so an
-        # MCP credential cannot be replayed against the REST API
-        # (`test_mcp_access_token_rejected_on_data_plane`). These verbs call
-        # /v1/record, /v1/retrieve and /v1/reason directly, so on a signed-in
-        # account they can only ever get `401 invalid_token`.
-        #
-        # The server's own message is good -- "This token cannot be used for
-        # the memory API. Use an Anona API key, or connect over MCP at /mcp."
-        # An earlier version of this comment claimed it said "Session token is
-        # invalid or expired", which is the *other* branch, the one for a JWT
-        # that fails to decode. So this guard is not rescuing a misleading
-        # answer. What it buys is smaller and still worth it: no wasted round
-        # trip, no `_fail` wrapping the envelope in a Python dict repr, and a
-        # mention of `anona start`, which is the third option and the one the
-        # server cannot know about.
+
+
+def _cli_bearer(space: str | None) -> Bearer | int | None:
+    """The command-line login, refreshed when due; None when there is none.
+
+    The space has already been required by main (`_data_credential`): an
+    account holds many and the server implies none, so unlike a temporary
+    profile there is no `default` to fall back on.
+    """
+    c = load(store.cli_path())
+    if c is None or not c.signed_in:
+        return None
+    with httpx.Client(timeout=30.0) as hc:
+        try:
+            token = tokens.access_token(hc, p=store.cli_path(), relogin=tokens.CLI_RELOGIN)
+        except NotLoggedIn as exc:
+            print(
+                f"anona: the command-line login could not be renewed. {exc}",
+                file=sys.stderr,
+            )
+            return AUTH_EXIT
+        except (httpx.HTTPError, OAuthError) as exc:
+            # A raw httpx.Client, outside the SDK's transport-error
+            # translation, so this one can really fire.
+            print(f"anona: could not refresh the command-line login ({type(exc).__name__}).", file=sys.stderr)
+            return 1
+    return Bearer(token, space, _renew_cli)
+
+
+def _token_and_space(space: str | None) -> Bearer | int:
+    """The bearer for a command without an API key, or the exit code after
+    printing why it cannot proceed.
+
+    The command-line login first, then the stored temporary profile. The MCP
+    login is never one of them: it is `typ=mcp_access`, which the data plane
+    refuses by design, so that an MCP credential cannot be replayed against
+    the REST API. MCP and these commands hold separate credentials on purpose.
+    """
+    cli = _cli_bearer(space)
+    if cli is not None:
+        return cli
+    c = load()
+    if c is None:
+        print(_NO_CREDENTIAL, file=sys.stderr)
+        return AUTH_EXIT
+    if c.signed_in:
+        # Signed in for MCP only. Refused here rather than sent: the server
+        # would answer `401 invalid_token`, and this says what to do instead,
+        # including `anona start`, which the server cannot know about. No
+        # refresh first -- rotating a token only to refuse it is wasted work
+        # on the credential MCP clients depend on.
         print(
-            "anona: the `anona login` credential is for MCP (`anona mcp`) only; "
+            "anona: the stored `anona login` credential is for MCP (`anona mcp`) only; "
             "the REST API refuses it.\n"
-            f"`record`, `retrieve`, `reason` and the other data commands need {_KEY_ROUTE};\n"
+            "Run `anona login --cli` to sign the command line in too, or use "
+            f"{_KEY_ROUTE};\n"
             "or a temporary profile (`anona start`).",
             file=sys.stderr,
         )
         return AUTH_EXIT
-    if space is None:
-        space = "default"  # a temp profile's only space, fixed server-side
-    return token, space
+    temp = c.live_temp_token()
+    if temp is None:
+        if c.temp_token:
+            print(
+                "anona: The temporary profile has expired. Run `anona start` for a new one, "
+                "or `anona login`.",
+                file=sys.stderr,
+            )
+        else:
+            print(_NO_CREDENTIAL, file=sys.stderr)
+        return AUTH_EXIT
+    # A temp profile's only space, fixed server-side.
+    return Bearer(temp, space if space is not None else "default")
 
 
-def _credential(space: str | None, api_key: str | None) -> tuple[str, str] | int:
+def _credential(space: str | None, api_key: str | None) -> Bearer | int:
     if api_key is not None:
         # The caller (main) resolved the key, bound its host and required the
         # space before getting here.
         if space is None:
             raise ValueError("an API key needs a space")
-        return api_key, space
+        return Bearer(api_key, space)
     return _token_and_space(space)
+
+
+def _invoke(base_url: str, bearer: Bearer, fn: Callable[[AnonaClient], object]) -> tuple[bool, object]:
+    """Run one SDK call: `(True, result)`, or `(False, exit code)` once reported.
+
+    A 401 on the command-line login renews it once and retries once -- never a
+    loop. A 401 means the request was not processed, so the retry cannot
+    double a write. Any other credential has nothing to renew.
+    """
+    try:
+        with AnonaClient(api_key=bearer.token, base_url=base_url, on_retry=_retry_notice) as client:
+            return True, fn(client)
+    except AnonaError as exc:
+        if exc.status_code != 401 or bearer.renew is None or getattr(exc, "transport", False):
+            return False, _fail(exc, base_url)
+    renewed = bearer.renew(bearer.token)
+    if isinstance(renewed, int):
+        return False, renewed
+    bearer.token = renewed
+    try:
+        with AnonaClient(api_key=renewed, base_url=base_url, on_retry=_retry_notice) as client:
+            return True, fn(client)
+    except AnonaError as exc:
+        rc = _fail(exc, base_url)
+        if exc.status_code == 401:
+            print("anona: run `anona login --cli` to sign the command line in again.", file=sys.stderr)
+        return False, rc
 
 
 # An input the server is certain to reject is rejected here instead, and like
@@ -379,7 +473,8 @@ def run_record(
     got = _credential(space, api_key)
     if isinstance(got, int):
         return got
-    token, space = got
+    bearer = got
+    space = bearer.space
     kwargs = _given(
         tags=tags,
         timestamp=timestamp,
@@ -388,11 +483,9 @@ def run_record(
         agent_id=agent_id,
         session_id=session_id,
     )
-    try:
-        with AnonaClient(api_key=token, base_url=base_url, on_retry=_retry_notice) as client:
-            result = client.record(space_id=space, content=content, **kwargs)
-    except AnonaError as exc:
-        return _fail(exc, base_url)
+    done, result = _invoke(base_url, bearer, lambda client: client.record(space_id=space, content=content, **kwargs))
+    if not done:
+        return result  # the exit code, already reported
     if as_json:
         # The response as the API returned it. The exit code still says what
         # happened: a write that stored nothing exits 3 with its document on
@@ -461,7 +554,8 @@ def run_retrieve(
     got = _credential(space, api_key)
     if isinstance(got, int):
         return got
-    token, space = got
+    bearer = got
+    space = bearer.space
     kwargs = _given(
         limit=limit,
         min_score=min_score,
@@ -474,11 +568,9 @@ def run_retrieve(
         occurred_after=occurred_after,
         occurred_before=occurred_before,
     )
-    try:
-        with AnonaClient(api_key=token, base_url=base_url, on_retry=_retry_notice) as client:
-            items = client.retrieve(space_id=space, query=query, **kwargs)
-    except AnonaError as exc:
-        return _fail(exc, base_url)
+    done, items = _invoke(base_url, bearer, lambda client: client.retrieve(space_id=space, query=query, **kwargs))
+    if not done:
+        return items  # the exit code, already reported
     if as_json:
         # The rows exactly as the API returned them; an empty result is
         # {"results": []} with exit 0.
@@ -515,7 +607,8 @@ def run_reason(
     got = _credential(space, api_key)
     if isinstance(got, int):
         return got
-    token, space = got
+    bearer = got
+    space = bearer.space
     # A synthesis is an agent loop over the space, not a lookup: it runs tens
     # of seconds and sometimes past a minute. Without this the command looks
     # hung, and the obvious reaction -- Ctrl-C and retry -- costs a second run
@@ -523,13 +616,11 @@ def run_reason(
     # only the answer.
     print(f"Reasoning over space '{space}'. This usually takes under a minute.", file=sys.stderr)
     kwargs = _given(depth=depth, user_id=user_id, agent_id=agent_id, session_id=session_id)
-    try:
-        with AnonaClient(api_key=token, base_url=base_url, on_retry=_retry_notice) as client:
-            # The receipt form: same request, same answer, plus what it was
-            # built from (`sources`), which --json is the only way to see.
-            receipt = client.reason_receipt(space_id=space, query=query, **kwargs)
-    except AnonaError as exc:
-        return _fail(exc, base_url)
+    # The receipt form: same request, same answer, plus what it was
+    # built from (`sources`), which --json is the only way to see.
+    done, receipt = _invoke(base_url, bearer, lambda client: client.reason_receipt(space_id=space, query=query, **kwargs))
+    if not done:
+        return receipt  # the exit code, already reported
     if as_json:
         _emit_json(asdict(receipt))
         return 0

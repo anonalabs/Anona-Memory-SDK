@@ -593,7 +593,7 @@ anona start                                   # a temporary profile, no account
 anona record   "The user prefers pnpm."       # store a memory
 anona retrieve "package manager preference"   # search them
 anona reason   "how does this team build?"    # answer from across them
-anona login                                   # approve in a browser, keep it
+anona login                                   # approve in a browser: CLI, then MCP
 anona status                                  # what is stored, and until when
 ```
 
@@ -602,12 +602,16 @@ hours, and `anona login` claims it into a real account with everything it holds.
 
 `record`, `retrieve` and `reason` take an **API key** — from `--api-key`,
 `ANONA_API_KEY` or `~/.anona/config.env`, in that order — or, with none of
-those, the temporary profile. With a key, name the space with `--space` or
-`ANONA_SPACE_ID`. A key from the environment or `config.env` is sent only to
-`api.anonalabs.com` or `memory.anonalabs.com` unless the server is named in the
-same place (`--base-url` beside `--api-key`, or `ANONA_BASE_URL` beside the
-key). The `anona login` credential is scoped to MCP, which the REST API rejects
-on purpose, so these three never use it.
+those, the command-line login from `anona login`, or the temporary profile.
+With a key or the login, name the space with `--space` or `ANONA_SPACE_ID`. A
+key from the environment or `config.env` is sent only to `api.anonalabs.com` or
+`memory.anonalabs.com` unless the server is named in the same place
+(`--base-url` beside `--api-key`, or `ANONA_BASE_URL` beside the key).
+`anona login` asks for two approvals and stores two credentials, each in its
+own file: one for the command line (`~/.anona/cli-credentials.json`, which
+these commands use) and one for MCP (`~/.anona/credentials.json`, which
+`anona mcp` uses and the REST API rejects on purpose). `--cli` or `--mcp` asks
+for one only; `anona logout` takes the same flags.
 
 For scripts, all three take `--json` (the API response as one JSON document on
 stdout) and the API's own request fields as flags: `record` takes `-` for stdin,
