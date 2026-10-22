@@ -29,7 +29,117 @@ claude mcp add --transport http anona https://memory.anonalabs.com/mcp \
 MCP tools only load at session start. After adding a server, restart the client
 or run `/mcp`.
 
-## 2. REST with curl
+## 2. The `anona` CLI
+
+pip `anona` 0.24.0 or later (`anona --version`). For a shell with no MCP tools.
+Pass `--json` on every data command: stdout is then one JSON document, and on
+failure stdout is empty with a one-line error on stderr.
+
+### Credentials
+
+The data commands take the first of these that exists:
+
+1. `--api-key` (visible in the process list; prefer the next two)
+2. `ANONA_API_KEY` in the environment
+3. `ANONA_API_KEY` in `~/.anona/config.env` (the CLI reads it; no need to source it)
+4. the command-line login from `anona login` (`~/.anona/cli-credentials.json`)
+5. a temporary profile from `anona start`
+
+With 1-4 a space is required: `--space`, else `ANONA_SPACE_ID` (environment,
+then `config.env`). Without one the command exits 2 and sends nothing. A
+temporary profile has one space, `default`; omit `--space` there.
+
+The MCP login (`~/.anona/credentials.json`, used by `anona mcp`) is never
+used by these commands. With only that stored they exit 4.
+
+`anona status` names the credential in use and where it came from, and when a
+temporary profile expires. It never prints a token.
+
+### Account and connection commands
+
+```bash
+anona start                 # temporary profile: no account, one space, 72 hours
+anona login                 # a person approves in a browser: CLI, then MCP
+anona login --cli           # only the command-line credential
+anona login --mcp           # only the MCP credential
+anona status
+anona logout                # both; --cli or --mcp for one
+anona mcp                   # stdio MCP server, using the MCP login
+```
+
+`anona login` claims a stored temporary profile, keeping its memories. To give
+an MCP client the tools: `anona login --mcp`, then
+`claude mcp add anona -- anona mcp`, then restart the client.
+
+### Record, retrieve, reason
+
+```bash
+anona record "Deploys run Tuesdays at 10:00 UTC." --space ops --json \
+  --tags ops,schedule --metadata '{"source": "claude-code"}'
+echo "The release branch is cut on Mondays." | anona record - --space ops --json
+anona record --file notes/decision.md --timestamp 2025-06-01 --space ops --json
+
+anona retrieve "deploy schedule" --space ops --json --limit 5
+anona retrieve "deploy schedule" --space ops --json --tags ops --tags-match all
+anona retrieve "what changed" --space ops --json --occurred-after 2026-06-01
+
+anona reason "how does this team ship?" --space ops --json
+anona reason "how does this team ship?" --space ops --json --depth thorough
+```
+
+| Verb | Flags beyond `--space`, `--api-key`, `--base-url`, `--json` |
+| --- | --- |
+| `record CONTENT` (`-` = stdin) | `--file PATH`, `--tags a,b`, `--timestamp DATE`, `--metadata JSON`, `--user-id`, `--agent-id`, `--session-id` |
+| `retrieve QUERY` | `--limit N` (1-100), `--min-score X`, `--tags a,b`, `--tags-match` (`any`, `all`, `any_strict`, `all_strict`, `exact`), `--as-of DATE`, `--occurred-after DATE`, `--occurred-before DATE`, `--user-id`, `--agent-id`, `--session-id` |
+| `reason QUERY` | `--depth` (`fast`, `thorough`), `--user-id`, `--agent-id`, `--session-id` |
+
+An unset flag is left out of the request. Dates are ISO 8601. `--json` output:
+`record` gives `status`, `memory_id`, `memory_ids`; `retrieve` gives
+`{"results": [...]}`; `reason` gives `{"insights", "sources", ...}`.
+
+Leave `--min-score` unset: scores are close to two-valued (about 1.1 for a
+near-verbatim match, about 0.0001 for a correct paraphrase), so a floor drops
+correct answers. `reason` takes tens of seconds; use `--depth thorough` only
+when a `fast` answer reads stale.
+
+### Spaces, memories, jobs
+
+```bash
+anona spaces list --json
+anona spaces create my-project --description "Notes for my-project" --json
+anona spaces get my-project --json
+anona memories list --space my-project --json --limit 50 --q pnpm
+anona memories edit MEMORY_ID --text "Corrected sentence." --reason "was wrong" --space my-project --json
+anona memories history MEMORY_ID --space my-project --json
+anona memories delete MEMORY_ID --space my-project --yes --json
+anona jobs get JOB_ID --space my-project --json
+anona jobs cancel JOB_ID --space my-project --yes --json
+anona profile --space my-project --json
+anona model MODEL_ID --space my-project --json
+anona user-profile customer-42 --space my-project --json
+anona usage --json
+```
+
+`memories delete` and `jobs cancel` exit 2 and send nothing without `--yes`.
+Only pass `--yes` when the user asked for that deletion. A temporary profile
+cannot create a second space (`temp_profile_single_space`).
+
+### Exit codes
+
+| Exit | Means |
+| --- | --- |
+| `0` | Done. An empty retrieve or list is still `0`. |
+| `1` | Sent and failed: an error from the server, or it could not be reached. stderr starts `anona: <error_code>:`. |
+| `2` | Bad command, nothing sent: missing `--space`, empty content, a bad flag value, no `--yes`. |
+| `3` | `record` only: accepted, nothing extracted, nothing stored. Re-record once with more context. |
+| `4` | No usable credential (none, MCP login only, or a login that could not be renewed). |
+
+The npm package `@anona-labs/memory` also installs a binary called `anona`,
+with `start`, `login`, `logout`, `status` and `mcp` only. If `anona record`
+answers `invalid choice: 'record'`, the binary on PATH is the npm one or an old
+pip copy: use `uvx --from anona anona <command>`.
+
+## 3. REST with curl
 
 Needs `ANONA_API_KEY`. The installer writes it to `~/.anona/config.env` with
 mode 600; source that file if the variable is not already in the environment.
@@ -84,31 +194,6 @@ to either body.
 A write that should not block the caller takes `"async": true` and answers with
 a `job_id` instead of a `memory_id`. Poll it at
 `GET /v1/spaces/{space_id}/jobs/{job_id}`.
-
-## 3. The `anona` CLI (temporary profile only)
-
-For a machine with no MCP and no API key. `anona status` says whether there is a
-credential; these three work when it reports a **temporary profile**, and refuse
-on a signed-in account, whose credential is scoped to MCP.
-
-```bash
-anona start                                    # no account, no key, 72 hours
-anona record   "The user prefers pnpm."
-anona retrieve "package manager preference"
-anona reason   "how does this team like to build?"
-```
-
-No space argument — a temporary profile has exactly one space. `retrieve` prints
-one memory per line; `reason` answers in prose and takes tens of seconds, saying
-so on stderr, so `anona reason "..." > answer.md` captures only the answer.
-Every one of them exits non-zero on failure and prints the reason on stderr.
-
-These are in the **pip** package only, 0.20.0 or later. The npm package has
-`start`, `login`, `logout`, `status` and `mcp` and not these. Two traps worth one
-check: `pip install anona` does not upgrade an existing copy, so confirm with
-`anona --help`; and on a system Python `pip install` is refused with
-`externally-managed-environment`, where `uvx --from anona anona <command>` works
-and is always current.
 
 ## 4. Python SDK
 

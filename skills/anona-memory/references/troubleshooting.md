@@ -22,10 +22,15 @@ at the end, in one line.
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| `invalid choice: 'record'` | The installed CLI predates these commands. `pip install anona` does not upgrade. | `pip install -U anona`, or `uvx --from anona anona <command>`. `anona --help` lists what this copy has. |
+| `invalid choice: 'record'` | The `anona` on PATH is an old pip copy (`pip install anona` does not upgrade) or the npm package, which has no data commands. | `pip install -U anona`, or `uvx --from anona anona <command>`. `anona --help` lists what this copy has. |
 | `error: externally-managed-environment` | pip refusing to write to a system Python. The default on Debian, Ubuntu and Homebrew. | `uvx --from anona anona <command>`, or `pipx install anona`. |
-| `record`/`retrieve`/`reason` refuse, naming a temporary profile | You are signed in, and a login credential is scoped to MCP. | Use MCP, or an API key with the REST API. Not a fault. |
-| `Not signed in.` | No credential at all. | `anona start` for a temporary profile. No account needed. |
+| Exit 4, stderr says the stored login `credential is for MCP` | Only the MCP login is stored. The REST API refuses it by design. | A person runs `anona login --cli` once. Meanwhile use MCP, or `curl` with an API key. Not a fault. |
+| Exit 4, `the command-line login could not be renewed` | Revoked, or unused for 30 days. | A person runs `anona login --cli`. Skip memory this session. |
+| Exit 2, `anona: name a space.` | An API key or the command-line login with no space. | Add `--space <space>` (see **Which space**). Nothing was sent. |
+| Exit 2, `Pass --yes to do it. Nothing was sent.` | `memories delete` / `jobs cancel` without `--yes`. | Only add `--yes` if the user asked for the deletion. |
+| Exit 3 from `record` | Accepted, but no fact was extracted. Nothing stored. | Record once more with a sentence of context. Do not loop. |
+| Exit 4, `refusing to send the API key ... to <host>` | A `--base-url` names a server the key did not come with. | Drop `--base-url`. |
+| Exit 4, `anona: no credential.` | No API key, no command-line login, no temporary profile. | `anona start` for a temporary profile. No account needed. |
 | `The temporary profile has expired.` | Past its 72 hours. Its memories are gone. | `anona start` for a new one. Nothing to recover. |
 | `Too many temporary profiles from this address today.` | A per-address daily limit. | Reuse the existing profile, or wait. Do not loop. |
 
