@@ -101,9 +101,16 @@ async function withLock<T>(lockPath: string, fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Run `fn` holding the credential lock. For writers that are not a refresh. */
-export async function withCredentialLock<T>(fn: () => Promise<T> | T): Promise<T> {
-  const file = credentialsPath();
+/**
+ * Run `fn` holding a credential file's lock. For writers that are not a
+ * refresh. Each credential file has its own lock (`<file>.nodelock`, which the
+ * Python CLI also takes), so the MCP and command-line credentials never wait
+ * on each other.
+ */
+export async function withCredentialLock<T>(
+  fn: () => Promise<T> | T,
+  file: string = credentialsPath(),
+): Promise<T> {
   const dir = dirname(file);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   chmodSync(dir, 0o700);

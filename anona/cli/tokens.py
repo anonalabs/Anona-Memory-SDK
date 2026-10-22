@@ -1,4 +1,10 @@
-"""A valid access token for `anona mcp`, refreshed and persisted when needed.
+"""A valid access token, refreshed and persisted when needed.
+
+Serves both stored OAuth credentials (store.py): the MCP one that `anona mcp`
+presents, and the command line's that the data commands present. Every
+function takes the credential file's path; the default is the MCP file, so an
+MCP caller reads exactly what it always did. Each file has its own lock, so
+the two never wait on each other.
 
 The access token lives an hour; the refresh token 30 days, renewed on every
 use, so a credential that is used never expires. That rolling renewal is what
@@ -36,14 +42,16 @@ class NotLoggedIn(Exception):
 
 
 _RELOGIN = "Run `anona login` again."
+# What a refused command-line credential tells the user to do. Only the CLI
+# approval is needed again, and saying `anona login` would also redo MCP's.
+CLI_RELOGIN = "Run `anona login --cli` again."
 
 
 def _fresh(c: store.Credentials) -> bool:
     return c.expires_at - SKEW_SECONDS > time.time()
 
 
-def _lock_path():
-    p = store.path()
+def _lock_path(p):
     return p.with_name(p.name + ".lock")
 
 
@@ -94,17 +102,18 @@ def _node_lock(file_path):
 
 
 @contextlib.contextmanager
-def credential_lock():
+def credential_lock(p=None):
     """Exclusive access to the credential file, shared with the Node CLI.
 
     `access_token` holds it across read, refresh and write; `login` and
     `logout` hold it around their write so a refresh that finishes just after
     cannot overwrite what they stored (or resurrect what they deleted).
     """
-    lock = _lock_path()
+    p = p or store.path()
+    lock = _lock_path(p)
     lock.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(lock.parent, 0o700)
-    with _node_lock(store.path()):
+    with _node_lock(p):
         # Several MCP clients means several `anona mcp` processes, and they all
         # see the same expired token at the same moment. One must rotate; the
         # rest must wait and use its result.
@@ -123,7 +132,12 @@ def _must_refresh(c: store.Credentials, force_refresh: bool, rejected: str | Non
 
 
 def access_token(
-    client: httpx.Client, *, force_refresh: bool = False, rejected: str | None = None
+    client: httpx.Client,
+    *,
+    force_refresh: bool = False,
+    rejected: str | None = None,
+    p=None,
+    relogin: str = _RELOGIN,
 ) -> str:
     """A valid access token, refreshing under the lock when needed.
 
@@ -132,29 +146,44 @@ def access_token(
     happens against the credential found AFTER taking the lock. The credential
     file is only ever written from here (and by login/logout), under that lock.
     """
-    c = store.load()
+    c = _load(p)
     if c is None or not c.signed_in:
-        raise NotLoggedIn(f"Not logged in. {_RELOGIN}")
+        raise NotLoggedIn(f"Not logged in. {relogin}")
     if not _must_refresh(c, force_refresh, rejected):
         return c.access_token
 
     # Hold the lock across read, refresh and write.
-    with credential_lock():
+    with credential_lock(p):
         # Re-read: whoever held the lock before us may have refreshed already.
         # Refreshing again would replay a refresh token that is now burned.
-        c = store.load()
+        c = _load(p)
         if c is None or not c.signed_in:
-            raise NotLoggedIn(f"Not logged in. {_RELOGIN}")
+            raise NotLoggedIn(f"Not logged in. {relogin}")
         if not _must_refresh(c, force_refresh, rejected):
             return c.access_token
-        fresh = _refresh(c, client)
+        fresh = _refresh(c, client, relogin)
         # Persist before returning: the old refresh token is already dead, so
         # a crash after this point must find the new pair on disk.
-        store.save(fresh)
+        _save(fresh, p)
         return fresh.access_token
 
 
-def _refresh(c: store.Credentials, client: httpx.Client) -> store.Credentials:
+def _load(p):
+    # The MCP file is read with no argument, exactly as before there were two
+    # files, so nothing that wraps `store.load` sees a different call.
+    return store.load() if p is None else store.load(p)
+
+
+def _save(c, p) -> None:
+    if p is None:
+        store.save(c)
+    else:
+        store.save(c, p)
+
+
+def _refresh(
+    c: store.Credentials, client: httpx.Client, relogin: str = _RELOGIN
+) -> store.Credentials:
     meta = oauth.discover(c.base_url, client)
     resp = client.post(
         meta["token_endpoint"],
@@ -168,7 +197,7 @@ def _refresh(c: store.Credentials, client: httpx.Client) -> store.Credentials:
     if resp.status_code in (400, 401):
         # Rejected: expired after 30 idle days, or revoked. Leave the file
         # alone; deleting it adds nothing and hides the evidence.
-        raise NotLoggedIn(_RELOGIN)
+        raise NotLoggedIn(relogin)
     # Anything else (5xx, network) is transient and says nothing about the
     # credential, so it must not read as a logout.
     resp.raise_for_status()

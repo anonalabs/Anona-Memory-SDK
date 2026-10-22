@@ -11,7 +11,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { credentialsPath, liveTempToken, loadCredentials, saveCredentials } from "../../src/cli/store.js";
+import { cliCredentialsPath, credentialsPath, liveTempToken, loadCredentials, saveCredentials } from "../../src/cli/store.js";
 import { accessToken } from "../../src/cli/tokens.js";
 import { startAs, tokenOk, useTempHome, type FakeAs } from "./helpers.js";
 
@@ -72,6 +72,37 @@ print(json.dumps(None if c is None else [c.access_token, c.refresh_token, c.expi
     const got = JSON.parse(await py(PY_LOAD, home.dir()));
     expect(got).toEqual(["n-access", "n-refresh", 1900000000.5, "n-cid", "https://n.test"]);
     expect(statSync(credentialsPath()).mode & 0o777).toBe(0o600);
+  });
+
+  // The command-line credential: its own file, the same shape, read
+  // and written by both. Node never uses it for a request; Python's data
+  // commands do, so a file Node writes at login must be one Python accepts.
+  it("command-line file: Node writes, Python reads it from the same path", async () => {
+    saveCredentials({ accessToken: "n-cli", refreshToken: "n-cli-rt", expiresAt: 1900000000.5, clientId: "n-cli-cid", baseUrl: "https://n.test" }, cliCredentialsPath());
+    const got = JSON.parse(
+      await py(
+        `
+import json
+from anona.cli import store
+c = store.load(store.cli_path())
+print(json.dumps([str(store.cli_path()), c.access_token, c.refresh_token, c.expires_at, c.client_id, c.base_url]))`,
+        home.dir(),
+      ),
+    );
+    expect(got).toEqual([cliCredentialsPath(), "n-cli", "n-cli-rt", 1900000000.5, "n-cli-cid", "https://n.test"]);
+    expect(loadCredentials()).toBeNull(); // the MCP file is untouched
+  });
+
+  it("command-line file: Python writes, Node reads", async () => {
+    await py(
+      `
+from anona.cli import store
+store.save(store.Credentials("py-cli", "py-cli-rt", 1900000000.25, "py-cli-cid", "https://py.test"), store.cli_path())`,
+      home.dir(),
+    );
+    expect(loadCredentials(cliCredentialsPath())).toMatchObject({ accessToken: "py-cli", refreshToken: "py-cli-rt", clientId: "py-cli-cid", baseUrl: "https://py.test" });
+    expect(statSync(cliCredentialsPath()).mode & 0o777).toBe(0o600);
+    expect(existsSync(credentialsPath())).toBe(false);
   });
 
   it("Python reads what Node wrote even when Node wrote an integer expiry", async () => {

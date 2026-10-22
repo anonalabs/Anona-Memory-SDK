@@ -8,6 +8,12 @@
  *
  * The file is shared with the Python CLI on purpose: same path, same keys, same
  * mode. Log in with one, run the other, and you are already signed in.
+ *
+ * Two OAuth credentials, one file each: `credentials.json` is the MCP one
+ * (`typ=mcp_access`, accepted only on /mcp) and also carries an unclaimed
+ * temporary profile; `cli-credentials.json` is the command line's
+ * (`typ=cli_access`, accepted only on the REST data plane). Same JSON shape,
+ * own OAuth client, own refresh family, own lock.
  */
 import {
   chmodSync,
@@ -21,7 +27,7 @@ import {
   writeSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { randomBytes } from "node:crypto";
 
 export const DEFAULT_BASE_URL = "https://memory.anonalabs.com";
@@ -59,8 +65,17 @@ export function liveTempToken(c: Credentials, nowSeconds: number = Date.now() / 
   return c.tempToken;
 }
 
+/** The MCP credential (and any temporary profile). */
 export function credentialsPath(): string {
   return join(homedir(), ".anona", "credentials.json");
+}
+
+/**
+ * The command line's own credential, which the pip package's data commands
+ * use. Never holds a temporary profile.
+ */
+export function cliCredentialsPath(): string {
+  return join(homedir(), ".anona", "cli-credentials.json");
 }
 
 /**
@@ -70,9 +85,9 @@ export function credentialsPath(): string {
  * runs at the start of every `anona mcp` process, and a stack trace there is an
  * MCP client that fails to start with an error naming a JSON parser.
  */
-export function loadCredentials(): Credentials | null {
+export function loadCredentials(file: string = credentialsPath()): Credentials | null {
   try {
-    const raw = JSON.parse(readFileSync(credentialsPath(), "utf8"));
+    const raw = JSON.parse(readFileSync(file, "utf8"));
     if (raw === null || typeof raw !== "object") return null;
     const expiresAt = Number(raw.expires_at);
     if (
@@ -111,8 +126,7 @@ export function loadCredentials(): Credentials | null {
  * moment the new one is issued. A half-written file at that instant leaves the
  * user holding neither, and the only recovery is approving again.
  */
-export function saveCredentials(c: Credentials): void {
-  const file = credentialsPath();
+export function saveCredentials(c: Credentials, file: string = credentialsPath()): void {
   const dir = join(file, "..");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   chmodSync(dir, 0o700);
@@ -130,7 +144,8 @@ export function saveCredentials(c: Credentials): void {
     doc.temp_expires_at = c.tempExpiresAt ?? null;
   }
   const payload = JSON.stringify(doc, null, 2);
-  const tmp = join(dir, `.credentials-${randomBytes(6).toString("hex")}`);
+  const stem = basename(file).replace(/\.json$/, "");
+  const tmp = join(dir, `.${stem}-${randomBytes(6).toString("hex")}`);
   try {
     // "wx" so a stale temp file is never adopted; fchmod because the mode
     // argument to open is masked by the umask and 0600 must be exact.
@@ -154,9 +169,9 @@ export function saveCredentials(c: Credentials): void {
   }
 }
 
-export function clearCredentials(): void {
+export function clearCredentials(file: string = credentialsPath()): void {
   try {
-    unlinkSync(credentialsPath());
+    unlinkSync(file);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }

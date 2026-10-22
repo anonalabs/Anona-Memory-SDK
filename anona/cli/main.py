@@ -12,7 +12,9 @@ import sys
 import time
 from datetime import datetime
 
-from . import config_env, credential, login, proxy, store, target, temp, tokens, verbs
+import httpx
+
+from . import config_env, credential, login, oauth, proxy, store, target, temp, tokens, verbs
 
 
 def _limit(value: str) -> int:
@@ -78,13 +80,13 @@ def _flat(lists: list[list[str]] | None) -> list[str] | None:
     return None if lists is None else [t for group in lists for t in group]
 
 
-# Not "required when signed in": an `anona login` credential is refused by
-# these verbs outright (memory._token_and_space), so the state that needs a
-# space is an API key, and that is what it says. A temporary profile has
-# exactly one space.
+# An account -- reached with an API key or the command-line login -- can hold
+# many spaces and the server implies none, so both need one named. A temporary
+# profile has exactly one space. The MCP login is refused by these verbs
+# outright (memory._token_and_space).
 _SPACE_HELP = (
-    "Space to {verb}. Required with an API key unless ANONA_SPACE_ID is set; "
-    "a temporary profile uses `default`"
+    "Space to {verb}. Required with an API key or `anona login` unless "
+    "ANONA_SPACE_ID is set; a temporary profile uses `default`"
 )
 _API_KEY_HELP = (
     "API key for this command (else $ANONA_API_KEY, else ~/.anona/config.env). "
@@ -217,8 +219,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     _scope_flags(rsn, "Reason only over memories recorded with")
     verbs.add_parsers(sub, common, _SPACE_HELP, _API_KEY_HELP, _JSON_HELP)
-    sub.add_parser("login", parents=[common], help="Approve access in a browser and store a credential")
-    lo = sub.add_parser("logout", parents=[common], help="Delete the stored credential")
+    li = sub.add_parser(
+        "login",
+        parents=[common],
+        help="Approve access in a browser: the command line, then MCP",
+    )
+    _which(li, "approve")
+    lo = sub.add_parser("logout", parents=[common], help="Delete the stored credentials")
+    _which(lo, "remove")
     lo.add_argument(
         "--force",
         action="store_true",
@@ -228,6 +236,21 @@ def _parser() -> argparse.ArgumentParser:
     st.add_argument("--api-key", default=None, help="Describe this key's source instead of the usual lookup")
     sub.add_parser("mcp", parents=[common], help="Run the stdio MCP proxy for a client to launch")
     return p
+
+
+def _which(parser: argparse.ArgumentParser, verb: str) -> None:
+    """`--cli` / `--mcp` on login and logout. Neither means both."""
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--cli",
+        action="store_true",
+        help=f"only {verb} the command-line credential (record, retrieve, reason and the other data commands)",
+    )
+    group.add_argument(
+        "--mcp",
+        action="store_true",
+        help=f"only {verb} the MCP credential (`anona mcp`)",
+    )
 
 
 def _version() -> str:
@@ -296,6 +319,30 @@ def _data_credential(
     key = credential.find_api_key(args.api_key, config)
     space = getattr(args, "space", None)
     if key is None:
+        cli = store.load(store.cli_path())
+        if cli is not None and cli.signed_in:
+            # The command-line login. Pinned to the deployment that
+            # issued it, like every stored credential.
+            try:
+                base = target.resolve(requested, cli.base_url)
+            except target.TargetError as exc:
+                return _refuse_key(exc)
+            if need_space:
+                # The same rule as an API key, and for the same reason: this
+                # is an account, which can hold many spaces, and the server
+                # implies none (/v1/record needs `space_id` or `route`).
+                # `default` is only a temporary profile's, where it is the one
+                # space there is.
+                space = credential.find_space(space, config)
+                if space is None:
+                    print(
+                        "anona: name a space. Pass --space, or set ANONA_SPACE_ID "
+                        "(in the environment or ~/.anona/config.env); "
+                        "`anona spaces list` shows yours. Nothing was sent.",
+                        file=sys.stderr,
+                    )
+                    return USAGE_EXIT
+            return base, space, None
         held = store.load()
         try:
             base = target.resolve(requested, held.base_url if held else None)
@@ -338,7 +385,19 @@ def _status(
     config = config_env.load()
     key = credential.find_api_key(api_key_flag, config)
     if key is None:
-        return _store_status(requested)
+        cli_rc = _cli_status(requested, shadowed=False)
+        if cli_rc is None:
+            # No command-line login: exactly the output this command always had.
+            return _store_status(requested)
+        if cli_rc != 0:
+            return cli_rc
+        if store.load() is None:
+            print("No MCP credential is stored. Run `anona login --mcp` to connect MCP clients.")
+            return 0
+        # A working command-line login decides the exit code; the MCP part is
+        # described for what it is, whatever it says.
+        _store_status(requested)
+        return 0
     # The data verbs' credential. The source and a prefix only: this output
     # ends up in pastes and logs.
     print(
@@ -353,12 +412,42 @@ def _status(
     print(f"It is sent to {_safe(base)}.")
     space = credential.find_space(None, config)
     print(f"Space: {_safe(space)}." if space else "Space: none set; pass --space or set ANONA_SPACE_ID.")
+    _cli_status(None, shadowed=True)
     if store.load() is None:
-        print("No `anona login` credential is stored (that one is for `anona mcp`).")
+        print("No `anona login` credential is stored for MCP (that one is for `anona mcp`).")
         return 0
     # The stored credential is still worth describing: it is what `anona mcp`
     # uses. Its exit code does not decide this one -- the key works either way.
     _store_status(None)
+    return 0
+
+
+def _cli_status(requested: str | None, *, shadowed: bool) -> int | None:
+    """Describe the command-line login, or None when there is none.
+
+    Only what the file says -- never a token, never the client id, and no
+    network call, which would rotate the refresh token just to look at it.
+    """
+    c = store.load(store.cli_path())
+    if c is None or not c.signed_in:
+        return None
+    if requested is not None:
+        try:
+            target.resolve(requested, c.base_url)
+        except target.TargetError as exc:
+            return _refuse(exc)
+    use = (
+        "not used while an API key is set"
+        if shadowed
+        else "used by record, retrieve, reason and the other data commands"
+    )
+    print(f"Command-line login for {c.base_url} ({use}).")
+    remaining = c.expires_at - time.time()
+    if remaining > 0:
+        print(f"Its access token expires in {int(remaining // 60)} minutes and is renewed automatically.")
+    else:
+        print("Its access token has expired; a refresh is attempted on the next command.")
+    print("If a command reports an authorization failure, run `anona login --cli`.")
     return 0
 
 
@@ -402,6 +491,72 @@ def _store_status(requested: str | None = None) -> int:
     print("The server may still reject it (revoked, or unused for 30 days).")
     print("If `anona mcp` reports an authorization failure, run `anona login`.")
     return 0
+
+
+def _logout(*, cli: bool, mcp: bool, force: bool) -> int:
+    """Delete the stored credential(s), then revoke each at the server.
+
+    Local first and unconditionally: a logout must work offline, and a
+    revocation that fails (no network, an older server) leaves a refresh
+    token that dies on its own after 30 unused days. Each file is removed
+    under its own refresh lock, so a refresh finishing just after cannot write
+    it back.
+    """
+    revoke: list[store.Credentials] = []
+    if mcp:
+        with tokens.credential_lock():
+            held = store.load()
+            if held is not None and held.live_temp_token() and not force:
+                # The token is never printed, so this file is its only copy:
+                # deleting it strands the profile and everything in it until
+                # the server deletes it too. Checked before anything is
+                # deleted, so a refused logout removes nothing at all.
+                print(
+                    f"anona logout: this would abandon an unclaimed temporary profile "
+                    f"(it {temp.describe_deadline(held.temp_expires_at)}). "
+                    "Run `anona login` to claim it, or `anona logout --force` to "
+                    "discard it. `anona logout --cli` removes only the "
+                    "command-line credential.",
+                    file=sys.stderr,
+                )
+                return 1
+    if cli:
+        with tokens.credential_lock(store.cli_path()):
+            held = store.load(store.cli_path())
+            if held is not None and held.signed_in:
+                revoke.append(held)
+            store.clear(store.cli_path())
+    if mcp:
+        with tokens.credential_lock():
+            held = store.load()
+            if held is not None and held.signed_in:
+                revoke.append(held)
+            store.clear()
+    unrevoked = [c.base_url for c in revoke if not _revoke(c)]
+    if unrevoked:
+        print(
+            "anona logout: removed locally, but the server could not be told to "
+            "revoke it; it expires after 30 days unused, or revoke it now under "
+            "Integrations -> MCP -> Connected apps in the dashboard.",
+            file=sys.stderr,
+        )
+    if cli and mcp:
+        print("Logged out.")
+    else:
+        print("Logged out of the command line." if cli else "Logged out of MCP.")
+    return 0
+
+
+def _revoke(c: store.Credentials) -> bool:
+    """Best effort. Pinned like any stored credential: the refresh token goes
+    only to the deployment that issued it, over https except to loopback."""
+    try:
+        target.check_transport(c.base_url)
+        with httpx.Client() as client:
+            meta = oauth.discover(c.base_url, client)
+            return oauth.revoke(meta, c.refresh_token, client)
+    except Exception:
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -492,8 +647,17 @@ def main(argv: list[str] | None = None) -> int:
         except target.TargetError as exc:
             return _refuse(exc)
         print(f"Signing in to {base}")
+        # Neither flag means both approvals; argparse keeps the two exclusive.
+        want_cli = not args.mcp
+        want_mcp = not args.cli
+        held_cli = store.load(store.cli_path()) if want_cli else None
+        if held_cli and held_cli.signed_in and held_cli.base_url.rstrip("/") != base.rstrip("/"):
+            print(
+                f"Note: the stored command-line credential is for {held_cli.base_url}; "
+                "this replaces it."
+            )
         stored = store.load()
-        if stored and stored.base_url.rstrip("/") != base.rstrip("/"):
+        if want_mcp and stored and stored.base_url.rstrip("/") != base.rstrip("/"):
             print(f"Note: the stored credential is for {stored.base_url}; this replaces it.")
             # A profile belongs to the deployment that minted it, so its token
             # cannot be carried onto this one — `_live_temp_token` matches on
@@ -513,27 +677,13 @@ def main(argv: list[str] | None = None) -> int:
                 f"Signing in will try to claim your temporary profile, which "
                 f"{temp.describe_deadline(stored.temp_expires_at)}."
             )
+        if want_cli and want_mcp:
+            return login.run_logins(base, open_browser=not no_browser)
+        if want_cli:
+            return login.run_cli_login(base, open_browser=not no_browser)
         return login.run_login(base, open_browser=not no_browser)
     if args.command == "logout":
-        # Under the refresh lock, so a refresh finishing just after cannot
-        # write the credential back.
-        with tokens.credential_lock():
-            held = store.load()
-            if held is not None and held.live_temp_token() and not getattr(args, "force", False):
-                # The token is never printed, so this file is its only copy:
-                # deleting it strands the profile and everything in it until
-                # the server deletes it too.
-                print(
-                    f"anona logout: this would abandon an unclaimed temporary profile "
-                    f"(it {temp.describe_deadline(held.temp_expires_at)}). "
-                    "Run `anona login` to claim it, or `anona logout --force` to "
-                    "discard it.",
-                    file=sys.stderr,
-                )
-                return 1
-            store.clear()
-        print("Logged out.")
-        return 0
+        return _logout(cli=not args.mcp, mcp=not args.cli, force=getattr(args, "force", False))
     if args.command == "status":
         return _status(requested, base_url_flag=base_url, api_key_flag=args.api_key)
     # mcp: a credential belongs to the deployment that issued it. Naming

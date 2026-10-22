@@ -215,12 +215,23 @@ export async function registerClient(meta: ServerMetadata, redirectUri: string, 
   return id;
 }
 
+/**
+ * The two grants `anona login` asks for. `mcp` mints `mcp_access`, which only
+ * /mcp accepts; exactly `cli` mints `cli_access`, which only the REST data
+ * plane accepts, and is granted only to a client whose every redirect URI is
+ * loopback -- which is what login registers.
+ */
+export const MCP_SCOPE = "mcp";
+export const CLI_SCOPE = "cli";
+export const CLI_ACCESS_TYP = "cli_access";
+
 export function authorizeUrl(
   meta: ServerMetadata,
   clientId: string,
   redirectUri: string,
   challenge: string,
   state: string,
+  scope: string = MCP_SCOPE,
 ): string {
   const methods = meta.code_challenge_methods_supported;
   // A string would turn the membership test into a substring test.
@@ -236,7 +247,80 @@ export function authorizeUrl(
     code_challenge: challenge,
     code_challenge_method: "S256",
     state,
-    scope: "mcp",
+    scope,
   });
   return `${meta.authorization_endpoint}?${query.toString()}`;
+}
+
+/**
+ * The server's sentence when it refuses this authorize request's scope, else
+ * null.
+ *
+ * `/oauth/authorize` answers a scope it will not grant with `400
+ * invalid_scope` -- to the BROWSER, which shows a JSON error page and never
+ * comes back to the loopback listener, so the CLI would sit out its whole wait
+ * for nothing. Asking once first, without following the redirect, turns that
+ * into an immediate message. Anything else, a network failure included, is
+ * left for the browser to show.
+ */
+export async function scopeRefusal(url: string): Promise<string | null> {
+  let resp: Response;
+  try {
+    resp = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(15_000) });
+  } catch {
+    return null;
+  }
+  if (resp.status !== 400) return null;
+  const [error, description] = await serverError(resp);
+  if (error !== "invalid_scope") return null;
+  return description ?? "the server does not grant that scope.";
+}
+
+/**
+ * The `typ` claim of a JWT access token, read WITHOUT verifying it. Not a
+ * security check (the server verifies every token): the only way to tell which
+ * grant a deployment actually minted. One that predates command-line tokens
+ * takes `scope=cli` and mints an MCP token anyway.
+ */
+export function tokenTyp(accessToken: string): string | null {
+  const parts = accessToken.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const claims: unknown = JSON.parse(Buffer.from(parts[1] as string, "base64url").toString("utf8"));
+    if (claims === null || typeof claims !== "object" || Array.isArray(claims)) return null;
+    const typ = (claims as { typ?: unknown }).typ;
+    return typeof typ === "string" ? typ : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Revoke a refresh token (RFC 7009). True when the server answered 200. Best
+ * effort: callers delete the local file whatever this returns. The endpoint
+ * must live on the issuer's origin, like every other one `discover` checks.
+ */
+export async function revoke(meta: ServerMetadata, refreshToken: string): Promise<boolean> {
+  const endpoint = meta.revocation_endpoint;
+  if (typeof endpoint !== "string" || !endpoint) return false;
+  let ep: URL;
+  let issuer: URL;
+  try {
+    ep = new URL(endpoint);
+    issuer = new URL(meta.issuer);
+  } catch {
+    return false;
+  }
+  if (ep.origin !== issuer.origin) return false;
+  try {
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: refreshToken }).toString(),
+      signal: AbortSignal.timeout(15_000),
+    });
+    return resp.status === 200;
+  } catch {
+    return false;
+  }
 }

@@ -2,11 +2,12 @@
 
 Highest first: `--api-key`, then ANONA_API_KEY in the environment, then
 ANONA_API_KEY in ~/.anona/config.env. With none of them the verbs fall back to
-the stored temporary-profile token, as before.
+the command-line login (`anona login --cli`), then to the stored
+temporary-profile token; memory._token_and_space owns that half.
 
-The `anona login` token is never one of these. It is MCP-scoped
-(`typ=mcp_access`) and the REST API refuses it by design; MCP and the CLI's
-data verbs are separate credentials on purpose.
+The MCP login is never one of these. It is MCP-scoped (`typ=mcp_access`) and
+the REST API refuses it by design; MCP and the CLI's data verbs hold separate
+credentials on purpose.
 
 The source travels with the key because it decides where the key may be sent
 (target.for_api_key) and is what `anona status` names. The key itself is

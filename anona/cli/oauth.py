@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import secrets
 from urllib.parse import urlencode, urlsplit
 
@@ -199,8 +200,22 @@ def register_client(
     return client_id
 
 
+# The two grants `anona login` asks for. `mcp` mints `mcp_access`,
+# which only /mcp accepts; exactly `cli` mints `cli_access`, which only the REST
+# data plane accepts, and is granted only to a client whose every redirect URI
+# is loopback -- which is what `run_login` registers.
+MCP_SCOPE = "mcp"
+CLI_SCOPE = "cli"
+CLI_ACCESS_TYP = "cli_access"
+
+
 def authorize_url(
-    meta: dict, client_id: str, redirect_uri: str, challenge: str, state: str
+    meta: dict,
+    client_id: str,
+    redirect_uri: str,
+    challenge: str,
+    state: str,
+    scope: str = MCP_SCOPE,
 ) -> str:
     methods = meta.get("code_challenge_methods_supported") or []
     # A string would turn the membership test into a substring test.
@@ -218,7 +233,76 @@ def authorize_url(
             "code_challenge": challenge,
             "code_challenge_method": "S256",
             "state": state,
-            "scope": "mcp",
+            "scope": scope,
         }
     )
     return f"{meta['authorization_endpoint']}?{query}"
+
+
+def scope_refusal(url: str, client: httpx.Client) -> str | None:
+    """The server's sentence when it refuses this authorize request's scope.
+
+    `/oauth/authorize` answers a scope it will not grant with `400
+    invalid_scope` -- to the BROWSER, which shows a JSON error page and never
+    comes back to the loopback listener, so the CLI would sit out its whole
+    five-minute wait for nothing. Asking once first, without following the
+    redirect, turns that into an immediate message. The request it parks
+    expires on its own in minutes and grants nothing.
+
+    None for anything but that refusal, including a network failure: those
+    are left for the browser to show, exactly as before this check existed.
+    """
+    try:
+        resp = client.get(url, follow_redirects=False, timeout=15)
+    except httpx.HTTPError:
+        return None
+    if resp.status_code != 400:
+        return None
+    error, description = _server_error(resp)
+    if error != "invalid_scope":
+        return None
+    return description or "the server does not grant that scope."
+
+
+def token_typ(access_token: str) -> str | None:
+    """The `typ` claim of a JWT access token, read WITHOUT verifying it.
+
+    Not a security check -- the server verifies every token it is handed --
+    but the only way to tell which grant a deployment actually minted. One
+    that predates command-line tokens accepts `scope=cli` and mints an MCP
+    token anyway, which the data plane then refuses on every call; storing it
+    would leave the CLI signed in to nothing. None when the token is not a
+    JWT or carries no string `typ`.
+    """
+    parts = access_token.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        padded = parts[1] + "=" * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(padded.encode()))
+    except (ValueError, TypeError):
+        return None
+    typ = claims.get("typ") if isinstance(claims, dict) else None
+    return typ if isinstance(typ, str) else None
+
+
+def revoke(meta: dict, refresh_token: str, client: httpx.Client) -> bool:
+    """Revoke a refresh token at the server (RFC 7009). True when it answered 200.
+
+    Best effort by design: the caller deletes the local file whatever this
+    returns, because a logout must work offline. The endpoint must live on the
+    issuer's origin like every other one `discover` checks, or the token would
+    be posted to wherever a metadata document pointed.
+    """
+    endpoint = meta.get("revocation_endpoint")
+    if not isinstance(endpoint, str) or not endpoint:
+        return False
+    ep = urlsplit(endpoint)
+    issuer = urlsplit(meta.get("issuer", ""))
+    if (ep.scheme, ep.netloc) != (issuer.scheme, issuer.netloc):
+        return False
+    try:
+        resp = client.post(endpoint, data={"token": refresh_token}, timeout=15)
+    except httpx.HTTPError:
+        return False
+    return resp.status_code == 200
