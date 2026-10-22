@@ -63,8 +63,8 @@ directory, with the skill folder as the archive root, which is what the upload
 expects. Both `name` and `description` are inside the caps the upload enforces
 (64 and 200 characters).
 
-There is no shell in that surface, so the skill's `curl` fallback cannot run
-there. Give it tools by adding Anona as a **custom connector** under
+There is no shell in that surface, so the skill's CLI and `curl` fallbacks
+cannot run there. Give it tools by adding Anona as a **custom connector** under
 Settings > Connectors:
 
 ```
@@ -85,10 +85,15 @@ In order of preference:
    claude mcp add --transport http anona https://memory.anonalabs.com/mcp \
      --header "Authorization: Bearer $ANONA_API_KEY"
    ```
-2. **`curl`** against `https://api.anonalabs.com`, reading `ANONA_API_KEY` from
+2. **The `anona` CLI** (pip `anona` 0.24.0+): `anona status` once, then
+   `anona retrieve` / `record` / `reason` with `--json`, branching on the exit
+   code. It uses an API key, the command-line login from `anona login`, or a
+   temporary profile, never the MCP login.
+3. **`curl`** against `https://api.anonalabs.com`, reading `ANONA_API_KEY` from
    the environment or `~/.anona/config.env`.
-3. **Nothing.** The skill says so once and gets on with the task. A memory layer
-   that blocks work is worse than no memory layer.
+4. **Nothing.** The skill may run `anona start` for a temporary profile, or
+   says so once and gets on with the task. A memory layer that blocks work is
+   worse than no memory layer.
 
 ## Layout
 

@@ -40,6 +40,35 @@ a virtualenv, which is what a project should be doing anyway.
 Framework adapters are extras: `pip install 'anona[langchain]'` and the same for
 `crewai`, `llamaindex`, `adk`, `msagent`, `strands`, `litellm`, `mcp`.
 
+## Credentials: code needs an API key
+
+Application code authenticates with an API key (`anona_live_...`), minted in
+the dashboard under **API keys** and read from `ANONA_API_KEY`. Never hardcode
+one.
+
+The `anona` command line has credentials of its own, and **they are not for
+code**:
+
+- `anona login` stores two, each approved in a browser: a command-line one
+  (`~/.anona/cli-credentials.json`, used by `anona record` and the other data
+  commands) and an MCP one (`~/.anona/credentials.json`, used by `anona mcp`).
+  Neither works in `AnonaClient` / `Anona`: the MCP one is refused by the REST
+  API, and the command-line one is for the `anona` commands on that machine.
+  Do not read those files from code.
+- `anona start` creates a temporary profile whose `anona_tmp_` token does work
+  on the REST API, with one space (`default`), until it is claimed or expires
+  after 72 hours. Fine for a throwaway script, never for anything deployed.
+
+For scripting from a shell instead of code, the pip CLI (0.24.0+) wraps the API
+with `--json` output and stable exit codes (0 ok, 1 failed, 2 usage, 3 nothing
+stored, 4 no credential): `anona record`, `retrieve`, `reason`,
+`spaces list|create|get`, `memories list|edit|delete|history`,
+`jobs get|cancel`, `profile`, `model`, `user-profile`, `usage`. It takes
+`--api-key`, then `ANONA_API_KEY`, then `~/.anona/config.env`, then the
+command-line login, then a temporary profile, and needs `--space` (or
+`ANONA_SPACE_ID`) with anything but a temporary profile. Reference:
+`https://docs.anonalabs.com/agents/cli`.
+
 ## The three calls
 
 ```python

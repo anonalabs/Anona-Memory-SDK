@@ -28,47 +28,71 @@ Check, in this order, and use the first that works:
    exist, use them. Nothing else to set up. Only a tool in your own tool list
    counts: a server that appears in a config listing, even saying `connected`,
    gives you nothing to call if its tools are absent from this session.
-2. **`ANONA_API_KEY`** in the environment, or in `~/.anona/config.env` (source
-   it: `. ~/.anona/config.env`). Then call the REST API with `curl`. See
-   `references/usage.md`.
-3. **The `anona` CLI on a temporary profile.** Run `anona status`. If it reports
-   a *temporary profile*, you have memory with no account and no key:
+
+2. **The `anona` CLI.** If `anona` is on PATH, run `anona status` once and read
+   which credential the data commands will use:
+
+   | `anona status` says | Then |
+   | --- | --- |
+   | `API key for record/retrieve/reason` | Use the CLI. Pass `--space` (see **Which space**). |
+   | `Command-line login ... (used by record, retrieve, ...)` | Use the CLI. Pass `--space`. |
+   | `Temporary profile for ...`, not expired, and neither line above | Use the CLI. Omit `--space`: the profile's only space is `default`. |
+   | Only `Credential found for ...` (the MCP login) | The CLI refuses that credential (exit 4). Go to step 3. |
+   | `Not logged in.` | No credential. You may run `anona start` (see 4), then use the CLI. |
 
    ```bash
-   anona record   "The user prefers pnpm."
-   anona retrieve "package manager preference"
-   anona reason   "how does this team like to build?"
+   anona retrieve "how is auth wired" --space my-project --json --limit 5
+   anona record   "Prefers pytest over unittest." --space my-project --json \
+                  --metadata '{"source": "claude-code", "repo": "my-project"}'
+   anona reason   "what do we know about this user" --space my-project --json
    ```
 
-   No space argument: a temporary profile has one space. These three need the
-   **pip** package, 0.20.0 or later, and they work *only* on a temporary
-   profile. If `anona status` reports a signed-in account instead, they refuse
-   — that credential is scoped to MCP — so on an account go back to 1 or 2.
+   Always pass `--json`: stdout is then exactly one JSON document
+   (`retrieve` gives `{"results": [...]}`, `reason` gives `{"insights": ...}`),
+   and on failure stdout is empty and the error is one line on stderr. Branch
+   on the exit code, never on the text:
 
-   **Check `record`'s exit code.** A non-zero exit means nothing was stored:
-   short, context-free content often extracts to no fact at all. Record it
-   again with a sentence saying what the thing is or why it matters. A stored
-   write prints the memory ids.
+   | Exit | Means | Do |
+   | --- | --- | --- |
+   | `0` | Done. A retrieve that matched nothing is `{"results": []}` and still `0`. | Carry on. |
+   | `1` | Sent and failed (server error, unreachable). | Continue without memory; mention it once at the end. A `space_not_found` on stderr is an empty space: treat it as no results. |
+   | `2` | Your command was wrong; nothing was sent or billed. | Fix the command once. A missing `--space` is the usual cause. |
+   | `3` | `record` only: accepted, but no fact was extracted. Nothing stored. | Record again once, with a sentence saying what the thing is or why it matters. |
+   | `4` | No usable credential. | Do not retry. Go to step 3. |
 
-4. **None of these.** You can create a profile yourself; it needs no account,
-   no email and no card, and it holds memories for 72 hours:
+   `memories delete` and `jobs cancel` need `--yes`; without it they exit 2 and
+   send nothing. Do not add `--yes` unless the user asked for that deletion.
+   The full command list is in `references/usage.md`.
+
+3. **`curl` with an API key**, when there is no CLI (or it exited 4) and
+   `ANONA_API_KEY` is in the environment or in `~/.anona/config.env` (source
+   it: `. ~/.anona/config.env`). See `references/usage.md`.
+
+4. **None of these.** If `anona` (or `uvx`) is available you can create a
+   temporary profile yourself; it needs no account, no email and no card, and
+   holds memories for 72 hours:
 
    ```bash
    anona start     # or, with nothing installed: uvx --from anona anona start
    ```
 
    Tell the user in one line that you did it, that it expires in 72 hours, and
-   that `anona login` keeps it. If `anona` is not installed and you cannot
-   install it, say once that Anona is not configured and how to set it up
+   that `anona login` keeps it. Otherwise say once that Anona is not configured
+   and how to set it up
    (`curl -fsSL https://raw.githubusercontent.com/anonalabs/Anona-Memory-SDK/main/skills/install.sh | bash`),
    then do the task without memory. Do not ask again this session.
 
-**Two ways the CLI misleads you, both worth one check.** `pip install anona`
-does **not** upgrade an existing copy — it reports success and leaves the old
-version — so run `anona --help` and read the command list rather than trusting
-this page. And on a system Python, `pip install` is refused outright with
-`error: externally-managed-environment`; `uvx --from anona anona <command>`
-installs nothing and always runs the current version.
+**Signing in is the user's step, not yours.** `anona login` opens a browser
+for a person to approve: once for the command line, once for MCP
+(`--cli` / `--mcp` for one). Suggest it in one line when the CLI exits 4; never
+run it and wait.
+
+**Check the CLI version once.** Everything above needs pip `anona` 0.24.0 or
+later (`anona --version`); the npm package's `anona` has no data commands.
+`pip install anona` does **not** upgrade an existing copy, and on a system
+Python it is refused with `error: externally-managed-environment`.
+`uvx --from anona anona <command>` installs nothing and always runs the
+current version; `pip install -U anona` upgrades.
 
 ## Which space
 
@@ -77,6 +101,9 @@ A space is one memory store. Pick it once per session, in this order:
 1. `ANONA_SPACE_ID` if set.
 2. The git repository name, lowercased, when working in a repo.
 3. `default`.
+
+On a temporary profile there is no choice: its one space is `default`, so omit
+`--space` there.
 
 `record` creates the space on first write. `retrieve` does not: a
 `space_not_found` on a space nothing has been written to yet is empty, not
@@ -92,7 +119,8 @@ task's own words, not a keyword soup.
 - The user says "like last time", "as we discussed", "the usual": retrieve first,
   do not guess.
 
-Ask for `limit: 5` for a focused task, `limit: 10` when opening unfamiliar work.
+Ask for `limit: 5` (CLI: `--limit 5`) for a focused task, `limit: 10` when
+opening unfamiliar work.
 
 Use `reason` instead of `retrieve` only for a genuine synthesis question, such as
 "how does this user prefer to be communicated with" or "what have we learned
@@ -132,9 +160,9 @@ Write in the third person about the durable thing, not about the conversation:
   the task definition is byte-identical and nothing restarts otherwise."
 - No: "I told the user to run force-new-deployment and it worked."
 
-Over REST, include `metadata` so a memory can be traced back:
-`{"source": "claude-code", "repo": "<repo name>"}`. The MCP `record` tool takes
-no `metadata`; do not put these in `tags` instead.
+Over the CLI (`--metadata`) or REST, include `metadata` so a memory can be
+traced back: `{"source": "claude-code", "repo": "<repo name>"}`. The MCP
+`record` tool takes no `metadata`; do not put these in `tags` instead.
 
 ## Compaction
 
@@ -169,8 +197,8 @@ transcript or the summary itself:
 - No `session_id` or `agent_id` unless this space already uses them. Scoped
   memories are invisible to unscoped reads, so tagging a fact with the session
   that is ending hides it from every session after it.
-- Over REST, add `"trigger": "compaction"` to `metadata` so these can be told
-  apart later. The MCP `record` tool has no `metadata` field: leave the marker
+- Over the CLI or REST, add `"trigger": "compaction"` to `metadata` so these
+  can be told apart later. The MCP `record` tool has no `metadata` field: leave the marker
   off rather than putting it in `tags`, which are visibility scope, not labels.
 - Nothing durable in the session? Record nothing. That is a valid outcome.
 
@@ -190,6 +218,6 @@ are in `references/troubleshooting.md`.
 
 ## Reference
 
-- `references/usage.md` - exact MCP, curl and SDK calls, and their responses.
+- `references/usage.md` - exact MCP, CLI, curl and SDK calls, and their responses.
 - `references/what-to-record.md` - worked examples of the judgment call.
 - `references/troubleshooting.md` - what each error means and what to do.
