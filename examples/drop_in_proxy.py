@@ -22,6 +22,7 @@ from anona import AnonaClient
 # to create, so taking the name from a caller would make it delete theirs.
 space = f"examples-proxy-{uuid.uuid4().hex[:8]}"
 base_url = os.environ.get("ANONA_BASE_URL", "https://api.anonalabs.com")
+admin = AnonaClient(api_key=os.environ["ANONA_API_KEY"], base_url=base_url)
 
 llm = OpenAI(
     api_key=os.environ["ANONA_API_KEY"],   # your Anona key, not an OpenAI key
@@ -36,8 +37,12 @@ first = llm.chat.completions.create(
 )
 print("conversation 1:", first.choices[0].message.content)
 
-# The turn is recorded in the background of the call; give extraction a moment.
-time.sleep(10)
+# The turn is recorded in the background of the call, and extraction takes
+# anywhere from a few seconds to most of a minute. Wait until it has landed
+# rather than guessing: a fixed 10 s sleep missed it on prod.
+deadline = time.monotonic() + 90
+while admin.list_memories(space)["total"] == 0 and time.monotonic() < deadline:
+    time.sleep(3)
 
 # Conversation two: a brand-new message list. No history passed. The proxy
 # retrieves the stored fact and injects it before the model answers.
@@ -48,6 +53,5 @@ second = llm.chat.completions.create(
 print("conversation 2:", second.choices[0].message.content)
 
 # Cleanup with the regular SDK client.
-admin = AnonaClient(api_key=os.environ["ANONA_API_KEY"], base_url=base_url)
 admin.delete_space(space)
 admin.close()
