@@ -39,8 +39,14 @@ for job_id in job["job_ids"]:
             break
         time.sleep(5)
 
-# Ask a question the file answers.
-for row in client.retrieve(space_id=space, query="How long do I have to return hardware?"):
+# Ask a question the file answers. The facts are what carry `document_id`; a
+# note synthesised across them has none, and by default a note answers in
+# place of the facts it covers. So ask for the facts.
+for row in client.retrieve(
+    space_id=space,
+    query="How long do I have to return hardware?",
+    prefer_observations=False,
+):
     where = f" (from {row['document_id']})" if row.get("document_id") else ""
     print(f"  {row['content']}{where}")
 
