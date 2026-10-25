@@ -1,0 +1,285 @@
+{
+  "chat_settings": {
+    "auto_record": true,
+    "chat_model": "openai.gpt-oss-120b-1:0",
+    "memory": true,
+    "memory_limit": 5,
+    "memory_token_budget": 2000,
+    "space_id": "s"
+  },
+  "chat_settings_fields": [
+    "memory_limit",
+    "memory_token_budget",
+    "auto_record",
+    "memory",
+    "chat_model"
+  ],
+  "document_list": {
+    "documents": [
+      {
+        "created_at": null,
+        "document_id": "doc-1",
+        "memory_count": 3,
+        "source": "file",
+        "tags": [
+          "q3"
+        ],
+        "text_length": null,
+        "updated_at": null
+      }
+    ],
+    "limit": 100,
+    "offset": 0,
+    "total": 1
+  },
+  "extraction_settings": {
+    "custom_prompt": null,
+    "free_form_entities": true,
+    "guidance": "Name the customer.",
+    "labels": [
+      {
+        "description": "",
+        "key": "topic",
+        "optional": true,
+        "tag": true,
+        "type": "text",
+        "values": []
+      }
+    ],
+    "mode": "verbose",
+    "space_id": "s"
+  },
+  "extraction_settings_fields": [
+    "mode",
+    "guidance",
+    "custom_prompt",
+    "labels",
+    "free_form_entities"
+  ],
+  "job_completed": {
+    "completed_at": null,
+    "created_at": null,
+    "error": null,
+    "items_submitted": 2,
+    "job_id": "job-rec-1",
+    "memory_count": 2,
+    "memory_ids": [
+      "mem-a",
+      "mem-b"
+    ],
+    "next_retry_at": null,
+    "progress": null,
+    "retry_count": null,
+    "status": "completed",
+    "zero_yield_items": null
+  },
+  "job_completed_empty": {
+    "completed_at": null,
+    "created_at": null,
+    "error": null,
+    "items_submitted": 1,
+    "job_id": "job-rec-1",
+    "memory_count": 0,
+    "memory_ids": [],
+    "next_retry_at": null,
+    "progress": null,
+    "retry_count": null,
+    "status": "completed",
+    "zero_yield_items": null
+  },
+  "job_failed": {
+    "completed_at": null,
+    "created_at": null,
+    "error": "Extraction failed.",
+    "items_submitted": null,
+    "job_id": "job-rec-1",
+    "memory_count": null,
+    "memory_ids": null,
+    "next_retry_at": null,
+    "progress": null,
+    "retry_count": null,
+    "status": "failed",
+    "zero_yield_items": null
+  },
+  "job_processing": {
+    "completed_at": null,
+    "created_at": null,
+    "error": null,
+    "items_submitted": null,
+    "job_id": "job-rec-1",
+    "memory_count": null,
+    "memory_ids": null,
+    "next_retry_at": null,
+    "progress": null,
+    "retry_count": null,
+    "status": "processing",
+    "zero_yield_items": null
+  },
+  "llm_models": {
+    "data": [
+      {
+        "alias": null,
+        "created": 0,
+        "credits_per_1k_input": 0.467,
+        "credits_per_1k_output": 1.867,
+        "default": false,
+        "display_name": "Nova Micro",
+        "id": "us.amazon.nova-micro-v1:0",
+        "object": "model",
+        "owned_by": "anona",
+        "provider": "bedrock",
+        "relative_cost": 0.23,
+        "requests_per_minute": 400,
+        "short_name": "nova-micro",
+        "supports_memory_operations": true
+      },
+      {
+        "alias": null,
+        "created": 0,
+        "credits_per_1k_input": 0.8,
+        "credits_per_1k_output": 3.2,
+        "default": false,
+        "display_name": "Nemotron Nano 3 30B",
+        "id": "nvidia.nemotron-nano-3-30b",
+        "object": "model",
+        "owned_by": "anona",
+        "provider": "bedrock",
+        "relative_cost": 0.4,
+        "requests_per_minute": 1000,
+        "short_name": "nemotron-nano",
+        "supports_memory_operations": true
+      }
+    ],
+    "object": "list"
+  },
+  "memory_list": {
+    "items": [
+      {
+        "agent_id": null,
+        "content": "The team ships on Tuesdays.",
+        "context": null,
+        "date": null,
+        "entities": null,
+        "id": "mem-0001-aaaa",
+        "member_id": null,
+        "metadata": null,
+        "provenance": null,
+        "session_id": null,
+        "source_ids": [],
+        "state": "active",
+        "tags": [
+          "project:alpha"
+        ],
+        "text": "The team ships on Tuesdays.",
+        "type": "observation",
+        "user_id": null
+      }
+    ],
+    "limit": 50,
+    "offset": 0,
+    "total": 1
+  },
+  "reason_settings": {
+    "depth": "thorough",
+    "model": "openai.gpt-oss-120b-1:0",
+    "space_id": "s"
+  },
+  "reason_settings_fields": [
+    "model",
+    "depth"
+  ],
+  "record_async": {
+    "job_id": "job-rec-1",
+    "memory_id": null,
+    "memory_ids": null,
+    "message": null,
+    "routed_to": null,
+    "status": "processing",
+    "usage": null
+  },
+  "record_batch": {
+    "accepted": 2,
+    "job_id": "job-bat-1",
+    "job_ids": [
+      "job-bat-1",
+      "job-bat-2"
+    ],
+    "status": "processing",
+    "usage": null
+  },
+  "search_block": {
+    "context": "- The team ships on Tuesdays.\n- It deploys at noon.",
+    "results": [
+      {
+        "agent_id": null,
+        "content": "The team ships on Tuesdays.",
+        "context": null,
+        "created_at": null,
+        "document_id": null,
+        "entities": [],
+        "member_id": null,
+        "memory_id": "mem-0001-aaaa",
+        "memory_type": "world",
+        "metadata": null,
+        "occurred_end": null,
+        "occurred_start": null,
+        "provenance": null,
+        "relevance_score": 1.1,
+        "session_id": null,
+        "source": null,
+        "source_ids": [],
+        "tags": [
+          "project:alpha"
+        ],
+        "timestamp": null,
+        "user_id": null
+      }
+    ],
+    "token_estimate": 12,
+    "usage": null
+  },
+  "search_results": {
+    "context": null,
+    "results": [
+      {
+        "agent_id": null,
+        "content": "The team ships on Tuesdays.",
+        "context": null,
+        "created_at": null,
+        "document_id": null,
+        "entities": [],
+        "member_id": null,
+        "memory_id": "mem-0001-aaaa",
+        "memory_type": "world",
+        "metadata": null,
+        "occurred_end": null,
+        "occurred_start": null,
+        "provenance": null,
+        "relevance_score": 1.1,
+        "session_id": null,
+        "source": null,
+        "source_ids": [],
+        "tags": [
+          "project:alpha"
+        ],
+        "timestamp": null,
+        "user_id": null
+      }
+    ],
+    "token_estimate": null,
+    "usage": null
+  },
+  "space": {
+    "created_at": null,
+    "description": "Team notes",
+    "name": "notes",
+    "qualified_id": null,
+    "shared_by": null,
+    "space_id": "notes"
+  },
+  "upload": {
+    "job_ids": [
+      "job-up-1"
+    ]
+  }
+}

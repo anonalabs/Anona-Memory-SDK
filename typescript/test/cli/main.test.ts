@@ -26,7 +26,7 @@ describe("anona command", () => {
   });
   const line = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }) + "\n";
 
-  // --- ANO-428: asking for help is not a usage error. `--help`, `-h` and
+  // --- Asking for help is not a usage error. `--help`, `-h` and
   // `--version` fell through to the "unknown command" branch, so the npm
   // binary printed usage on stderr and exited 2 for all three, and
   // `--version` did not exist while the docs told people to check it.
@@ -104,8 +104,15 @@ describe("anona command", () => {
       expect(t.e()).not.toMatch(/usage:/);
     }
   });
-  it("prints usage and exits 2 for nothing, an unknown command, or extras", async () => {
-    for (const argv of [[], ["bogus"], ["status", "extra"], ["--base-url"]]) {
+  it("orients a bare `anona` on stdout and exits 0, touching nothing", async () => {
+    const t = io();
+    expect(await main([], t)).toBe(0);
+    expect(t.o()).toContain("anona guide");
+    expect(t.o()).toContain("anona start");
+    expect(t.e()).toBe("");
+  });
+  it("prints usage and exits 2 for a missing command, an unknown one, or extras", async () => {
+    for (const argv of [["--quiet"], ["bogus"], ["status", "extra"], ["--base-url"]]) {
       const t = io();
       expect(await main(argv, t), argv.join(" ")).toBe(2);
       expect(t.o()).toBe("");

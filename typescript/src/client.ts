@@ -130,7 +130,7 @@ export interface AnonaOptions {
    * `https://memory.anonalabs.com` also works and keeps working indefinitely.
    */
   baseUrl?: string;
-  /** Per-attempt timeout. Default 30s. */
+  /** Per-attempt timeout. Default 120s, as in the Python SDK: a loaded `reason` runs 70-115s server-side. */
   timeoutMs?: number;
   /** Retries for 429/5xx only. Default 2. */
   maxRetries?: number;
@@ -469,7 +469,7 @@ export class Anona {
     this.http = new HttpClient({
       apiKey: options.apiKey,
       baseUrl: (options.baseUrl ?? "https://api.anonalabs.com").replace(/\/+$/, ""),
-      timeoutMs: options.timeoutMs ?? 30_000,
+      timeoutMs: options.timeoutMs ?? 120_000,
       maxRetries: options.maxRetries ?? 2,
       fetchImpl: options.fetch ?? globalThis.fetch.bind(globalThis),
     });
@@ -549,7 +549,8 @@ export class Anona {
         content: rest.content,
         context: rest.context,
         timestamp: rest.timestamp,
-        metadata: rest.metadata,
+        // Always sent, `{}` when unset, as the Python SDK sends it.
+        metadata: rest.metadata ?? {},
         tags: rest.tags,
         user_id: rest.userId,
         agent_id: rest.agentId,
@@ -680,7 +681,7 @@ export class Anona {
       body: compact({
         space_id: options.spaceId,
         query: options.query,
-        limit: options.limit,
+        limit: options.limit ?? 10,
         top_k: options.topK,
         mode: options.mode,
         memory_type: options.memoryType,
@@ -758,9 +759,9 @@ export class Anona {
       body: compact({
         space_id: spaceId,
         query: options.query,
-        limit: options.limit,
+        limit: options.limit ?? 10,
         top_k: options.topK,
-        mode: options.mode,
+        mode: options.mode ?? "accurate",
         memory_type: options.memoryType,
         user_id: options.userId,
         agent_id: options.agentId,
@@ -808,9 +809,9 @@ export class Anona {
       body: compact({
         space_id: options.spaceId,
         query: options.query,
-        limit: options.limit,
+        limit: options.limit ?? 10,
         top_k: options.topK,
-        mode: options.mode,
+        mode: options.mode ?? "accurate",
         memory_type: options.memoryType,
         user_id: options.userId,
         agent_id: options.agentId,
@@ -888,10 +889,9 @@ export class Anona {
    * `reason` is a multi-iteration agent loop — a single call routinely runs the
    * better part of two minutes. So this is `idempotent: false` (a slow `reason`
    * must never be auto-replayed into two or three overlapping runs at a space
-   * already under load) and carries its own ~90s per-attempt timeout to match
-   * the API's own synthesis budget, rather than being cut off at the 30s default.
-   * The two go together: the long attempt is only safe because it is never
-   * retried.
+   * already under load), and it runs under the client's per-attempt timeout,
+   * 120s by default, which outlives the API's ~90s synthesis budget. The two
+   * go together: a long attempt is only safe because it is never retried.
    */
   async reason(options: {
     spaceId: string;
@@ -926,7 +926,6 @@ export class Anona {
       method: "POST",
       path: "/v1/reason",
       idempotent: false,
-      timeoutMs: 90_000,
       signal: options.signal,
       body: {
         space_id: options.spaceId,
@@ -1003,8 +1002,8 @@ export class Anona {
    * credits are charged at.
    *
    * A synthesis pass sits behind this exactly as it does behind `reason`, so
-   * it carries the same treatment: never auto-replayed, and given the API's
-   * own ~90s budget rather than the 30s default.
+   * it carries the same treatment: never auto-replayed, under the client's
+   * 120s default timeout.
    */
   async askAboutUser(options: {
     spaceId: string;
@@ -1017,7 +1016,6 @@ export class Anona {
       method: "POST",
       path: `/v1/spaces/${seg(options.spaceId)}/users/${seg(options.userId)}/ask`,
       idempotent: false,
-      timeoutMs: 90_000,
       signal: options.signal,
       body: compact({ query: options.query, model: options.model }),
     });
@@ -1060,7 +1058,7 @@ export class Anona {
       signal: options.signal,
       body: compact({
         name: options.name,
-        description: options.description,
+        description: options.description ?? null,
         space_type: options.spaceType,
       }),
     });
@@ -1108,6 +1106,12 @@ export class Anona {
     limit?: number;
     offset?: number;
     includeSources?: boolean;
+    /**
+     * `prefer_observations`, sent as given: `true` lists a synthesized note in
+     * place of the facts behind it (the server default), `false` both layers.
+     * Wins over `includeSources` when both are set.
+     */
+    preferObservations?: boolean;
     /** Plain substring filter over the memory text. Not a ranked search. */
     query?: string;
     /** One memory type: fact / note / experience / summary. */
@@ -1130,9 +1134,14 @@ export class Anona {
       method: "GET",
       path: `/v1/spaces/${seg(options.spaceId)}/memories`,
       query: {
-        limit: options.limit,
-        offset: options.offset,
-        prefer_observations: options.includeSources ? "false" : undefined,
+        limit: options.limit ?? 50,
+        offset: options.offset ?? 0,
+        prefer_observations:
+          options.preferObservations !== undefined
+            ? options.preferObservations
+            : options.includeSources
+              ? false
+              : undefined,
         q: options.query,
         // The API's query parameter is `type`; `memoryType` is the name the
         // rest of this client uses for the same thing.
@@ -1274,7 +1283,7 @@ export class Anona {
     return this.http.request<DocumentListPage>({
       method: "GET",
       path: `/v1/spaces/${seg(options.spaceId)}/documents`,
-      query: { limit: options.limit, offset: options.offset },
+      query: { limit: options.limit ?? 100, offset: options.offset ?? 0 },
       signal: options.signal,
     });
   }

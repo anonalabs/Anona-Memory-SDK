@@ -15,7 +15,6 @@ import textwrap
 
 from _cli import SDK_ROOT, ok, run_cli
 
-# This repo's root IS the package, so skills/ sits beside it.
 INSTALLER = SDK_ROOT / "skills" / "install.sh"
 
 PRELUDE = """
@@ -504,7 +503,7 @@ def test_the_key_never_appears_in_output(tmp_path):
             MODE["status"] = 401
             check([verb, "x", "--space", "s", "--base-url", BASE] + flag + extra, 4)
             MODE["status"] = 500
-            check([verb, "x", "--space", "s", "--base-url", BASE] + flag + extra, 1)
+            check([verb, "x", "--space", "s", "--base-url", BASE] + flag + extra, 7)
             # usage error, refused host, refused transport, unreachable host
             check([verb, "x", "--base-url", BASE] + flag + extra, 2)
             check([verb, "", "--space", "s", "--base-url", BASE] + flag + extra, 2)
@@ -512,7 +511,7 @@ def test_the_key_never_appears_in_output(tmp_path):
             check([verb, "x", "--space", "s", "--base-url", BASE] + extra, 4)
             del os.environ["ANONA_API_KEY"]
             check([verb, "x", "--space", "s", "--base-url", "http://evil.example"] + flag + extra, 4)
-            check([verb, "x", "--space", "s", "--base-url", "http://127.0.0.1:1"] + flag + extra, 1)
+            check([verb, "x", "--space", "s", "--base-url", "http://127.0.0.1:1"] + flag + extra, 7)
         # The resource verbs, the same way. `needs` is whether a missing space
         # is a usage error; `blank` is the command with its text emptied.
         resource = [
@@ -540,7 +539,7 @@ def test_the_key_never_appears_in_output(tmp_path):
             MODE["status"] = 401
             check(argv + space + ["--base-url", BASE] + flag + extra, 4)
             MODE["status"] = 500
-            check(argv + space + ["--base-url", BASE] + flag + extra, 1)
+            check(argv + space + ["--base-url", BASE] + flag + extra, 7)
             if needs:
                 check(argv + ["--base-url", BASE] + flag + extra, 2)
             if blank:
@@ -549,7 +548,7 @@ def test_the_key_never_appears_in_output(tmp_path):
             check(argv + space + ["--base-url", BASE] + extra, 4)
             del os.environ["ANONA_API_KEY"]
             check(argv + space + ["--base-url", "http://evil.example"] + flag + extra, 4)
-            check(argv + space + ["--base-url", "http://127.0.0.1:1"] + flag + extra, 1)
+            check(argv + space + ["--base-url", "http://127.0.0.1:1"] + flag + extra, 7)
         # An id pasted from the wrong place is echoed back redacted.
         check(["memories", "delete", SECRET] + base_flags(flag), 2)
         check(["jobs", "cancel", SECRET] + base_flags(flag), 2)

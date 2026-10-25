@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -57,15 +58,51 @@ class Credentials:
         return bool(self.access_token)
 
 
+# A named profile is a whole second ~/.anona: its own credentials, its own
+# command-line login, its own config.env -- and, because every lock lives
+# beside the file it guards (`<file>.lock`, `<file>.nodelock`), its own locks.
+# Nothing is shared between profiles, so a refresh in one can never rotate a
+# token in another. Unset, or `default`, is the directory this CLI always used.
+PROFILE_ENV = "ANONA_PROFILE"
+_PROFILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
+
+
+class BadProfile(ValueError):
+    """A profile name that cannot be a directory name."""
+
+
+def check_profile(name: str) -> str:
+    if not _PROFILE_NAME.fullmatch(name):
+        raise BadProfile(
+            f"profile names are letters, digits, '-' and '_' (at most 64), not {name!r}"
+        )
+    return name
+
+
+def profile() -> str | None:
+    """The active named profile, or None for the default one."""
+    name = os.environ.get(PROFILE_ENV) or None
+    if name is None or name == "default":
+        return None
+    return check_profile(name)
+
+
+def anona_dir() -> Path:
+    """Where this profile's files live: ~/.anona, or ~/.anona/profiles/NAME."""
+    base = Path(os.path.expanduser("~")) / ".anona"
+    name = profile()
+    return base if name is None else base / "profiles" / name
+
+
 def path() -> Path:
     """The MCP credential (and any temporary profile)."""
-    return Path(os.path.expanduser("~")) / ".anona" / "credentials.json"
+    return anona_dir() / "credentials.json"
 
 
 def cli_path() -> Path:
     """The command line's own credential, used by record/retrieve/reason and
     the other data commands. Never holds a temporary profile."""
-    return Path(os.path.expanduser("~")) / ".anona" / "cli-credentials.json"
+    return anona_dir() / "cli-credentials.json"
 
 
 def _opt(value, kind):

@@ -25,7 +25,7 @@ describe("record", () => {
     const result = await anona.record({ spaceId: "support", content: "Alice prefers email" });
 
     expect((fetchImpl as any).mock.calls[0]![0]).toBe("https://api.anonalabs.com/v1/record");
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ metadata: {},
       space_id: "support",
       content: "Alice prefers email",
     });
@@ -50,7 +50,7 @@ describe("record", () => {
 
     const result = await anona.record({ spaceId: "s", content: "c", background: true });
 
-    expect(bodyOf(fetchImpl)).toEqual({ space_id: "s", content: "c", async: true });
+    expect(bodyOf(fetchImpl)).toEqual({ metadata: {}, space_id: "s", content: "c", async: true });
     expect(result.job_id).toBe("job_1");
   });
 
@@ -66,7 +66,7 @@ describe("record", () => {
       tags: ["agent:triage"],
     });
 
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ metadata: {},
       space_id: "s",
       content: "c",
       context: "from support chat",
@@ -190,7 +190,7 @@ describe("record space routing", () => {
 
     const result = await anona.record({ route: "auto", content: "Acme pays net-30" });
 
-    expect(bodyOf(fetchImpl)).toEqual({ content: "Acme pays net-30", route: "auto" });
+    expect(bodyOf(fetchImpl)).toEqual({ metadata: {}, content: "Acme pays net-30", route: "auto" });
     // `routed_to` is the only thing that tells a misroute from a correct write.
     expect(result.routed_to).toEqual([
       { space_id: "billing", confidence: 0.91, stage: "model", reason: "invoice terms" },
@@ -219,7 +219,7 @@ describe("record space routing", () => {
       maxTargets: 1,
     });
 
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ metadata: {},
       content: "c",
       route: "auto",
       fallback_space_id: "inbox",

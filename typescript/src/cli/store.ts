@@ -65,17 +65,56 @@ export function liveTempToken(c: Credentials, nowSeconds: number = Date.now() / 
   return c.tempToken;
 }
 
+// A named profile is a whole second ~/.anona: its own credentials, its own
+// command-line login, its own config.env -- and, because every lock lives
+// beside the file it guards (`<file>.nodelock`, and Python's `<file>.lock`),
+// its own locks. Nothing is shared between profiles, so a refresh in one can
+// never rotate a token in another. Unset, or `default`, is ~/.anona itself.
+// The same layout as the pip package's, so the two CLIs share profiles too.
+export const PROFILE_ENV = "ANONA_PROFILE";
+const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
+/** A profile name that cannot be a directory name. */
+export class BadProfile extends Error {}
+
+export function checkProfile(name: string): string {
+  if (!PROFILE_NAME.test(name)) {
+    throw new BadProfile(`profile names are letters, digits, '-' and '_' (at most 64), not ${pyQuote(name)}`);
+  }
+  return name;
+}
+
+// Python's repr() of a str, which the message above quotes the name with.
+function pyQuote(s: string): string {
+  const q = s.includes("'") && !s.includes('"') ? '"' : "'";
+  return q + s.replace(/\\/g, "\\\\").replace(new RegExp(q, "g"), "\\" + q) + q;
+}
+
+/** The active named profile, or null for the default one. */
+export function profile(): string | null {
+  const name = process.env[PROFILE_ENV] || null;
+  if (name === null || name === "default") return null;
+  return checkProfile(name);
+}
+
+/** Where this profile's files live: ~/.anona, or ~/.anona/profiles/NAME. */
+export function anonaDir(): string {
+  const base = join(homedir(), ".anona");
+  const name = profile();
+  return name === null ? base : join(base, "profiles", name);
+}
+
 /** The MCP credential (and any temporary profile). */
 export function credentialsPath(): string {
-  return join(homedir(), ".anona", "credentials.json");
+  return join(anonaDir(), "credentials.json");
 }
 
 /**
- * The command line's own credential, which the pip package's data commands
- * use. Never holds a temporary profile.
+ * The command line's own credential, which the data commands use. Never holds
+ * a temporary profile.
  */
 export function cliCredentialsPath(): string {
-  return join(homedir(), ".anona", "cli-credentials.json");
+  return join(anonaDir(), "cli-credentials.json");
 }
 
 /**

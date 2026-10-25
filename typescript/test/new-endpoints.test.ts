@@ -237,7 +237,7 @@ describe("search arguments", () => {
     // search, or the engine builds different SQL than it always has.
     const { anona, last } = spyClient({ results: [] });
     await anona.retrieve({ spaceId: "s1", query: "q" });
-    expect(last().body).toEqual({ space_id: "s1", query: "q" });
+    expect(last().body).toEqual({ limit: 10, mode: "accurate", space_id: "s1", query: "q" });
   });
 });
 

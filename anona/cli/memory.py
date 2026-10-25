@@ -37,7 +37,7 @@ from anona._record_outcome import (
     stored_something,
 )
 
-from . import store, tokens
+from . import exits, store, tokens
 from .credential import redact
 from .oauth import OAuthError
 from .store import load
@@ -73,9 +73,31 @@ def _printable_block(text: object) -> str:
 
 # A missing, refused or rejected credential: no credential at all, an MCP
 # login with no API key beside it, a host the credential may not go to, or a
-# 401. Distinct from 1 (the request was made and failed) so a script can tell
-# "fix the credential" from "try again".
-AUTH_EXIT = 4
+# 401/403. Distinct from 1 (the request was made and failed) so a script can
+# tell "fix the credential" from "try again". Every code is in exits.py.
+AUTH_EXIT = exits.AUTH
+
+
+# Set once by main from the global flags, read by every AnonaClient this
+# module builds. Module state rather than a parameter on every run_* function:
+# the options are process-wide by nature (one command per process), and
+# threading them through would touch every verb for no gain.
+OPTIONS: dict = {"timeout": None, "max_retries": None, "quiet": False}
+
+
+def _client_kwargs() -> dict:
+    kwargs: dict = {"on_retry": _retry_notice}
+    if OPTIONS.get("timeout") is not None:
+        kwargs["timeout"] = OPTIONS["timeout"]
+    if OPTIONS.get("max_retries") is not None:
+        kwargs["max_retries"] = OPTIONS["max_retries"]
+    return kwargs
+
+
+def notice(text: str) -> None:
+    """A progress line on stderr, unless --quiet. Never an error: those always print."""
+    if not OPTIONS.get("quiet"):
+        print(text, file=sys.stderr)
 
 _KEY_ROUTE = (
     "an API key: pass --api-key, set ANONA_API_KEY, or put ANONA_API_KEY in "
@@ -125,7 +147,7 @@ def _renew_cli(rejected: str) -> str | int:
             return AUTH_EXIT
         except (httpx.HTTPError, OAuthError) as exc:
             print(f"anona: could not renew the command-line login ({type(exc).__name__}).", file=sys.stderr)
-            return 1
+            return exits.UNAVAILABLE if isinstance(exc, httpx.TransportError) else exits.FAILED
 
 
 def _cli_bearer(space: str | None) -> Bearer | int | None:
@@ -151,7 +173,7 @@ def _cli_bearer(space: str | None) -> Bearer | int | None:
             # A raw httpx.Client, outside the SDK's transport-error
             # translation, so this one can really fire.
             print(f"anona: could not refresh the command-line login ({type(exc).__name__}).", file=sys.stderr)
-            return 1
+            return exits.UNAVAILABLE if isinstance(exc, httpx.TransportError) else exits.FAILED
     return Bearer(token, space, _renew_cli)
 
 
@@ -219,7 +241,7 @@ def _invoke(base_url: str, bearer: Bearer, fn: Callable[[AnonaClient], object]) 
     double a write. Any other credential has nothing to renew.
     """
     try:
-        with AnonaClient(api_key=bearer.token, base_url=base_url, on_retry=_retry_notice) as client:
+        with AnonaClient(api_key=bearer.token, base_url=base_url, **_client_kwargs()) as client:
             return True, fn(client)
     except AnonaError as exc:
         if exc.status_code != 401 or bearer.renew is None or getattr(exc, "transport", False):
@@ -229,7 +251,7 @@ def _invoke(base_url: str, bearer: Bearer, fn: Callable[[AnonaClient], object]) 
         return False, renewed
     bearer.token = renewed
     try:
-        with AnonaClient(api_key=renewed, base_url=base_url, on_retry=_retry_notice) as client:
+        with AnonaClient(api_key=renewed, base_url=base_url, **_client_kwargs()) as client:
             return True, fn(client)
     except AnonaError as exc:
         rc = _fail(exc, base_url)
@@ -243,7 +265,7 @@ def _invoke(base_url: str, bearer: Bearer, fn: Callable[[AnonaClient], object]) 
 # request was made and failed. The round trip is not free: it is a metered
 # call, so sending a write that cannot succeed bills for the privilege of a
 # 422.
-EMPTY_INPUT_EXIT = 2
+EMPTY_INPUT_EXIT = exits.USAGE
 
 
 def _reject_empty(what: str, value: str) -> int | None:
@@ -323,10 +345,7 @@ def _retry_notice(attempt: int, delay: float, status: int, total: int) -> None:
     stdout still carries only the result.
     """
     reason = "rate limited" if status == 429 else f"server error {status}"
-    print(
-        f"anona: {reason}, retrying in {delay:.0f} s ({attempt}/{total})",
-        file=sys.stderr,
-    )
+    notice(f"anona: {reason}, retrying in {delay:.0f} s ({attempt}/{total})")
 
 
 def _fail(exc: AnonaError, base_url: str) -> int:
@@ -357,8 +376,8 @@ def _fail(exc: AnonaError, base_url: str) -> int:
             f"{_printable(_transport_reason(exc))}",
             file=sys.stderr,
         )
-        return 1
-    rc = AUTH_EXIT if exc.status_code == 401 else 1
+        return exits.UNAVAILABLE
+    rc = exits.for_status(exc.status_code)
     if exc.code:
         # `code` is server-supplied text on its way to a terminal, like the
         # message and the ids, so it goes through the same sanitizer. It is
@@ -374,7 +393,7 @@ def _fail(exc: AnonaError, base_url: str) -> int:
     # body that did not parse. The status is all there is, and saying so is
     # honest.
     print(
-        f"anona: the server answered HTTP {exc.status_code}: {_printable(exc.detail)}",
+        f"anona: the server answered HTTP {exc.status_code}: {_printable(_message_of(exc))}",
         file=sys.stderr,
     )
     return rc
@@ -422,6 +441,16 @@ def _message_of(exc: AnonaError) -> str:
         message = detail.get("message")
         if isinstance(message, str) and message.strip():
             return message
+        # FastAPI's own shape, which reaches us when a route raises before the
+        # envelope handler (or from a proxy in front of it).
+        inner = detail.get("detail")
+        if isinstance(inner, str) and inner.strip():
+            return inner
+        # Never a Python dict repr: single quotes and all, it is neither the
+        # JSON the docs show nor anything a script can read.
+        return json.dumps(detail, ensure_ascii=True, sort_keys=True)
+    if isinstance(detail, list):
+        return json.dumps(detail, ensure_ascii=True)
     return str(detail)
 
 
@@ -450,7 +479,7 @@ def _with_field_errors(message: str, error: dict) -> str:
 # asked -- so it cannot share `_fail`'s exit code, and it must not share
 # success's either. Its own code is what lets `anona record ... || handle` in a
 # shell script tell the two apart.
-NOTHING_EXTRACTED_EXIT = 3
+NOTHING_EXTRACTED_EXIT = exits.NOTHING_STORED
 
 
 def run_record(
@@ -466,6 +495,8 @@ def run_record(
     user_id: str | None = None,
     agent_id: str | None = None,
     session_id: str | None = None,
+    background: bool = False,
+    wait: float | None = None,
 ) -> int:
     empty = _reject_empty("memory", content)
     if empty is not None:
@@ -483,9 +514,13 @@ def run_record(
         agent_id=agent_id,
         session_id=session_id,
     )
+    if background:
+        kwargs["background"] = True
     done, result = _invoke(base_url, bearer, lambda client: client.record(space_id=space, content=content, **kwargs))
     if not done:
         return result  # the exit code, already reported
+    if background:
+        return _after_queued(base_url, bearer, space, result, _job_ids(result), as_json=as_json, wait=wait)
     if as_json:
         # The response as the API returned it. The exit code still says what
         # happened: a write that stored nothing exits 3 with its document on
@@ -512,14 +547,185 @@ def run_record(
         # Accepted for background extraction: there is no outcome yet, and no
         # id to name. The CLI never asks for this today, but a server that
         # starts queueing a write on its own must not read as empty.
-        print(f"Queued in space '{space}'. Extraction runs in the background.")
+        print(f"Queued in space '{_printable(space)}'. Extraction runs in the background.")
         return 0
     # The ids, because they are what `anona` cannot otherwise tell you and
     # what every other surface needs to edit or delete the memory. One item
     # usually extracts to more than one memory, so the count is not noise.
     noun = "memory" if len(ids) == 1 else "memories"
-    print(f"Stored {len(ids)} {noun} in space '{space}': {', '.join(_printable(i) for i in ids)}")
+    print(f"Stored {len(ids)} {noun} in space '{_printable(space)}': {', '.join(_printable(i) for i in ids)}")
     return 0
+
+
+def exit_code(value: object) -> int:
+    """The exit code `_invoke` handed back on failure (always an int)."""
+    return value if isinstance(value, int) else exits.FAILED
+
+
+def _job_ids(result: object) -> list[str]:
+    """Every job id a queued write returned, `job_id` first, without repeats."""
+    if not isinstance(result, dict):
+        return []
+    ids: list[str] = []
+    one = result.get("job_id")
+    many = result.get("job_ids")
+    for jid in ([one] if one else []) + (list(many) if isinstance(many, list) else []):
+        if jid and str(jid) not in ids:
+            ids.append(str(jid))
+    return ids
+
+
+def _after_queued(
+    base_url: str,
+    bearer: Bearer,
+    space: str | None,
+    result: object,
+    job_ids: list[str],
+    *,
+    as_json: bool,
+    wait: float | None,
+    nothing_stored_is_an_outcome: bool = True,
+) -> int:
+    """Report a write the server queued; with `wait`, poll it to the end.
+
+    Without --wait: the job ids, exit 0. With it: each job's final state, and
+    the exit code they add up to (exits.py) -- 3 when every job finished and
+    none stored anything, the same verdict a synchronous record gives.
+    """
+    from . import jobs
+
+    if wait is None or not job_ids:
+        if as_json:
+            _emit_json(result)
+        elif job_ids:
+            print(f"Queued in space '{_printable(space)}'. Job: {', '.join(_printable(j) for j in job_ids)}")
+            print(f"Check it with `anona jobs get {_printable(job_ids[0])} --space {_printable(space)}`.")
+        else:
+            print(f"Queued in space '{_printable(space)}'.")
+        return 0
+    done, got = jobs.wait(base_url, bearer, space, job_ids, wait)
+    if not done:
+        return exit_code(got)  # already reported
+    docs: list[dict] = got if isinstance(got, list) else []
+    rc = jobs.outcome(docs)
+    if rc == 0 and nothing_stored_is_an_outcome and jobs.stored_nothing(docs):
+        rc = NOTHING_EXTRACTED_EXIT
+    if as_json:
+        _emit_json({"submitted": result, "jobs": docs})
+    else:
+        for doc, jid in zip(docs, job_ids):
+            jobs.render(doc, jid)
+    if rc == exits.STILL_RUNNING:
+        print(
+            "anona: still running when --wait-timeout ran out; "
+            f"check later with `anona jobs get {_printable(job_ids[0])} --space {_printable(space)}`.",
+            file=sys.stderr,
+        )
+    elif rc == exits.NOT_FOUND:
+        print(jobs.NOT_FOUND_LINE, file=sys.stderr)
+    elif rc == NOTHING_EXTRACTED_EXIT:
+        print(
+            f"anona: nothing was stored in space '{_printable(space)}': no facts could be extracted.",
+            file=sys.stderr,
+        )
+    return rc
+
+
+# One item of a batch, as the API takes it: these keys and no others (the
+# server forbids unknown fields, and a typo'd key would otherwise cost a round
+# trip to learn about).
+BATCH_ITEM_KEYS = frozenset(
+    {"content", "context", "timestamp", "metadata", "tags", "user_id", "agent_id", "session_id"}
+)
+BATCH_MAX_ITEMS = 100
+
+
+def read_batch(path: str) -> list[dict] | int:
+    """JSON Lines from `path` (`-` for stdin): one item per line.
+
+    A line is an object with `content` and optionally the other
+    BATCH_ITEM_KEYS, or a bare JSON string, which is the content alone. Blank
+    lines are skipped. Everything is checked here, so a bad file exits 2 and
+    sends nothing.
+    """
+    try:
+        if path == "-":
+            text = sys.stdin.read()
+        else:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        print(
+            f"anona: could not read {_printable(redact(path))}: {type(exc).__name__}. Nothing was sent.",
+            file=sys.stderr,
+        )
+        return EMPTY_INPUT_EXIT
+    items: list[dict] = []
+    for n, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
+        why = None
+        try:
+            item = json.loads(line)
+        except ValueError:
+            item, why = None, "not valid JSON"
+        if isinstance(item, str):
+            item = {"content": item}
+        if why is None and not isinstance(item, dict):
+            why = "must be a JSON object or a JSON string"
+        if why is None and isinstance(item, dict):
+            unknown = sorted(set(item) - BATCH_ITEM_KEYS)
+            content = item.get("content")
+            if unknown:
+                why = (
+                    f"unknown field(s) {', '.join(_printable(k) for k in unknown)}; "
+                    f"allowed: {', '.join(sorted(BATCH_ITEM_KEYS))}"
+                )
+            elif not isinstance(content, str) or not content.strip():
+                why = "`content` must be a non-empty string"
+        if why is not None:
+            print(f"anona: --batch line {n}: {why}. Nothing was sent.", file=sys.stderr)
+            return EMPTY_INPUT_EXIT
+        assert isinstance(item, dict)
+        items.append(item)
+    if not items:
+        print("anona: --batch holds no items. Nothing was sent.", file=sys.stderr)
+        return EMPTY_INPUT_EXIT
+    if len(items) > BATCH_MAX_ITEMS:
+        print(
+            f"anona: --batch holds {len(items)} items; the API takes at most {BATCH_MAX_ITEMS} "
+            "per call. Split the file. Nothing was sent.",
+            file=sys.stderr,
+        )
+        return EMPTY_INPUT_EXIT
+    return items
+
+
+def run_record_batch(
+    base_url: str,
+    items: list[dict],
+    space: str | None,
+    *,
+    api_key: str | None = None,
+    as_json: bool = False,
+    wait: float | None = None,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    session_id: str | None = None,
+) -> int:
+    """`record --batch`: up to 100 items in one queued call."""
+    got = _credential(space, api_key)
+    if isinstance(got, int):
+        return got
+    bearer = got
+    space = bearer.space
+    scope = _given(user_id=user_id, agent_id=agent_id, session_id=session_id)
+    done, result = _invoke(
+        base_url, bearer, lambda client: client.record_batch(space_id=space, items=items, **scope)
+    )
+    if not done:
+        return exit_code(result)
+    return _after_queued(base_url, bearer, space, result, _job_ids(result), as_json=as_json, wait=wait)
 
 
 def _score(m: dict) -> str:
@@ -527,7 +733,8 @@ def _score(m: dict) -> str:
     # close to two-valued (~1.1 for a near-verbatim match, ~1e-4 for a correct
     # paraphrase), and two decimals would print every paraphrase hit as 0.00.
     s = m.get("relevance_score")
-    return "-" if not isinstance(s, (int, float)) else f"{s:.3g}"
+    # bool is an int subclass: `true` from a server is not a score.
+    return "-" if isinstance(s, bool) or not isinstance(s, (int, float)) else f"{s:.3g}"
 
 
 def run_retrieve(
@@ -547,6 +754,11 @@ def run_retrieve(
     occurred_after: str | None = None,
     occurred_before: str | None = None,
     api_key: str | None = None,
+    tag_groups: list | None = None,
+    member_id: str | None = None,
+    prefer_observations: bool | None = None,
+    block: bool = False,
+    max_tokens: int | None = None,
 ) -> int:
     empty = _reject_empty("query", query)
     if empty is not None:
@@ -567,7 +779,12 @@ def run_retrieve(
         as_of=as_of,
         occurred_after=occurred_after,
         occurred_before=occurred_before,
+        tag_groups=tag_groups,
+        member_id=member_id,
+        prefer_observations=prefer_observations,
     )
+    if block:
+        return _retrieve_block(base_url, bearer, space, query, kwargs, as_json=as_json, max_tokens=max_tokens)
     done, items = _invoke(base_url, bearer, lambda client: client.retrieve(space_id=space, query=query, **kwargs))
     if not done:
         return items  # the exit code, already reported
@@ -586,6 +803,45 @@ def run_retrieve(
         short = str(m.get("memory_id") or m.get("id") or "-")[:8]
         content = m.get("content") or m.get("text") or ""
         print(f"{i}. {_score(m)}  {_printable(short)}  {_printable(content)}")
+    return 0
+
+
+def _retrieve_block(
+    base_url: str,
+    bearer: Bearer,
+    space: str | None,
+    query: str,
+    kwargs: dict,
+    *,
+    as_json: bool,
+    max_tokens: int | None,
+) -> int:
+    """`retrieve --format block`: the prompt-ready context string.
+
+    The same search body the SDK builds for `retrieve` (so every filter means
+    the same thing), with `format: "block"` added. Plain output is the block
+    itself, through the multi-line sanitizer only, so it can be piped into a
+    prompt; --json is the whole response.
+    """
+    from anona.client import _search_body
+
+    extras = dict(kwargs)
+    limit = extras.pop("limit", 10)
+    body = _search_body(space, query, limit=limit, mode="accurate", **extras)
+    body["format"] = "block"
+    if max_tokens is not None:
+        body["context_max_tokens"] = max_tokens
+    done, doc = _invoke(base_url, bearer, lambda client: client._call("POST", "/v1/retrieve", json=body))
+    if not done:
+        return exit_code(doc)
+    if as_json:
+        _emit_json(doc)
+        return 0
+    context = doc.get("context") if isinstance(doc, dict) else None
+    if not context:
+        print("No memories matched.")
+        return 0
+    print(_printable_block(context))
     return 0
 
 
@@ -614,7 +870,7 @@ def run_reason(
     # hung, and the obvious reaction -- Ctrl-C and retry -- costs a second run
     # of the same work. stderr, so `anona reason ... > answer.md` still gets
     # only the answer.
-    print(f"Reasoning over space '{space}'. This usually takes under a minute.", file=sys.stderr)
+    notice(f"Reasoning over space '{_printable(space)}'. This usually takes under a minute.")
     kwargs = _given(depth=depth, user_id=user_id, agent_id=agent_id, session_id=session_id)
     # The receipt form: same request, same answer, plus what it was
     # built from (`sources`), which --json is the only way to see.
@@ -624,7 +880,12 @@ def run_reason(
     if as_json:
         _emit_json(asdict(receipt))
         return 0
+    # The gateway types `insights` as Any: a string in practice, but a number,
+    # object or list must not crash the command on `.strip()`. Objects and
+    # lists are printed as JSON, never as a Python repr.
     answer = receipt.insights
+    if answer is not None and not isinstance(answer, str):
+        answer = json.dumps(answer, ensure_ascii=True) if isinstance(answer, (dict, list)) else str(answer)
     if not answer or not answer.strip():
         # Distinct from an error and from "no memories matched": the call
         # succeeded and the space had nothing to build an answer from.

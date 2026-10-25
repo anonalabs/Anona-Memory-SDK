@@ -27,10 +27,13 @@ at the end, in one line.
 | Exit 4, stderr says the stored login `credential is for MCP` | Only the MCP login is stored. The REST API refuses it by design. | A person runs `anona login --cli` once. Meanwhile use MCP, or `curl` with an API key. Not a fault. |
 | Exit 4, `the command-line login could not be renewed` | Revoked, or unused for 30 days. | A person runs `anona login --cli`. Skip memory this session. |
 | Exit 2, `anona: name a space.` | An API key or the command-line login with no space. | Add `--space <space>` (see **Which space**). Nothing was sent. |
-| Exit 2, `Pass --yes to do it. Nothing was sent.` | `memories delete` / `jobs cancel` without `--yes`. | Only add `--yes` if the user asked for the deletion. |
+| Exit 2, `Pass --yes to do it. Nothing was sent.` | A destructive command (`memories delete`, `spaces delete`, `documents delete`, `jobs cancel`, a settings `reset`) without `--yes`. | Only add `--yes` if the user asked for the deletion. |
 | Exit 3 from `record` | Accepted, but no fact was extracted. Nothing stored. | Record once more with a sentence of context. Do not loop. |
 | Exit 4, `refusing to send the API key ... to <host>` | A `--base-url` names a server the key did not come with. | Drop `--base-url`. |
 | Exit 4, `anona: no credential.` | No API key, no command-line login, no temporary profile. | `anona start` for a temporary profile. No account needed. |
+| Exit 7, `could not reach`, or `write_status_unknown` | Network, or the server timed out. A `record` may still have been stored. | Do not re-send the write. Skip memory this session, or check with `anona retrieve` first. |
+| Exit 6, `rate_limited` / `credits_exhausted` | The CLI already retried a 429; or the credits are spent. | Skip memory this session. `anona usage` shows the balance. |
+| Exit 2, `unrecognized arguments` or `invalid choice` on a flag | A guessed flag, or one this copy does not have. | Read `anona guide --json` or `anona <command> --help`, then fix it once. |
 | `The temporary profile has expired.` | Past its 72 hours. Its memories are gone. | `anona start` for a new one. Nothing to recover. |
 | `Too many temporary profiles from this address today.` | A per-address daily limit. | Reuse the existing profile, or wait. Do not loop. |
 
