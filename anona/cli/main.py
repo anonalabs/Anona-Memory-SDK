@@ -134,6 +134,15 @@ class _Parser(argparse.ArgumentParser):
     def error(self, message):  # type: ignore[override]
         super().error(credential.redact(message))
 
+    def _check_value(self, action, value):  # type: ignore[override]
+        # Python 3.12.8 started quoting the choices in this message and earlier
+        # releases do not, so the same command printed two different errors
+        # depending on the interpreter. Pin the quoted form, which the npm CLI
+        # prints too.
+        if action.choices is not None and value not in action.choices:
+            choices = ", ".join(repr(c) for c in action.choices)
+            raise argparse.ArgumentError(action, f"invalid choice: {value!r} (choose from {choices})")
+
 
 def _parser() -> argparse.ArgumentParser:
     # Both flags are accepted before OR after the command, like the Node CLI.
