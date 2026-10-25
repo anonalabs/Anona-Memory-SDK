@@ -185,7 +185,7 @@ def test_record_json_on_success_nothing_stored_and_failure(tmp_path):
 
         MODE["status"] = 500
         rc, out, err = run_main(["record", "x", "--json"] + AUTH)
-        assert rc == 1 and out == "", (rc, out, err)
+        assert rc == 7 and out == "", (rc, out, err)
         assert err.strip() == "anona: internal_error: Something broke. (request_id req_1)", err
         MODE["status"] = 401
         rc, out, err = run_main(["record", "x", "--json"] + AUTH)
@@ -247,7 +247,7 @@ def test_retrieve_json_on_hit_and_no_match(tmp_path):
         assert rc == 0 and one_json(out) == {"results": []}, (rc, out, err)
         MODE["status"] = 500
         rc, out, err = run_main(["retrieve", "q", "--json"] + AUTH)
-        assert rc == 1 and out == "", (rc, out, err)
+        assert rc == 7 and out == "", (rc, out, err)
         print("OK")
     """, tmp_path))
 
@@ -286,7 +286,7 @@ def test_reason_json_carries_the_receipt(tmp_path):
         assert doc["model"] == "m-x" and doc["rules_applied"] == [], doc
         MODE["status"] = 500
         rc, out, err = run_main(["reason", "q", "--json"] + AUTH)
-        assert rc == 1 and out == "", (rc, out, err)
+        assert rc == 7 and out == "", (rc, out, err)
         print("OK")
     """, tmp_path))
 

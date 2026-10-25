@@ -58,6 +58,12 @@ export function seg(value: string): string {
 // is idempotent — replaying a create (record / batch / upload) after a 5xx that
 // landed post-write stores the memory twice, which is exactly what the API's
 // `write_status_unknown` 503 warns against.
+//
+// Idempotent is a property of the METHOD first, as in the Python SDK: a POST is
+// never re-sent after a 5xx, whatever it does -- `retrieve` and `getContext` are
+// POSTs, and a 5xx on a search that landed is still a billed search. A call can
+// only narrow this further (`idempotent: false` on a PUT or DELETE).
+const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS", "PUT", "DELETE"]);
 const RETRYABLE = (status: number, idempotent: boolean): boolean =>
   status === 429 || (status >= 500 && idempotent);
 
@@ -237,8 +243,8 @@ export class HttpClient {
       body = JSON.stringify(options.body);
     }
 
-    // Absent means safe: only the create endpoints opt out (see RequestOptions).
-    const idempotent = options.idempotent !== false;
+    // Safe only for an idempotent method the caller did not opt out.
+    const idempotent = options.idempotent !== false && IDEMPOTENT_METHODS.has(options.method.toUpperCase());
 
     let lastError: AnonaError | undefined;
 
@@ -267,17 +273,10 @@ export class HttpClient {
           message: cause instanceof Error ? cause.message : "request failed",
           detail: cause,
         });
-        // A network failure or timeout is retried only when the call is
-        // idempotent. On a create the request may have reached the server and
-        // been applied before the connection dropped, so replaying it risks a
-        // duplicate — surface the error and let the caller decide.
-        if (idempotent && attempt < this.opts.maxRetries) {
-          await sleep(backoffMs(attempt), options.signal);
-          // The caller cancelled while we were backing off — surface the last
-          // failure rather than starting another attempt they don't want.
-          if (options.signal?.aborted) throw lastError;
-          continue;
-        }
+        // A network failure or a timeout is never retried, as in the Python
+        // SDK: the request may have reached the server and still be running
+        // (a slow `reason` is the usual case), so a replay doubles the work
+        // and, on a write, the write. Surface it and let the caller decide.
         throw lastError;
       } finally {
         clearTimeout(timer);

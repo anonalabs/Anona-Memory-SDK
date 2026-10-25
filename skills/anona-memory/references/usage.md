@@ -35,6 +35,10 @@ pip `anona` 0.24.0 or later (`anona --version`). For a shell with no MCP tools.
 Pass `--json` on every data command: stdout is then one JSON document, and on
 failure stdout is empty with a one-line error on stderr.
 
+This section covers what the memory loop needs. For anything else (file
+uploads, batch ingest, settings, jobs) run `anona guide --json`, which lists
+every command and flag the installed copy has, and see the `anona-cli` skill.
+
 ### Credentials
 
 The data commands take the first of these that exists:
@@ -120,8 +124,9 @@ anona user-profile customer-42 --space my-project --json
 anona usage --json
 ```
 
-`memories delete` and `jobs cancel` exit 2 and send nothing without `--yes`.
-Only pass `--yes` when the user asked for that deletion. A temporary profile
+`memories delete`, `spaces delete`, `documents delete`, `jobs cancel` and the
+settings `reset` commands exit 2 and send nothing without `--yes`. Only pass
+`--yes` when the user asked for that deletion. A temporary profile
 cannot create a second space (`temp_profile_single_space`).
 
 ### Exit codes
@@ -129,15 +134,21 @@ cannot create a second space (`temp_profile_single_space`).
 | Exit | Means |
 | --- | --- |
 | `0` | Done. An empty retrieve or list is still `0`. |
-| `1` | Sent and failed: an error from the server, or it could not be reached. stderr starts `anona: <error_code>:`. |
+| `1` | Refused for another reason (a `409` or `422`), or a job `--wait` watched failed. stderr starts `anona: <error_code>:`. On pip 0.24.0, every failure. |
 | `2` | Bad command, nothing sent: missing `--space`, empty content, a bad flag value, no `--yes`. |
 | `3` | `record` only: accepted, nothing extracted, nothing stored. Re-record once with more context. |
-| `4` | No usable credential (none, MCP login only, or a login that could not be renewed). |
+| `4` | No usable credential (none, MCP login only, a login that could not be renewed), a refused host, or a `401`/`403`. |
+| `5` | Not found: the space, memory or job does not exist. |
+| `6` | Rate limited after retries, or out of credits. |
+| `7` | Unreachable, a timeout or a `5xx`. A write may have been stored: do not re-send it blindly. |
+| `8` | `--wait` gave up while the job was still running. |
+
+Codes `5`-`8` arrived in the release after pip 0.24.0; older copies use `1`.
 
 The npm package `@anona-labs/memory` also installs a binary called `anona`,
-with `start`, `login`, `logout`, `status` and `mcp` only. If `anona record`
-answers `invalid choice: 'record'`, the binary on PATH is the npm one or an old
-pip copy: use `uvx --from anona anona <command>`.
+which may not have the data commands yet. If `anona record` answers
+`invalid choice: 'record'`, the binary on PATH is the npm one or an old pip
+copy: use `uvx --from anona anona <command>`.
 
 ## 3. REST with curl
 

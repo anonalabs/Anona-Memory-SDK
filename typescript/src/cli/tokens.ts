@@ -23,7 +23,7 @@
  */
 import { closeSync, mkdirSync, openSync, statSync, unlinkSync, writeSync, chmodSync } from "node:fs";
 import { dirname } from "node:path";
-import { credentialsPath, loadCredentials, saveCredentials, type Credentials } from "./store.js";
+import { credentialsPath, isSignedIn, loadCredentials, saveCredentials, type Credentials } from "./store.js";
 import { discover, OAuthError } from "./oauth.js";
 
 /** Refresh this long before expiry, so a token never lapses mid-request. */
@@ -47,6 +47,8 @@ export class NotLoggedIn extends Error {
 }
 
 const RELOGIN = "Run `anona login` again.";
+/** What to tell someone whose command-line login can no longer be renewed. */
+export const CLI_RELOGIN = "Run `anona login --cli` again.";
 
 function fresh(c: Credentials): boolean {
   return c.expiresAt - SKEW_SECONDS > Date.now() / 1000;
@@ -117,16 +119,23 @@ export async function withCredentialLock<T>(
   return withLock(file + ".nodelock", async () => fn());
 }
 
+/**
+ * A valid access token, refreshing under the lock when needed. `file` picks
+ * the credential (the MCP one by default, or the command line's) and `relogin`
+ * is what to tell the user when it can no longer be renewed.
+ */
 export async function accessToken(
-  opts: { forceRefresh?: boolean; rejected?: string } = {},
+  opts: { forceRefresh?: boolean; rejected?: string; file?: string; relogin?: string } = {},
 ): Promise<string> {
   const forceRefresh = opts.forceRefresh ?? false;
   const rejected = opts.rejected;
-  let c = loadCredentials();
-  if (c === null) throw new NotLoggedIn(`Not logged in. ${RELOGIN}`);
+  const file = opts.file ?? credentialsPath();
+  const relogin = opts.relogin ?? RELOGIN;
+  const c = loadCredentials(file);
+  // A temp-only file has no OAuth token to present or refresh.
+  if (c === null || !isSignedIn(c)) throw new NotLoggedIn(`Not logged in. ${relogin}`);
   if (!mustRefresh(c, forceRefresh, rejected)) return c.accessToken;
 
-  const file = credentialsPath();
   const dir = dirname(file);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   chmodSync(dir, 0o700);
@@ -136,18 +145,18 @@ export async function accessToken(
   return withLock(file + ".nodelock", async () => {
     // Re-read: whoever held the lock before us may have refreshed already.
     // Refreshing again would replay a refresh token that is now burned.
-    const again = loadCredentials();
-    if (again === null) throw new NotLoggedIn(`Not logged in. ${RELOGIN}`);
+    const again = loadCredentials(file);
+    if (again === null || !isSignedIn(again)) throw new NotLoggedIn(`Not logged in. ${relogin}`);
     if (!mustRefresh(again, forceRefresh, rejected)) return again.accessToken;
-    const next = await refresh(again);
+    const next = await refresh(again, relogin);
     // Persist before returning: the old refresh token is already dead, so a
     // crash after this point must find the new pair on disk.
-    saveCredentials(next);
+    saveCredentials(next, file);
     return next.accessToken;
   });
 }
 
-async function refresh(c: Credentials): Promise<Credentials> {
+async function refresh(c: Credentials, relogin: string): Promise<Credentials> {
   const meta = await discover(c.baseUrl);
   const resp = await fetch(meta.token_endpoint, {
     method: "POST",
@@ -162,7 +171,7 @@ async function refresh(c: Credentials): Promise<Credentials> {
   if (resp.status === 400 || resp.status === 401) {
     // Rejected: expired after 30 idle days, or revoked. Leave the file alone;
     // deleting it adds nothing and hides the evidence.
-    throw new NotLoggedIn(RELOGIN);
+    throw new NotLoggedIn(relogin);
   }
   // Anything else (5xx, network) is transient and says nothing about the
   // credential, so it must not read as a logout.

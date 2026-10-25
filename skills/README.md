@@ -1,6 +1,6 @@
 # Anona Memory agent skills
 
-Two [Agent Skills](https://docs.anonalabs.com/integrations/skills) that teach a
+Three [Agent Skills](https://docs.anonalabs.com/integrations/skills) that teach a
 coding agent to use Anona Memory without being told to, in whichever harness you
 already use.
 
@@ -8,6 +8,7 @@ already use.
 | --- | --- | --- |
 | `anona-memory` | The agent's own memory. | A task starts, a task ends, or the user says remember, recall, or refers to an earlier session. |
 | `anona-memory-sdk` | Writing code against Anona. | Anything touching the SDK, the REST API, scoping, or a framework adapter. |
+| `anona-cli` | Driving the `anona` command line. | No MCP tools, a script or CI job, a file upload or batch ingest, managing spaces, jobs or settings, or an `anona` exit code. |
 
 ## Install
 
@@ -58,13 +59,13 @@ Customize > Skills, so build one:
 curl -fsSL https://raw.githubusercontent.com/anonalabs/Anona-Memory-SDK/main/skills/install.sh | bash -s -- --zip
 ```
 
-That writes `anona-memory.zip` and `anona-memory-sdk.zip` into the current
-directory, with the skill folder as the archive root, which is what the upload
-expects. Both `name` and `description` are inside the caps the upload enforces
-(64 and 200 characters).
+That writes `anona-memory.zip`, `anona-memory-sdk.zip` and `anona-cli.zip` into
+the current directory, with the skill folder as the archive root, which is what
+the upload expects. Every `name` and `description` is inside the caps the upload
+enforces (64 and 200 characters).
 
-There is no shell in that surface, so the skill's CLI and `curl` fallbacks
-cannot run there. Give it tools by adding Anona as a **custom connector** under
+There is no shell in that surface, so the CLI and `curl` fallbacks (and the
+`anona-cli` skill) cannot run there. Give it tools by adding Anona as a **custom connector** under
 Settings > Connectors:
 
 ```
@@ -87,8 +88,10 @@ In order of preference:
    ```
 2. **The `anona` CLI** (pip `anona` 0.24.0+): `anona status` once, then
    `anona retrieve` / `record` / `reason` with `--json`, branching on the exit
-   code. It uses an API key, the command-line login from `anona login`, or a
-   temporary profile, never the MCP login.
+   code, and `anona guide --json` before any command it has not used. It uses
+   an API key, the command-line login from `anona login`, or a temporary
+   profile, never the MCP login. The `anona-cli` skill teaches the rest of the
+   CLI.
 3. **`curl`** against `https://api.anonalabs.com`, reading `ANONA_API_KEY` from
    the environment or `~/.anona/config.env`.
 4. **Nothing.** The skill may run `anona start` for a temporary profile, or
@@ -106,6 +109,9 @@ skills/
   anona-memory-sdk/
     SKILL.md
     references/{python,typescript,rest-and-errors,scoping}.md
+  anona-cli/
+    SKILL.md
+    references/{commands,scripting,credentials}.md
 ```
 
 `SKILL.md` carries YAML frontmatter with `name` and `description`. The

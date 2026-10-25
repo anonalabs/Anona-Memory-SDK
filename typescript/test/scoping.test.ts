@@ -40,7 +40,7 @@ describe("hierarchical scoping", () => {
     // snake_case on the wire, camelCase in the SDK. A scope that arrives under
     // the wrong name is not an error, it is an unscoped write - the memory
     // lands in the space visible to everyone.
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ metadata: {},
       space_id: "s",
       content: "Alice prefers email",
       user_id: "alice",
@@ -61,7 +61,7 @@ describe("hierarchical scoping", () => {
       sessionId: "sess-1",
     });
 
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10, mode: "accurate",
       space_id: "s",
       query: "q",
       user_id: "alice",
@@ -79,7 +79,7 @@ describe("hierarchical scoping", () => {
     // An unscoped call must stay byte-identical to what it always was: the API
     // builds different SQL when scope tags are present, so a stray null here
     // would change the query plan for every caller that never opted in.
-    expect(bodyOf(fetchImpl)).toEqual({ space_id: "s", query: "q" });
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10, mode: "accurate", space_id: "s", query: "q" });
   });
 });
 
@@ -99,7 +99,7 @@ describe("point-in-time recall", () => {
     // recorded, query_timestamp only re-ranks. Collapsing them would turn a
     // hard cutoff into a scoring hint and quietly return memories the caller
     // asked to exclude.
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10, mode: "accurate",
       space_id: "s",
       query: "q",
       as_of: "2026-06-01T00:00:00Z",
@@ -119,7 +119,7 @@ describe("point-in-time recall", () => {
 
     // When the event happened, not when it was recorded - the field a bulk
     // import needs so last June's memory is dated last June.
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ metadata: {},
       space_id: "s",
       content: "shipped the beta",
       timestamp: "2025-06-14T10:00:00Z",
@@ -140,7 +140,7 @@ describe("getContext", () => {
     });
 
     expect((fetchImpl as any).mock.calls[0]![0]).toBe("https://api.anonalabs.com/v1/retrieve");
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10,
       space_id: "s",
       query: "q",
       format: "block",

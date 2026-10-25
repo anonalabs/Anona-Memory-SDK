@@ -55,14 +55,19 @@ Check, in this order, and use the first that works:
    | Exit | Means | Do |
    | --- | --- | --- |
    | `0` | Done. A retrieve that matched nothing is `{"results": []}` and still `0`. | Carry on. |
-   | `1` | Sent and failed (server error, unreachable). | Continue without memory; mention it once at the end. A `space_not_found` on stderr is an empty space: treat it as no results. |
+   | `1`, `6`, `7` | Sent and failed: refused, rate limited or out of credits, or unreachable. | Continue without memory; mention it once at the end. After `7` (or `1` on an older CLI) a `record` may still have landed: do not re-send it. |
+   | `5` | Not found. A `space_not_found` (exit `1` on an older CLI) is an empty space. | Treat it as no results. |
    | `2` | Your command was wrong; nothing was sent or billed. | Fix the command once. A missing `--space` is the usual cause. |
    | `3` | `record` only: accepted, but no fact was extracted. Nothing stored. | Record again once, with a sentence saying what the thing is or why it matters. |
    | `4` | No usable credential. | Do not retry. Go to step 3. |
 
-   `memories delete` and `jobs cancel` need `--yes`; without it they exit 2 and
-   send nothing. Do not add `--yes` unless the user asked for that deletion.
-   The full command list is in `references/usage.md`.
+   **Before a command or flag you have not used, run `anona guide --json`** (or
+   `anona <command> --help`) and read it rather than guessing; it describes
+   the installed copy. The `anona-cli` skill covers the CLI in depth: uploads,
+   batch ingest, jobs, settings and every exit code. Destructive commands need
+   `--yes`; without it they exit 2 and send nothing. Do not add `--yes` unless
+   the user asked for that deletion. The everyday commands are in
+   `references/usage.md`.
 
 3. **`curl` with an API key**, when there is no CLI (or it exited 4) and
    `ANONA_API_KEY` is in the environment or in `~/.anona/config.env` (source
@@ -88,7 +93,9 @@ for a person to approve: once for the command line, once for MCP
 run it and wait.
 
 **Check the CLI version once.** Everything above needs pip `anona` 0.24.0 or
-later (`anona --version`); the npm package's `anona` has no data commands.
+later (`anona --version`); `anona guide` and exit codes `5`-`8` arrived in the
+release after it. The npm package's `anona` may lack the data commands; if
+`anona record` answers `invalid choice`, use the pip one.
 `pip install anona` does **not** upgrade an existing copy, and on a system
 Python it is refused with `error: externally-managed-environment`.
 `uvx --from anona anona <command>` installs nothing and always runs the

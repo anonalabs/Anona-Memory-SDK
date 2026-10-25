@@ -1,12 +1,25 @@
 /**
- * The `anona` command: start, login, logout, status, mcp.
+ * The `anona` command: start, login, logout, status, mcp, doctor, guide,
+ * help, completion, and the data commands (record, retrieve, reason and the
+ * resource verbs), which data.ts runs. Every command line is parsed by the
+ * one grammar in args.ts.
  *
  * `login` holds two credentials, each in its own file (store.ts): the command
- * line's, which the pip package's data commands use, and MCP's. This package
- * has no data commands of its own; it signs both in, out and reports them, so
- * the two CLIs interoperate on the same files.
+ * line's, which the data commands use, and MCP's. The pip package's `anona`
+ * reads and writes the same files and has the same commands, so the two CLIs
+ * interoperate.
  */
+import { existsSync } from "node:fs";
 import type { Readable } from "node:stream";
+import { commandHelp, findCommand, parseArgs, RESOURCE_COMMAND_NAMES, topHelp } from "./args.js";
+import { script as completionScript } from "./completion.js";
+import { loadConfigEnv } from "./config-env.js";
+import { displayKey, findApiKey, findBaseUrl, findSpace, redact } from "./credential.js";
+import { runData } from "./data.js";
+import { runDoctor } from "./doctor.js";
+import { ORIENTATION, runGuide } from "./guide.js";
+import { OPTIONS } from "./memory.js";
+import { printable } from "./py.js";
 import { runCliLogin, runLogin, runLogins, type LoginOptions } from "./login.js";
 import { discover, revoke } from "./oauth.js";
 import { runProxy } from "./proxy.js";
@@ -14,13 +27,17 @@ import { withCredentialLock } from "./tokens.js";
 import {
   clearCredentials,
   cliCredentialsPath,
+  credentialsPath,
+  BadProfile,
   DEFAULT_BASE_URL,
   isSignedIn,
   liveTempToken,
   loadCredentials,
+  profile,
+  PROFILE_ENV,
   type Credentials,
 } from "./store.js";
-import { checkTransport, resolveTarget, TargetError } from "./target.js";
+import { checkTransport, forApiKey, resolveTarget, SOURCE_NAMES, TargetError } from "./target.js";
 import { describeDeadline, runStart } from "./temp.js";
 
 export interface IO {
@@ -28,26 +45,6 @@ export interface IO {
   stdout: { write(s: string): unknown };
   stderr: { write(s: string): unknown };
 }
-
-const USAGE = `usage: anona [--base-url URL] <command>
-
-  start                 Create a temporary profile with no account
-  login [--cli|--mcp] [--no-browser]
-                        Approve access in a browser: the command line, then
-                        MCP, each stored in its own file (--cli or --mcp: only
-                        that one)
-  logout [--cli|--mcp] [--force]
-                        Delete the stored credentials and revoke them (--cli or
-                        --mcp: only that one; --force: also abandon an
-                        unclaimed temporary profile, which cannot be recovered)
-  status                Show whether you are signed in
-  mcp                   Run the stdio MCP proxy for a client to launch
-
-  --help, -h            Show this message
-  --version             Print the installed version
-
-The pip package additionally has record, retrieve and reason.
-`;
 
 // Replaced at build time by tsup (see tsup.config.ts). Declared so that the
 // unbundled source still type-checks and still runs under tsx/vitest, where
@@ -74,7 +71,7 @@ function guarded(io: IO, fn: () => Promise<number> | number): Promise<number> | 
 }
 
 /** The command-line login, described; null when there is none. */
-function cliStatus(io: IO, requested?: string): number | null {
+function cliStatus(io: IO, requested?: string, shadowed = false): number | null {
   const c = loadCredentials(cliCredentialsPath());
   if (c === null || !isSignedIn(c)) return null;
   if (requested !== undefined) {
@@ -83,7 +80,10 @@ function cliStatus(io: IO, requested?: string): number | null {
   }
   // Only what the file says: never a token or the client id, and no network
   // call, which would rotate the refresh token just to look at it.
-  io.stdout.write(`Command-line login for ${c.baseUrl} (used by record, retrieve, reason and the other data commands).\n`);
+  const use = shadowed
+    ? "not used while an API key is set"
+    : "used by record, retrieve, reason and the other data commands";
+  io.stdout.write(`Command-line login for ${c.baseUrl} (${use}).\n`);
   const remaining = c.expiresAt - Date.now() / 1000;
   if (remaining > 0) {
     io.stdout.write(`Its access token expires in ${Math.floor(remaining / 60)} minutes and is renewed automatically.\n`);
@@ -94,7 +94,10 @@ function cliStatus(io: IO, requested?: string): number | null {
   return 0;
 }
 
-function status(io: IO, requested?: string): number {
+function status(io: IO, requested?: string, baseUrlFlag?: string, apiKeyFlag?: string): number {
+  const config = loadConfigEnv(io.stderr);
+  const key = findApiKey(apiKeyFlag, config);
+  if (key !== null) return keyStatus(io, key, config, baseUrlFlag);
   const cli = cliStatus(io, requested);
   if (cli === null) return mcpStatus(io, requested);
   if (cli !== 0) return cli;
@@ -104,6 +107,41 @@ function status(io: IO, requested?: string): number {
   }
   // A working command-line login decides the exit code.
   mcpStatus(io, requested);
+  return 0;
+}
+
+/**
+ * The data commands' API key: its source and a prefix only, since this output
+ * ends up in pastes and logs. The stored logins are still described -- they
+ * are what `anona mcp` uses -- but the key works either way, so their exit
+ * codes do not decide this one.
+ */
+function keyStatus(
+  io: IO,
+  key: ReturnType<typeof findApiKey> & object,
+  config: ReturnType<typeof loadConfigEnv>,
+  baseUrlFlag: string | undefined,
+): number {
+  io.stdout.write(`API key for record/retrieve/reason: ${displayKey(key)} (from ${SOURCE_NAMES[key.source]}).\n`);
+  const [url, urlSource] = findBaseUrl(baseUrlFlag, config);
+  let base: string;
+  try {
+    base = forApiKey(url, urlSource, key.source);
+  } catch (e) {
+    if (!(e instanceof TargetError)) throw e;
+    io.stderr.write(`anona: ${printable(redact(e.message))}\n`);
+    return 4;
+  }
+  const safe = (s: string) => printable(redact(s));
+  io.stdout.write(`It is sent to ${safe(base)}.\n`);
+  const space = findSpace(undefined, config);
+  io.stdout.write(space ? `Space: ${safe(space)}.\n` : "Space: none set; pass --space or set ANONA_SPACE_ID.\n");
+  cliStatus(io, undefined, true);
+  if (loadCredentials() === null) {
+    io.stdout.write("No `anona login` credential is stored for MCP (that one is for `anona mcp`).\n");
+    return 0;
+  }
+  mcpStatus(io);
   return 0;
 }
 
@@ -178,9 +216,13 @@ async function logout(io: IO, which: { cli: boolean; mcp: boolean; force: boolea
     if (refused) return 1;
   }
   const toRevoke: Credentials[] = [];
+  // Whether a file was there to remove: "logged out" when nothing was stored
+  // reads as though a credential existed and is now gone.
+  let removed = false;
   const take = (file?: string) => {
     const held = loadCredentials(file);
     if (held !== null && isSignedIn(held)) toRevoke.push(held);
+    if (existsSync(file ?? credentialsPath())) removed = true;
     clearCredentials(file);
   };
   if (which.cli) await withCredentialLock(() => take(cliCredentialsPath()), cliCredentialsPath());
@@ -201,99 +243,112 @@ async function logout(io: IO, which: { cli: boolean; mcp: boolean; force: boolea
         "30 days unused, or revoke it now under Integrations -> MCP -> Connected apps in the dashboard.\n",
     );
   }
+  if (!removed) {
+    io.stdout.write(
+      which.cli && which.mcp
+        ? "No login was stored; nothing to remove.\n"
+        : `No ${which.cli ? "command-line" : "MCP"} login was stored; nothing to remove.\n`,
+    );
+    return 0;
+  }
   io.stdout.write(
     which.cli && which.mcp ? "Logged out.\n" : which.cli ? "Logged out of the command line.\n" : "Logged out of MCP.\n",
   );
   return 0;
 }
 
+/**
+ * --profile, --timeout, --retries and --quiet, before anything reads a file.
+ * The profile is put in the environment, as the pip package does, so every
+ * path in store.ts and config-env.ts -- and so every lock -- moves with it.
+ */
+function applyGlobals(io: IO, args: Record<string, unknown>): number | null {
+  if (typeof args.profile === "string") process.env[PROFILE_ENV] = args.profile;
+  try {
+    profile();
+  } catch (e) {
+    if (!(e instanceof BadProfile)) throw e;
+    io.stderr.write(`anona: ANONA_PROFILE: ${printable(redact(e.message))}\n`);
+    return 2;
+  }
+  OPTIONS.timeout = (args.timeout as number | undefined) ?? null;
+  OPTIONS.maxRetries = (args.retries as number | undefined) ?? null;
+  OPTIONS.quiet = Boolean(args.quiet);
+  return null;
+}
+
+/** `anona help spaces delete`: that command's own --help, on stdout, exit 0. */
+function helpTopic(io: IO, topic: string[], args: Record<string, unknown>): number {
+  if (args.llm || args.json) {
+    io.stderr.write("anona: help COMMAND takes no --llm or --json. Nothing was printed.\n");
+    return 2;
+  }
+  const found = findCommand(topic);
+  if ("unknown" in found) {
+    const known = found.unknown.length ? found.unknown.join(", ") : "none";
+    io.stderr.write(`anona: no command \`${printable(redact(topic.join(" ")))}\`. Commands here: ${known}.\n`);
+    return 2;
+  }
+  io.stdout.write(commandHelp(found.prog, found.spec));
+  return 0;
+}
+
 export async function main(argv: string[], io: IO, login: Partial<LoginOptions> = {}): Promise<number> {
-  // None, not the resolved default: `mcp` must be able to tell "the user said
-  // so" from "nobody said anything" to prefer the stored deployment.
-  let baseUrl: string | undefined;
-  let noBrowser = false;
-  let force = false;
-  let onlyCli = false;
-  let onlyMcp = false;
-  let helpWanted = false;
-  let versionWanted = false;
-  const rest: string[] = [];
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i] as string;
-    if (a === "--base-url") {
-      baseUrl = argv[++i];
-      if (!baseUrl) {
-        io.stderr.write("anona: --base-url needs a value\n");
-        return 2;
-      }
-    } else if (a.startsWith("--base-url=")) {
-      baseUrl = a.slice("--base-url=".length);
-    } else if (a === "--no-browser") {
-      noBrowser = true;
-    } else if (a === "--force") {
-      force = true;
-    } else if (a === "--cli") {
-      onlyCli = true;
-    } else if (a === "--mcp") {
-      onlyMcp = true;
-    } else if (a === "--help" || a === "-h") {
-      helpWanted = true;
-    } else if (a === "--version" || a === "-V") {
-      versionWanted = true;
-    } else {
-      rest.push(a);
+  // Bare `anona` is how a person or an agent first meets the command: orient
+  // them rather than fail with "arguments are required". Only the truly empty
+  // line -- `anona --quiet` with no command is still a usage error.
+  if (argv.length === 0) {
+    io.stdout.write(ORIENTATION);
+    return 0;
+  }
+  const outcome = parseArgs(argv, io, packageVersion());
+  if (!outcome.ok) return outcome.exit;
+  const { verb, values: args } = outcome.parsed;
+  const bad = applyGlobals(io, args);
+  if (bad !== null) return bad;
+  const [command] = verb;
+  const topic = (args.topic as string[] | undefined) ?? [];
+  if (command === "help" && topic.length) return helpTopic(io, topic, args);
+  if (command === "guide" || (command === "help" && args.llm)) return runGuide(io, Boolean(args.json));
+  if (command === "help") {
+    if (args.json) {
+      io.stderr.write("anona: --json needs --llm. Nothing was printed.\n");
+      return 2;
     }
-  }
-  // Asking for help is not a usage error. These went to the "unknown command"
-  // branch, so `anona --help` printed usage on stderr and exited 2 -- the npm
-  // binary could not print its own help successfully, and `--version` did not
-  // exist at all while the docs told people to check they were on 0.17.0+.
-  if (helpWanted) {
-    io.stdout.write(USAGE);
+    io.stdout.write(topHelp());
     return 0;
   }
-  if (versionWanted) {
-    io.stdout.write(`anona ${packageVersion()}\n`);
+  if (command === "completion") {
+    io.stdout.write(completionScript(args.shell as string) + "\n");
     return 0;
   }
-  const command = rest[0];
-  if (rest.length !== 1 || !["start", "login", "logout", "status", "mcp"].includes(command as string)) {
-    io.stderr.write(USAGE);
-    return 2;
-  }
-  if (force && command !== "logout") {
-    io.stderr.write("anona: --force only applies to logout\n");
-    return 2;
-  }
-  if ((onlyCli || onlyMcp) && command !== "login" && command !== "logout") {
-    io.stderr.write("anona: --cli and --mcp only apply to login and logout\n");
-    return 2;
-  }
-  if (onlyCli && onlyMcp) {
-    io.stderr.write("anona: give --cli or --mcp, not both (neither means both)\n");
-    return 2;
-  }
+  const baseUrl = (args.base_url as string | undefined) || undefined;
   // What the user named, if anything. Only `start` and `login` may follow it to
-  // a new deployment; `mcp` holds a credential and is pinned to the deployment
-  // that issued it (resolveTarget).
+  // a new deployment; everything else holds a credential and is pinned to the
+  // deployment that issued it (resolveTarget).
   const requested = baseUrl || process.env.ANONA_BASE_URL || undefined;
   if (command === "start") {
     const base = baseUrl || defaultBaseUrl();
     return guarded(io, () => (checkTransport(base), runStart(base, io)));
+  }
+  if (command === "record" || command === "retrieve" || command === "reason" || RESOURCE_COMMAND_NAMES.has(command)) {
+    return runData(io, verb, args, baseUrl, requested);
   }
   if (command === "login") {
     const base = baseUrl || defaultBaseUrl();
     const refused = guarded(io, () => (checkTransport(base), 0));
     if (refused !== 0) return refused;
     io.stdout.write(`Signing in to ${base}\n`);
-    const wantCli = !onlyMcp;
-    const wantMcp = !onlyCli;
+    // Neither flag means both approvals; the parser keeps the two exclusive.
+    const wantCli = !args.mcp;
+    const wantMcp = !args.cli;
+    const same = (a: string, b: string) => a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
     const heldCli = wantCli ? loadCredentials(cliCredentialsPath()) : null;
-    if (heldCli && isSignedIn(heldCli) && heldCli.baseUrl.replace(/\/+$/, "") !== base.replace(/\/+$/, "")) {
+    if (heldCli && isSignedIn(heldCli) && !same(heldCli.baseUrl, base)) {
       io.stdout.write(`Note: the stored command-line credential is for ${heldCli.baseUrl}; this replaces it.\n`);
     }
     const stored = loadCredentials();
-    if (wantMcp && stored && stored.baseUrl.replace(/\/+$/, "") !== base.replace(/\/+$/, "")) {
+    if (wantMcp && stored && !same(stored.baseUrl, base)) {
       io.stdout.write(`Note: the stored credential is for ${stored.baseUrl}; this replaces it.\n`);
       // A profile belongs to the deployment that minted it, so its token cannot
       // be carried onto this one. But the token is never printed, so this file
@@ -306,12 +361,18 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
         );
       }
     }
-    const opts: LoginOptions = { ...login, openBrowser: !noBrowser, stdout: io.stdout, stderr: io.stderr };
+    if (stored && liveTempToken(stored) !== null && same(stored.baseUrl, base)) {
+      io.stdout.write(
+        `Signing in will try to claim your temporary profile, which ${describeDeadline(stored.tempExpiresAt as number)}.\n`,
+      );
+    }
+    const opts: LoginOptions = { ...login, openBrowser: !args.no_browser, stdout: io.stdout, stderr: io.stderr };
     if (wantCli && wantMcp) return runLogins(base, opts);
     return wantCli ? runCliLogin(base, opts) : runLogin(base, opts);
   }
-  if (command === "logout") return logout(io, { cli: !onlyMcp, mcp: !onlyCli, force });
-  if (command === "status") return status(io, requested);
+  if (command === "logout") return logout(io, { cli: !args.mcp, mcp: !args.cli, force: Boolean(args.force) });
+  if (command === "status") return status(io, requested, baseUrl, args.api_key as string | undefined);
+  if (command === "doctor") return runDoctor(io, args, baseUrl, requested, packageVersion());
   // mcp: a credential belongs to the deployment that issued it. Naming another
   // is refused on stderr; stdout is the client's JSON-RPC stream.
   const stored = loadCredentials();

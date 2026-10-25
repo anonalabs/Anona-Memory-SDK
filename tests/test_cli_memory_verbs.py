@@ -344,7 +344,7 @@ def test_server_error_is_a_message_not_a_traceback(tmp_path):
         creds(temp_hours=60)
         srv.shutdown(); srv.server_close()
         rc, out, err = run_main(["record", "x"])
-        assert rc == 1, rc
+        assert rc == 7, rc
         # NOT "the server answered HTTP 503": the server is shut down, so no
         # server answered. The SDK gives a transport failure an informational
         # 503 so one `except` catches everything, and reporting that verbatim
@@ -397,7 +397,7 @@ def test_error_detail_is_stripped_of_terminal_escapes(tmp_path):
             self.wfile.write(data)
         H.do_POST = do_POST
         rc, out, err = run_main(["record", "x"])
-        assert rc == 1, rc
+        assert rc == 5, rc
         assert "\\x1b" not in err, repr(err)
         assert "forged" in err, repr(err)
         print("OK")
@@ -499,7 +499,7 @@ def test_reason_server_error_is_a_message_not_a_traceback(tmp_path):
         creds(temp_hours=60)
         srv.shutdown(); srv.server_close()
         rc, out, err = run_main(["reason", "x"])
-        assert rc == 1, rc
+        assert rc == 7, rc
         # NOT "the server answered HTTP 503": the server is shut down, so no
         # server answered. The SDK gives a transport failure an informational
         # 503 so one `except` catches everything, and reporting that verbatim
@@ -512,7 +512,7 @@ def test_reason_server_error_is_a_message_not_a_traceback(tmp_path):
     """, tmp_path))
 
 
-# --- ANO-428: what a failure looks like, and what it exits with -------------
+# --- what a failure looks like, and what it exits with -------------
 #
 # Three different things used to print as "the server answered HTTP N" and
 # exit 1: a refused connection, a 422 the caller could fix, and a real server
@@ -525,7 +525,7 @@ def test_a_refused_connection_is_not_reported_as_an_http_answer(tmp_path):
         creds(temp_hours=60)
         srv.shutdown(); srv.server_close()
         rc, out, err = run_main(["record", "x"])
-        assert rc == 1, rc
+        assert rc == 7, rc
         assert "could not reach" in err, err
         assert "refused" in err.lower(), err
         # The SDK's informational 503 must not be read back as an answer.
@@ -627,7 +627,7 @@ def test_a_server_error_with_no_envelope_still_reports_its_status(tmp_path):
             self.wfile.write(data)
         H.do_POST = do_POST
         rc, out, err = run_main(["record", "x"])
-        assert rc == 1, rc
+        assert rc == 7, rc
         assert "HTTP 500" in err, err
         assert "Traceback" not in err, err
         print("OK")

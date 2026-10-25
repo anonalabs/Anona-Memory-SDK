@@ -59,15 +59,16 @@ code**:
   on the REST API, with one space (`default`), until it is claimed or expires
   after 72 hours. Fine for a throwaway script, never for anything deployed.
 
-For scripting from a shell instead of code, the pip CLI (0.24.0+) wraps the API
-with `--json` output and stable exit codes (0 ok, 1 failed, 2 usage, 3 nothing
-stored, 4 no credential): `anona record`, `retrieve`, `reason`,
-`spaces list|create|get`, `memories list|edit|delete|history`,
-`jobs get|cancel`, `profile`, `model`, `user-profile`, `usage`. It takes
-`--api-key`, then `ANONA_API_KEY`, then `~/.anona/config.env`, then the
+For scripting from a shell instead of code, the pip CLI wraps the API with
+`--json` output and stable exit codes (0 ok, 1 failed, 2 usage, 3 nothing
+stored, 4 auth, 5 not found, 6 rate limited, 7 unavailable, 8 still running):
+`anona record`, `retrieve`, `reason`, `spaces`, `memories`, `documents`,
+`jobs`, the settings commands, and more. `anona guide --json` lists every
+command and flag the installed copy has; the `anona-cli` skill covers it. It
+takes `--api-key`, then `ANONA_API_KEY`, then `~/.anona/config.env`, then the
 command-line login, then a temporary profile, and needs `--space` (or
 `ANONA_SPACE_ID`) with anything but a temporary profile. Reference:
-`https://docs.anonalabs.com/agents/cli`.
+`https://docs.anonalabs.com/cli/overview`.
 
 ## The three calls
 

@@ -23,7 +23,7 @@ describe("retrieve", () => {
     await anona.retrieve({ spaceId: "support", query: "contact Alice" });
 
     expect((fetchImpl as any).mock.calls[0]![0]).toBe("https://api.anonalabs.com/v1/retrieve");
-    expect(bodyOf(fetchImpl)).toEqual({ space_id: "support", query: "contact Alice" });
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10, mode: "accurate", space_id: "support", query: "contact Alice" });
   });
 
   it("returns the results array, not the envelope", async () => {
@@ -87,7 +87,7 @@ describe("retrieve", () => {
 
     // Passed through verbatim: the API owns every rule in the expression,
     // so anything this SDK did to the shape could only be wrong.
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10, mode: "accurate",
       space_id: "s",
       query: "q",
       tag_groups: [
@@ -111,7 +111,7 @@ describe("retrieve", () => {
     // vocabulary, so the only thing this SDK can get wrong is dropping the
     // key — which would quietly turn a fuzzy filter back into an exact one and
     // return fewer memories than were asked for, with nothing to see.
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10, mode: "accurate",
       space_id: "s",
       query: "typescript strict mode",
       tag_groups: [{ tags: ["name:typsecript"], resolve: "fuzzy" }],
@@ -126,7 +126,7 @@ describe("retrieve", () => {
 
     // A key present as undefined would change the request body for every
     // caller who never asked for a filter.
-    expect(bodyOf(fetchImpl)).toEqual({ space_id: "s", query: "q", tags: ["a"] });
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10, mode: "accurate", space_id: "s", query: "q", tags: ["a"] });
   });
 
   it("sends the event-time window under its API field names", async () => {
@@ -140,7 +140,7 @@ describe("retrieve", () => {
       occurredBefore: "2024-06-30T23:59:59Z",
     });
 
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10, mode: "accurate",
       space_id: "s",
       query: "q",
       occurred_after: "2024-06-01T00:00:00Z",
@@ -154,7 +154,7 @@ describe("retrieve", () => {
 
     await anona.retrieve({ spaceId: "s", query: "q", occurredAfter: "2024-06-01T00:00:00Z" });
 
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10, mode: "accurate",
       space_id: "s",
       query: "q",
       occurred_after: "2024-06-01T00:00:00Z",
@@ -198,7 +198,7 @@ describe("getContext", () => {
 
     // The method takes the whole interface, so a field it accepts and does not
     // forward would typecheck and then silently not apply.
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10,
       space_id: "s",
       query: "q",
       format: "block",

@@ -34,7 +34,7 @@ describe("retrieve routing", () => {
 
     await anona.retrieve({ route: "auto", query: "acme payment terms" });
 
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10, mode: "accurate",
       query: "acme payment terms",
       route: "auto",
     });
@@ -46,7 +46,7 @@ describe("retrieve routing", () => {
 
     await anona.retrieve({ route: "auto", query: "q", fallbackSpaceId: "inbox" });
 
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10, mode: "accurate",
       query: "q",
       route: "auto",
       fallback_space_id: "inbox",
@@ -247,7 +247,7 @@ describe("retrieve maxTargets", () => {
 
     await anona.retrieve({ route: "auto", query: "was acme charged?", maxTargets: 3 });
 
-    expect(bodyOf(fetchImpl)).toEqual({
+    expect(bodyOf(fetchImpl)).toEqual({ limit: 10, mode: "accurate",
       query: "was acme charged?",
       route: "auto",
       max_targets: 3,

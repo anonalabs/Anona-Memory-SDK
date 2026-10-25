@@ -32,7 +32,7 @@ describe("createSpace", () => {
 
     const space = await anona.createSpace({ name: "docs", spaceType: "coding_agent" });
 
-    expect(JSON.parse(((fetchImpl as any).mock.calls[0]![1] as RequestInit).body as string)).toEqual({
+    expect(JSON.parse(((fetchImpl as any).mock.calls[0]![1] as RequestInit).body as string)).toEqual({ description: null,
       name: "docs",
       space_type: "coding_agent",
     });
@@ -48,7 +48,7 @@ describe("createSpace", () => {
 
     await anona.createSpace({ name: "docs" });
 
-    expect(JSON.parse(((fetchImpl as any).mock.calls[0]![1] as RequestInit).body as string)).toEqual({
+    expect(JSON.parse(((fetchImpl as any).mock.calls[0]![1] as RequestInit).body as string)).toEqual({ description: null,
       name: "docs",
     });
   });

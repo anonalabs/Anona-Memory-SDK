@@ -14,7 +14,6 @@ REST API accepts, and `anona logout` never touches it.
 
 from __future__ import annotations
 
-import os
 import stat
 import sys
 from pathlib import Path
@@ -23,7 +22,10 @@ NAMES = ("ANONA_API_KEY", "ANONA_SPACE_ID", "ANONA_BASE_URL")
 
 
 def path() -> Path:
-    return Path(os.path.expanduser("~")) / ".anona" / "config.env"
+    # The active profile's (store.anona_dir): ~/.anona/config.env by default.
+    from . import store
+
+    return store.anona_dir() / "config.env"
 
 
 def _unquote(value: str) -> str:

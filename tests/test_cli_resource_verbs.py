@@ -25,7 +25,7 @@ for _name in ("ANONA_BASE_URL", "ANONA_API_KEY", "ANONA_SPACE_ID"):
     os.environ.pop(_name, None)
 
 SEEN = []
-MODE = {"status": 200, "empty": False, "hostile": False}
+MODE = {"status": 200, "empty": False, "hostile": False, "job_not_found": False}
 KEY = "anona_live_SECRETSECRET"
 ESC = "\\x1b[2J"
 
@@ -60,6 +60,10 @@ def canned(method, path):
         return 200, {**ITEM, "content": "The user prefers bun.", "text": "The user prefers bun."}
     if "/memories/" in path and method == "DELETE":
         return 204, None
+    if "/jobs/" in path and method == "GET" and MODE["job_not_found"]:
+        # The API's answer for an id the space does not hold: 200, not 404.
+        return 200, {"job_id": "job-0001-bbbb", "status": "not_found",
+                     "memory_count": None, "memory_ids": None}
     if "/jobs/" in path and method == "GET":
         return 200, {"job_id": "job-0001-bbbb", "status": "completed", "created_at": None,
                      "completed_at": None, "error": None, "memory_count": 2,
@@ -120,7 +124,7 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             return
         data = json.dumps(out).encode()
-        if status >= 500:
+        if status >= 500 or status == 429:
             # The SDK retries an idempotent 5xx; no wait, or the suite crawls.
             self.send_header("retry-after", "0")
         self.send_header("content-type", "application/json")
@@ -308,7 +312,7 @@ def test_empty_lists_are_success(tmp_path):
 
 def test_server_errors_map_to_exit_codes(tmp_path):
     ok(_run("""
-        for status, want in ((401, 4), (404, 1), (500, 1)):
+        for status, want in ((401, 4), (403, 4), (404, 5), (429, 6), (500, 7)):
             MODE["status"] = status
             for argv, *_ in VERBS:
                 for extra in ([], ["--json"]):
@@ -321,8 +325,20 @@ def test_server_errors_map_to_exit_codes(tmp_path):
                     assert out == "", (argv, status, out)
                     assert err.startswith("anona: "), (argv, err)
         MODE["status"] = 404
-        _, _, err = sent(["memories", "history", "nope"] + AUTH, want_rc=1)
+        _, _, err = sent(["memories", "history", "nope"] + AUTH, want_rc=5)
         assert err.strip() == "anona: not_found: Not found. (request_id req_4)", err
+        print("OK")
+    """, tmp_path))
+
+
+def test_jobs_get_on_a_job_the_space_does_not_hold_exits_5(tmp_path):
+    ok(_run("""
+        MODE["job_not_found"] = True
+        for extra in ([], ["--json"]):
+            rc, out, err = run_main(["jobs", "get", "job-0001-bbbb"] + AUTH + extra)
+            assert rc == 5, (rc, out, err)
+            assert out == "", out
+            assert err.strip() == "anona: job_not_found: No job with that id in this space.", err
         print("OK")
     """, tmp_path))
 
@@ -373,7 +389,7 @@ def test_a_temp_profile_uses_its_default_space(tmp_path):
         assert p == "/v1/usage/me", p
         # A second space is the server's call; the CLI only reports it.
         MODE["status"] = 403
-        _, out, err = sent(["spaces", "create", "another", "--base-url", BASE], want_rc=1)
+        _, out, err = sent(["spaces", "create", "another", "--base-url", BASE], want_rc=4)
         assert out == "" and "temp_profile_single_space" in err, (out, err)
         print("OK")
     """, tmp_path))

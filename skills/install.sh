@@ -14,7 +14,7 @@ API_URL="https://api.anonalabs.com"
 CONFIG_DIR="${HOME}/.anona"
 CONFIG_FILE="${CONFIG_DIR}/config.env"
 
-ALL_SKILLS="anona-memory anona-memory-sdk"
+ALL_SKILLS="anona-memory anona-memory-sdk anona-cli"
 
 # agent:config-root:skills-subpath. The agent is offered only when its config
 # root already exists, so nothing is written into a directory no tool reads.
@@ -54,8 +54,8 @@ Usage:
 Options:
   --app <name|all>     claude, codex, opencode, cursor, hermes, openclaw, or all.
                        Default: every one already present on this machine.
-  --skill <name>       anona-memory or anona-memory-sdk. Repeatable.
-                       Default: both.
+  --skill <name>       anona-memory, anona-memory-sdk or anona-cli. Repeatable.
+                       Default: all three.
   --project            Install into ./.claude/skills instead of ~/.claude/skills.
   --dir <path>         Install into this directory and nowhere else.
   --api-key <key>      An anona_live_ or anona_test_ key. Prompted for if absent.

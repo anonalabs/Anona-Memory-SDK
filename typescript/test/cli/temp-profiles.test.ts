@@ -299,6 +299,18 @@ describe("anona logout with a temp profile", () => {
     expect(all(t)).not.toContain(TEMP);
   });
 
+  it("with nothing stored, says nothing was removed and still exits 0", async () => {
+    for (const [argv, line] of [
+      [["logout", "--cli"], "No command-line login was stored; nothing to remove."],
+      [["logout", "--mcp"], "No MCP login was stored; nothing to remove."],
+      [["logout"], "No login was stored; nothing to remove."],
+    ] as const) {
+      const t = io();
+      expect(await main([...argv], t)).toBe(0);
+      expect(t.o().trim()).toBe(line);
+    }
+  });
+
   it("--force discards it", async () => {
     seedTemp("https://t.test");
     expect(await main(["logout", "--force"], io())).toBe(0);
@@ -326,7 +338,8 @@ describe("anona logout with a temp profile", () => {
   it("guard force-scope: --force on another command is a usage error", async () => {
     const t = io();
     expect(await main(["status", "--force"], t)).toBe(2);
-    expect(t.e()).toContain("--force only applies to logout");
+    // As the pip package's argparse says it.
+    expect(t.e()).toContain("anona: error: unrecognized arguments: --force");
   });
 });
 
