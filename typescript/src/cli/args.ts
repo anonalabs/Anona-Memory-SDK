@@ -18,6 +18,7 @@
 import { readFileSync } from "node:fs";
 import { redact } from "./credential.js";
 import { printable } from "./py.js";
+import { addCommands, profileActions, spaceMembers, usageFlags, type Helpers } from "./resources.js";
 import { BadProfile, checkProfile } from "./store.js";
 
 /** A value converter's refusal, printed as `argument --x: <message>`. */
@@ -64,6 +65,8 @@ export interface CommandSpec {
   options?: OptionSpec[];
   /** Subcommands, chosen by the first positional (stored as `action`). */
   actions?: CommandSpec[];
+  /** What argparse calls the subcommand choice in its messages; `action` unless a nested group says otherwise. */
+  actionDest?: string;
 }
 
 // --- converters, as in the pip package's argparse types ------------------------
@@ -211,6 +214,26 @@ function tagGroups(value: string): unknown[] {
 
 function textArg(value: string): string {
   return readArgFile(value);
+}
+
+function topics(value: string): string[] {
+  const list = value.split(",").map((t) => t.trim());
+  if (!list.every((t) => t)) throw new ArgTypeError("must be a comma-separated list of non-empty topics");
+  return list;
+}
+
+function routingRules(value: string): unknown[] {
+  const text = readArgFile(value.startsWith("@") ? value : "@" + value);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new ArgTypeError("must hold a JSON array of routing rules");
+  }
+  if (!Array.isArray(parsed) || !parsed.every((g) => g !== null && typeof g === "object" && !Array.isArray(g))) {
+    throw new ArgTypeError("must hold a JSON array of routing-rule objects");
+  }
+  return parsed;
 }
 
 function labels(value: string): unknown[] {
@@ -533,12 +556,19 @@ export const SETTINGS_FIELDS: Record<string, readonly string[]> = {
   "chat-settings": ["memory_limit", "memory_token_budget", "auto_record", "memory", "chat_model"],
   "reason-settings": ["model", "depth"],
   "extraction-settings": ["mode", "guidance", "custom_prompt", "labels", "free_form_entities"],
+  "routing-settings": ["charter", "topics", "rules", "auto_route_enabled", "shared_auto_route"],
 };
+
+/** The fields a `... set --clear` may unset: the two switches are booleans the API will not take as null. */
+export const CLEARABLE: Record<string, readonly string[]> = Object.fromEntries(
+  Object.entries(SETTINGS_FIELDS).map(([kind, fields]) => [kind, fields.filter((f) => f !== "auto_route_enabled" && f !== "shared_auto_route")]),
+);
 
 const SETTINGS_BLURBS: Record<string, string> = {
   "chat-settings": "Show or change a space's defaults for the drop-in LLM proxy",
   "reason-settings": "Show or change which model and depth `reason` uses in a space",
   "extraction-settings": "Show or change how a space turns text into memories",
+  "routing-settings": "Show or change how writes and reads are routed between spaces",
 };
 
 function settingsFieldOptions(kind: string): OptionSpec[] {
@@ -562,6 +592,23 @@ function settingsFieldOptions(kind: string): OptionSpec[] {
       { flags: ["--auto-record"], dest: "auto_record", kind: "bool_optional", help: "Record each proxied turn" },
       { flags: ["--memory"], dest: "memory", kind: "bool_optional", help: "Inject memories into proxied calls" },
       { flags: ["--chat-model"], dest: "chat_model", kind: "value", help: "The LLM proxied calls use (see `anona llm-models`)" },
+    ];
+  }
+  if (kind === "routing-settings") {
+    return [
+      { flags: ["--charter"], dest: "charter", kind: "value", type: textArg, typeName: "_text_arg", help: "What belongs in this space, in words; @FILE reads it" },
+      { flags: ["--topics"], dest: "topics", kind: "value", type: topics, typeName: "_topics", help: "Comma-separated topics the space covers" },
+      {
+        flags: ["--rules-file"],
+        dest: "rules",
+        kind: "value",
+        type: routingRules,
+        typeName: "_rules",
+        metavar: "PATH",
+        help: 'A JSON array of routing rules, e.g. [{"field":"agent_id","op":"equals","value":"billing-bot","space_id":"billing"}]',
+      },
+      { flags: ["--auto-route"], dest: "auto_route_enabled", kind: "bool_optional", help: "Let writes with no space land by topic (--no-auto-route turns it off)" },
+      { flags: ["--shared-auto-route"], dest: "shared_auto_route", kind: "bool_optional", help: "Let writes route into spaces shared with you" },
     ];
   }
   return [
@@ -603,7 +650,7 @@ function settingsFieldOptions(kind: string): OptionSpec[] {
 }
 
 function settingsCommand(kind: string): CommandSpec {
-  const fields = SETTINGS_FIELDS[kind] as readonly string[];
+  const fields = CLEARABLE[kind] as readonly string[];
   return {
     name: kind,
     help: SETTINGS_BLURBS[kind] as string,
@@ -630,6 +677,20 @@ function settingsCommand(kind: string): CommandSpec {
   };
 }
 
+/** What resources.ts builds its grammar from. */
+const HELPERS: Helpers = {
+  creds,
+  limit: limitBetween,
+  offset,
+  nonEmpty,
+  textArg,
+  refuse: (message) => {
+    throw new ArgTypeError(message);
+  },
+};
+
+const PROFILE_ACTIONS = profileActions(HELPERS);
+
 const RESOURCE_COMMANDS: CommandSpec[] = [
   {
     name: "spaces",
@@ -654,6 +715,7 @@ const RESOURCE_COMMANDS: CommandSpec[] = [
         positionals: [{ dest: "space_id", help: "The space to delete" }],
         options: [yes("deletion"), ...creds(null)],
       },
+      spaceMembers(HELPERS),
     ],
   },
   {
@@ -777,7 +839,12 @@ const RESOURCE_COMMANDS: CommandSpec[] = [
       },
     ],
   },
-  { name: "profile", help: "Show a space's profile: mission and disposition", options: creds("read") },
+  {
+    name: "profile",
+    help: "Show a space's profile (mission and disposition), or change it with set / reset",
+    positionals: PROFILE_ACTIONS.positionals,
+    options: [...creds("read or change"), ...PROFILE_ACTIONS.options],
+  },
   {
     name: "model",
     help: "Show one memory model and its current content",
@@ -794,7 +861,11 @@ const RESOURCE_COMMANDS: CommandSpec[] = [
       ...creds("read"),
     ],
   },
-  { name: "usage", help: "Show your credits and rate limit", options: creds(null) },
+  {
+    name: "usage",
+    help: "Show your credits and rate limit, or your operation counts over time",
+    options: [...creds(null), ...usageFlags(HELPERS)],
+  },
   {
     name: "llm-models",
     help: "List the LLMs you can choose and what each costs (not the memory models: see `model`)",
@@ -803,6 +874,8 @@ const RESOURCE_COMMANDS: CommandSpec[] = [
   settingsCommand("chat-settings"),
   settingsCommand("reason-settings"),
   settingsCommand("extraction-settings"),
+  settingsCommand("routing-settings"),
+  ...addCommands(HELPERS),
 ];
 
 const which = (verb: string): OptionSpec[] => [
@@ -1101,7 +1174,8 @@ export function walk(c: TreeCommand): TreeCommand[] {
 
 // --- help ---------------------------------------------------------------------
 
-const metavarOf = (o: OptionSpec) => (o.choices ? `{${o.choices.join(",")}}` : (o.metavar ?? o.dest.toUpperCase()));
+// argparse shows a given metavar even when the option has choices.
+const metavarOf = (o: OptionSpec) => o.metavar ?? (o.choices ? `{${o.choices.join(",")}}` : o.dest.toUpperCase());
 const posName = (p: PositionalSpec) => p.metavar ?? p.dest;
 
 function optInvocation(o: OptionSpec): string {
@@ -1423,10 +1497,11 @@ function parseOrThrow(argv: string[], io: Out, version: string): Parsed {
         throw new UsageError(
           prog,
           spec,
-          `argument action: invalid choice: '${tok}' (choose from ${spec.actions.map((a) => `'${a.name}'`).join(", ")})`,
+          `argument ${spec.actionDest ?? "action"}: invalid choice: '${tok}' (choose from ${spec.actions.map((a) => `'${a.name}'`).join(", ")})`,
         );
       }
-      action = chosen.name;
+      // A nested group (`spaces members list`) names its verb with every step.
+      action = action === null ? chosen.name : `${action} ${chosen.name}`;
       spec = chosen;
       prog = `${prog} ${chosen.name}`;
       positionalIndex = 0;
@@ -1453,7 +1528,7 @@ function parseOrThrow(argv: string[], io: Out, version: string): Parsed {
     positionalIndex++;
   }
 
-  if (spec.actions) throw new UsageError(prog, spec, "the following arguments are required: action");
+  if (spec.actions) throw new UsageError(prog, spec, `the following arguments are required: ${spec.actionDest ?? "action"}`);
   const missing = [
     ...(spec.positionals ?? [])
       .filter((p) => p.nargs !== "?" && p.nargs !== "*" && values[p.dest] === undefined)

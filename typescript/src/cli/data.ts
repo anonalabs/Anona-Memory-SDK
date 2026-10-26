@@ -19,6 +19,7 @@ import {
 import { printable } from "./py.js";
 import { cliCredentialsPath, isSignedIn, loadCredentials } from "./store.js";
 import { forApiKey, resolveTarget, TargetError } from "./target.js";
+import { isDashboardOnly, refuseDashboard, verbOf } from "./resources.js";
 import { DEFAULT_WAIT, needsSpace, precheck, runVerb, type Verb } from "./verbs.js";
 
 /** Sanitized like server text: the URL in a refusal came from a flag or a variable. */
@@ -124,11 +125,13 @@ function recordUsage(io: DataIO, args: Record<string, unknown>): number | null {
 
 export async function runData(
   io: DataIO,
-  verb: Verb,
+  parsedVerb: Verb,
   args: Record<string, unknown>,
   baseUrl: string | undefined,
   requested: string | undefined,
 ): Promise<number> {
+  // `profile set`, `graph draw`, `usage --history`: the parser knows only the command.
+  const verb = verbOf(parsedVerb, args);
   const [command] = verb;
   const scope = {
     user_id: args.user_id as string | undefined,
@@ -203,6 +206,9 @@ export async function runData(
     });
   }
 
+  // Said before any credential is read: it needs none, and a script that cannot
+  // do this from here should learn so on any machine.
+  if (isDashboardOnly(verb)) return refuseDashboard(io, verb, args);
   const bad = precheck(io, verb, args);
   if (bad !== null) return bad;
   const got = dataCredential(io, args, baseUrl, requested, needsSpace(verb));

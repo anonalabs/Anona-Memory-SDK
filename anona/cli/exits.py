@@ -11,6 +11,9 @@ the same thing on every verb:
     2  USAGE         the command was wrong; nothing was sent
     3  NOTHING_STORED a write was accepted but extracted no memory (record)
     4  AUTH          no credential, a credential refused a host, 401, or 403
+                     (`session_required` is a 401: the command needs the
+                     command-line login, and an API key cannot do it; a
+                     dashboard-only action also exits 4 without a request)
     5  NOT_FOUND     404: the space, memory, job or setting does not exist
     6  RATE_LIMITED  429 after the retries ran out, or out of credits (402/429)
     7  UNAVAILABLE   a 5xx, a timeout, or the server could not be reached

@@ -155,6 +155,102 @@ or `_`, no colon. `"tag": true` also stamps `key:value` as a filterable tag.
 writes back). `--clear FIELD` returns a field to the platform default. `null`
 in a `get` means "platform default". Owner only on a shared space.
 
+## Memory models, profile, rules, webhooks, routing
+
+Need pip 0.26.0 / npm 0.20.0. Deletes, `clear` and `reset` need `--yes`.
+
+```bash
+anona models list --space S --json --limit 50 --offset 0 --tags ops
+anona models create "Build habits" --query "How does this team build?" --space S --json
+anona models create NAME --query Q --tags ops --mode delta --refresh-on-new-memories --memory-type fact --max-tokens 2000 --model-id build-habits --space S --json
+anona models get MODEL_ID --space S --json
+anona models edit MODEL_ID --name N --query Q --no-refresh-on-new-memories --space S --json
+anona models refresh MODEL_ID --space S --json               # background; poll `jobs get`
+anona models history MODEL_ID --space S --json
+anona models clear MODEL_ID --space S --yes                  # keeps the definition
+anona models delete MODEL_ID --space S --yes
+
+anona profile set --mission "What the space is for" --skepticism 3 --literalism 3 --empathy 3 --space S --json
+anona profile reset --space S --yes
+
+anona rules list --space S --json
+anona rules add "Never state revenue as committed." --name N --priority 10 --active --tags ops --space S --json
+anona rules edit RULE_ID --text "..." --active --priority 5 --no-active --space S --json
+anona rules delete RULE_ID --space S --yes
+
+anona webhooks list --space S --json
+anona webhooks create https://example.com/hook --events memory.created,memory.consolidated --enabled --space S --json
+anona webhooks edit WEBHOOK_ID --url https://example.com/new --no-enabled --space S --json
+anona webhooks deliveries WEBHOOK_ID --limit 20 --cursor C --space S --json
+anona webhooks delete WEBHOOK_ID --space S --yes
+
+anona routing-settings get --space S --json
+anona routing-settings set --charter "Billing" --topics billing,invoices --auto-route --space S --json
+anona routing-settings set --rules-file rules.json --shared-auto-route --space S --json
+anona routing-settings set --no-auto-route --no-shared-auto-route --clear topics --space S --json
+anona routing-settings reset --space S --yes
+```
+
+`profile set` keeps the fields you do not name. `webhooks create` returns the
+signing secret once (`--json` includes `secret`); never log it. `--mission`,
+`--charter` and `rules edit --text` take `@FILE`.
+
+## Explore
+
+```bash
+anona graph --space S --json --limit 20 --min-count 2
+anona graph draw "memories added per week" --model MODEL_ID --space S --json
+anona entities list --space S --json --limit 20 --offset 0
+anona entities get ENTITY_ID --space S --json
+anona receipts get REQUEST_ID --json                          # X-Request-ID of a retrieve
+anona receipts get REQUEST_ID --explain --memory-id MEMORY_ID --json
+anona ask-user alice "What does she prefer?" --depth thorough --model MODEL_ID --space S --json
+anona chat "What did we decide about releases?" --model MODEL_ID --space S --json
+anona chat "Hello" --no-memory --space S --json   # neither recalls nor records the turn
+anona space-types --json
+```
+
+## Organization and billing (needs `anona login --cli`)
+
+These read the control plane. An API key or a temporary profile exits `4` with
+`session_required`: ask the user to run `anona login --cli`. If they already
+did, an API key (`--api-key`, `ANONA_API_KEY` or `~/.anona/config.env`) outranks
+the login: unset it, or run the command without it.
+
+```bash
+anona org --json
+anona orgs list --json
+anona projects list --json
+anona keys list --json                    # never a secret
+anona members list --json
+anona members me --json
+anona members invitations --json
+anona spaces members list SPACE --json    # owner or admin of the space's org
+anona invitations pending --json
+anona invitations accept TOKEN --json     # only with the user's OK
+anona invitations decline TOKEN --json
+anona billing --json
+anona billing topups --json
+anona usage --history --days 30 --json
+anona usage --breakdown --days 7 --json
+anona exports list --space S --json
+anona exports create --space S --json
+anona exports download JOB_ID --out FILE --space S --yes --json   # --yes overwrites FILE
+```
+
+These are done in the dashboard, not the CLI. Each prints one line with the
+link to stderr, sends nothing and exits `4`. Hand the user the link.
+
+```bash
+anona keys create NAME
+anona keys revoke KEY_ID
+anona members invite EMAIL
+anona members remove MEMBER_ID
+anona spaces members remove SPACE MEMBER_ID
+anona billing upgrade       # also checkout, topup, cancel, portal
+anona org rename            # also delete, transfer, leave
+```
+
 ## Models, profiles, usage
 
 ```bash

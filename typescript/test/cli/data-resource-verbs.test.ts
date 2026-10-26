@@ -344,7 +344,7 @@ describe("resource verbs", () => {
     await refused(["memories", ...AUTH]);
     await refused(["jobs", ...AUTH]);
     expect(await refused(["spaces", "wat", ...KEYED])).toContain(
-      "argument action: invalid choice: 'wat' (choose from 'list', 'create', 'get', 'delete')",
+      "argument action: invalid choice: 'wat' (choose from 'list', 'create', 'get', 'delete', 'members')",
     );
     expect(await refused(["spaces", "--json", "list", ...KEYED])).toContain("anona: error: unrecognized arguments: --json");
   });

@@ -12,7 +12,7 @@
  * compared: the reason string comes from each runtime's socket layer.
  */
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -161,6 +161,8 @@ function respond(s: Seen): Reply {
   if (space === "eraw") return { status: 502, raw: "<html>bad \x1b[2J gateway</html>" };
   if (space === "edetail") return { status: 404, body: { detail: "Not Found" } };
   if (space === "eweird") return { status: 400, body: { zeta: 1, alpha: [2, "é"] } };
+  const more = respondResources(s, space, tag);
+  if (more) return more;
   const jobMatch = /\/jobs\/([^/]+)$/.exec(s.path);
   if (jobMatch && s.method === "GET") return { status: 200, body: { ...(JOB_FOR[jobMatch[1] as string] ?? BODIES.job_completed), job_id: jobMatch[1] } };
   if (s.path === "/v1/record") {
@@ -232,6 +234,167 @@ function respond(s: Seen): Reply {
   return { status: 404, body: { error: { code: "not_found", message: "No route." } } };
 }
 
+
+// The commands that cover the rest of the API: fixtures for each route, so both
+// CLIs are shown the same replies. A key naming ERRSESSION is refused the way
+// the gateway refuses an API key on an account route.
+let serverBase = "";
+const RESOURCE_PATH = [
+  /^\/v1\/orgs/,
+  /^\/v1\/projects/,
+  /^\/v1\/api-keys/,
+  /^\/v1\/members/,
+  /^\/v1\/invitations\//,
+  /^\/v1\/billing/,
+  /^\/v1\/usage$/,
+  /^\/v1\/usage\/breakdown$/,
+  /^\/v1\/spaces\/[^/]+\/members(\/|$)/,
+];
+
+function respondResources(s: Seen, space: string, tag: (v: string) => string): Reply | undefined {
+  const { method, path } = s;
+  const none = (status = 204): Reply => ({ status });
+  if (s.auth?.includes("ERRSESSION") && RESOURCE_PATH.some((re) => re.test(path))) {
+    return envelope(401, "session_required", "This needs a dashboard session or `anona login --cli`; an API key or temporary profile cannot use it.");
+  }
+  const model = { id: tag("mm-1"), space_id: space, name: tag("Build habits"), query: tag("How does this team build?"), content: tag("Uses pnpm.\n\nShips."), tags: [] };
+  const job = { model_id: "mm-1", job_id: "job-9", status: "processing" };
+  if (/^\/v1\/spaces\/[^/]+\/models/.test(path)) {
+    if (path.endsWith("/models")) return method === "GET" ? { status: 200, body: { items: [model, { ...model, id: "mm-2", name: null }], total: 2, limit: 50, offset: 0 } } : { status: 202, body: job };
+    if (path.endsWith("/history")) return { status: 200, body: { entries: [{ previous_content: tag("x".repeat(100)), changed_at: "2026-10-02T00:00:00Z" }, { previous_content: null, changed_at: null }], total: 2 } };
+    if (path.endsWith("/refresh")) return { status: 202, body: job };
+    if (path.endsWith("/clear")) return { status: 200, body: model };
+    if (method === "DELETE") return none();
+    const delta = { ...model, trigger: { mode: "delta", refresh_on_new_memories: true, memory_type: ["fact"] } };
+    return { status: 200, body: method === "GET" && path.endsWith("mm-delta") ? delta : model };
+  }
+  if (/^\/v1\/spaces\/[^/]+\/profile$/.test(path) && method !== "GET") {
+    return method === "DELETE" ? none() : { status: 200, body: { space_id: space, name: space, mission: s.body.mission, disposition: s.body.disposition } };
+  }
+  if (/^\/v1\/spaces\/[^/]+\/rules/.test(path)) {
+    if (method === "GET") return { status: 200, body: { items: [{ id: "r-1", space_id: space, name: "n", content: tag("Never X.") }, { id: null, name: "z", content: "" }], total: 2 } };
+    if (method === "DELETE") return none();
+    return { status: method === "POST" ? 201 : 200, body: { id: "r-1", space_id: space, name: "n", content: "Never X." } };
+  }
+  if (/^\/v1\/spaces\/[^/]+\/webhooks/.test(path)) {
+    if (path.endsWith("/deliveries")) {
+      return {
+        status: 200,
+        body: {
+          items: [
+            { id: "d-1", event_type: tag("memory.created"), status: "completed", attempts: 1, delivered_at: "2026-10-03T00:00:00Z" },
+            { id: "d-2", event_type: "memory.consolidated", status: "failed", attempts: 3, delivered_at: null, last_attempt_at: "2026-10-04T00:00:00Z" },
+          ],
+          next_cursor: space === "s" ? "c2" : null,
+        },
+      };
+    }
+    if (method === "GET") {
+      return { status: 200, body: { items: [{ id: "w-1", url: tag("https://x.example/h"), enabled: true, event_types: ["memory.created", "memory.consolidated"] }, { id: "w-2", url: "https://y.example", enabled: false, event_types: [] }] } };
+    }
+    if (method === "DELETE") return none();
+    const hook = { id: "w-1", url: "https://x.example/h", enabled: true, event_types: ["memory.created"] };
+    if (method === "POST") return { status: 201, body: s.body.url === "https://nosecret.example" ? hook : { ...hook, secret: "whsec_PARITY" } };
+    return { status: 200, body: hook };
+  }
+  if (/^\/v1\/spaces\/[^/]+\/graph$/.test(path)) {
+    if (method === "POST") {
+      const q = s.body.request;
+      if (q === "nothing") return { status: 200, body: { text: null, mermaid: null, diagram: null } };
+      if (q === "mermaid") return { status: 200, body: { text: tag("Here."), mermaid: "graph TD;\n  A-->B", diagram: null } };
+      if (q === "diagram") return { status: 200, body: { text: null, mermaid: null, diagram: "flowchart" } };
+      return { status: 200, body: { text: tag("Here is the chart."), mermaid: null } };
+    }
+    const nodes = Array.from({ length: 52 }, (_, i) => ({ id: `e${i}`, label: i === 0 ? tag("Alice") : `n${i}`, mention_count: i + 1 }));
+    return { status: 200, body: { nodes, edges: [], total_entities: 52, total_edges: 0 } };
+  }
+  if (/^\/v1\/spaces\/[^/]+\/entities/.test(path)) {
+    if (path.endsWith("/entities")) return { status: 200, body: { items: [{ id: tag("e1"), name: tag("Alice"), mention_count: 3 }, { id: "e2", name: null, type: "person" }], total: 2, limit: 100, offset: 0 } };
+    return { status: 200, body: { id: "e1", name: tag("Alice"), mention_count: 3, observations: space === "empty" ? [] : [{ text: tag("Likes tea."), mentioned_at: "2026-10-01" }] } };
+  }
+  if (/^\/v1\/receipts\//.test(path)) {
+    if (path.endsWith("/explain")) return { status: 200, body: { memory_id: "m1", outcome: tag("excluded"), stage: "budget", detail: s.query.memory_id === "m-bare" ? null : tag("over budget") } };
+    return { status: 200, body: { request_id: "req_1", space_id: tag("s"), included: [{ id: "a" }], excluded: [{ id: "b" }, { id: "c" }], token_accounting: { used: 40, budget: 100, nested: { a: 1 }, ok: true } } };
+  }
+  if (/^\/v1\/spaces\/[^/]+\/users\/[^/]+\/ask$/.test(path)) {
+    const q = s.body.query;
+    return { status: 200, body: { space_id: space, user_id: "alice", insights: q === "blank" ? "  " : q === "none" ? null : tag("She likes tea.\r\n\nA lot.") } };
+  }
+  if (path === "/v1/space-types") return { status: 200, body: { items: [{ space_type: "general", name: tag("General") }, { space_type: "support", name: "Support" }], total: 2 } };
+  if (path === "/v1/chat/completions") {
+    const m = s.body.messages?.[0]?.content;
+    const content = m === "empty" ? null : tag("Hello!\n\nBye.");
+    return { status: 200, body: { id: "c1", choices: m === "nochoice" ? [] : [{ message: { role: "assistant", content } }], usage: {} } };
+  }
+  if (path === "/v1/orgs/me") return { status: 200, body: { org_id: "o1", name: tag("Acme"), slug: "acme", plan_id: s.auth?.includes("NOPLAN") ? null : "developer" } };
+  if (path === "/v1/orgs") return { status: 200, body: { orgs: [{ org_id: "o1", name: tag("Acme"), role: "owner" }, { id: "o2", name: "Beta", role: "viewer" }], max_orgs: 3 } };
+  if (path === "/v1/projects") return { status: 200, body: [{ project_id: "p1", org_id: "o1", name: tag("Docs") }, { id: "p2", name: "Site" }] };
+  if (path === "/v1/api-keys") {
+    return {
+      status: 200,
+      body: [
+        { id: "k1", name: tag("ci"), key_prefix: "anona_live_ab", env: "live", created_at: "2026-10-01", last_used_at: null, status: "active", key: "anona_live_LEAKEDLEAKED" },
+        { id: "k2", name: "x", key_prefix: "anona_test_" + "z".repeat(40), created_at: "2026-10-02", last_used_at: "2026-10-03", status: "revoked" },
+      ],
+    };
+  }
+  if (path === "/v1/members") return { status: 200, body: [{ member_id: "m1", email: tag("a@x.example"), role: "owner" }, { id: "m2", email: "b@x.example", role: "viewer" }] };
+  if (path === "/v1/members/me") return { status: 200, body: { member_id: "m1", email: "a@x.example", role: "owner" } };
+  if (path === "/v1/members/invitations") return { status: 200, body: { invitations: space === "x" ? [] : [{ invitation_id: "i1", email: "b@x.example", role: "developer" }] } };
+  if (path === "/v1/invitations/pending") {
+    return {
+      status: 200,
+      body: { invitations: [{ token: "tok-1", kind: "space", org_name: "Acme", space_id: tag("notes"), role: "viewer" }, { token: "tok-2", kind: "org", org_name: "Beta", space_id: null, role: "developer" }] },
+    };
+  }
+  if (path === "/v1/invitations/accept") return { status: 200, body: s.body.token === "tok-2" ? { org_id: "o2", org_name: tag("Beta"), space_id: null } : { org_id: "o1", space_id: null } };
+  if (path === "/v1/invitations/decline") return none();
+  if (path === "/v1/billing") {
+    return {
+      status: 200,
+      body: { plan_id: "developer", plan_name: tag("Developer"), credits_limit: 5000, credits_used: 800, credits_remaining: 4200, credits_banked: s.auth?.includes("BANKED") ? 25 : 0, credits_reset_at: "2026-11-01T00:00:00Z" },
+    };
+  }
+  if (path === "/v1/billing/topups") return { status: 200, body: { items: [{ id: "t1", purchased_at: "2026-10-05", pack: "small", credits: 1000, status: tag("active") }] } };
+  if (path === "/v1/usage") return { status: 200, body: s.query.days === "1" ? { series: [], period_days: 1 } : { series: [{ date: "2026-10-01", ops: 12 }, { date: "2026-10-02", ops: 0 }], period_days: 7 } };
+  if (path === "/v1/usage/breakdown") return { status: 200, body: s.query.days === "1" ? { breakdown: [], period_days: 1 } : { breakdown: [{ space_id: tag("s"), memories_added: 2, searches: 3, insights: 1 }], period_days: 30 } };
+  if (/^\/v1\/spaces\/[^/]+\/exports\/[^/]+\/download$/.test(path)) {
+    const job = path.split("/")[5];
+    if (job === "j-link") return { status: 200, body: { download_url: serverBase + "/blob/export.zip", expires_in: 300 } };
+    if (job === "j-relative") return { status: 200, body: { download_url: "/blob/export.zip" } };
+    if (job === "j-stream") return { status: 200, raw: "ZIPDATA-STREAM", headers: { "content-type": "application/zip" } };
+    if (job === "j-redirect") return { status: 302, headers: { location: serverBase + "/blob/export.zip" } };
+    if (job === "j-nolink") return { status: 200, body: { expires_in: 300 } };
+    if (job === "j-badlink") return { status: 200, body: { download_url: "ftp://x.example/export.zip" } };
+    if (job === "j-deadlink") return { status: 200, body: { download_url: serverBase + "/blob/gone.zip" } };
+    if (job === "j-slow") return { status: 200, body: { download_url: serverBase + "/blob/slow.zip" } };
+    if (job === "j-die") return { status: 200, body: { download_url: serverBase + "/blob/die.zip" } };
+    if (job === "j-refused") return { status: 200, body: { download_url: "http://127.0.0.1:1/blob/x.zip" } };
+    return envelope(404, "export_not_found", "No such export.");
+  }
+  if (path === "/blob/export.zip") return { status: 200, raw: "ZIPDATA-LINK", headers: { "content-type": "application/zip" } };
+  if (path === "/blob/gone.zip") return { status: 403, raw: "denied" };
+  // Steady but slow: longer in all than a small --timeout, never silent for that long.
+  if (path === "/blob/slow.zip") return { status: 200, stream: { chunks: ["aaaa", "bbbb", "cccc", "dddd", "eeee", "ffff"], delayMs: 150 } };
+  // Promises 100 bytes, sends 10, and drops the connection.
+  if (path === "/blob/die.zip") return { status: 200, stream: { chunks: ["abcde", "fghij"], delayMs: 20, length: 100, die: true } };
+  if (/^\/v1\/spaces\/[^/]+\/exports$/.test(path)) {
+    if (method === "POST") return { status: 202, body: { job_id: "j1", space_id: space, status: "pending" } };
+    return { status: 200, body: { items: space === "empty" ? [] : [{ job_id: "j1", status: "completed", created_at: "2026-10-01" }, { job_id: tag("j2"), status: "pending", created_at: null }], total: 2 } };
+  }
+  if (/^\/v1\/spaces\/[^/]+\/members\/[^/]+$/.test(path) && method === "DELETE") return none();
+  if (/^\/v1\/spaces\/[^/]+\/members$/.test(path)) {
+    return { status: 200, body: space === "empty" ? [] : [{ member_id: "m1", email: tag("a@x.example"), role: "viewer", status: "active" }, { id: "m2", email: "b@x.example", role: "developer" }] };
+  }
+  if (/^\/v1\/spaces\/[^/]+\/routing-settings$/.test(path)) {
+    const stored = { space_id: space, charter: tag("Billing"), topics: ["a", "b"], rules: [{ field: "agent_id", op: "equals", value: "x", space_id: "y" }], auto_route_enabled: true, shared_auto_route: false };
+    if (method === "GET") return { status: 200, body: space === "empty" ? { ...stored, charter: null, topics: null, rules: null } : stored };
+    if (method === "PUT") return { status: 200, body: { ...s.body, space_id: space } };
+    return none();
+  }
+  return undefined;
+}
+
 type Case = string[] | [string[], string];
 
 // Each case runs both CLIs; a few hundred of them outlast the 5s default.
@@ -240,6 +403,7 @@ describe.skipIf(!pythonOk)("npm and pip CLIs: same exit code, stdout and stderr"
   let srv: DataServer;
   beforeAll(async () => {
     srv = await startDataServer(respond);
+    serverBase = srv.base;
     jobTuning.firstInterval = 0.01;
     jobTuning.maxInterval = 0.01;
   });
@@ -403,6 +567,309 @@ describe.skipIf(!pythonOk)("npm and pip CLIs: same exit code, stdout and stderr"
     // only the named fields changed.
     const puts = srv.seen.filter((s) => s.method === "PUT" && s.path.endsWith("/reason-settings"));
     expect(puts.at(-1)?.body).toEqual({ model: "openai.gpt-oss-120b-1:0", depth: null });
+  });
+
+  it("the commands for the rest of the API: models, rules, webhooks, graph, entities, receipts, ask-user, chat, exports, account views", async () => {
+    const home = process.env.HOME as string;
+    const file = (name: string, text: string) => {
+      writeFileSync(join(home, name), text);
+      return join(home, name);
+    };
+    const rulesFile = file("routing-rules.json", '[{"field": "agent_id", "op": "equals", "value": "billing-bot", "space_id": "billing"}]');
+    const charter = file("charter.txt", "Billing questions.\nOnly.");
+    const ES = ["--base-url", srv.base, "--api-key", "anona_live_ERRSESSIONKEYKEY"];
+    const out = (name: string) => join(home, name);
+    const cases: Case[] = [];
+    for (const json of [[], ["--json"]]) {
+      cases.push(
+        // memory models
+        ["models", "list", ...S("s"), ...json],
+        ["models", "list", "--limit", "5", "--offset", "2", "--tags", "a,b", ...S("s"), ...json],
+        ["models", "list", ...S("hostile"), ...json],
+        ["models", "create", "Build habits", "--query", "How?", ...S("s"), ...json],
+        ["models", "create", "Build habits", "--query", "How?", "--tags", "a", "--mode", "delta", "--refresh-on-new-memories", "--memory-type", "fact", "--memory-type", "note", "--max-tokens", "512", "--model-id", "build", ...S("s"), ...json],
+        ["models", "get", "mm-1", ...S("s"), ...json],
+        ["models", "get", "mm-1", ...S("hostile"), ...json],
+        ["models", "edit", "mm-1", "--name", "Renamed", ...S("s"), ...json],
+        ["models", "edit", "mm-delta", "--no-refresh-on-new-memories", ...S("s"), ...json],
+        ["models", "edit", "mm-1", "--mode", "delta", "--name", "N", ...S("s"), ...json],
+        ["models", "delete", "mm-1", "--yes", ...S("s"), ...json],
+        ["models", "delete", "mm-1", ...S("s"), ...json],
+        ["models", "refresh", "mm-1", ...S("s"), ...json],
+        ["models", "clear", "mm-1", "--yes", ...S("s"), ...json],
+        ["models", "clear", "mm-1", ...S("s"), ...json],
+        ["models", "history", "mm-1", ...S("s"), ...json],
+        ["models", "history", "mm-1", ...S("hostile"), ...json],
+        ["models", "list", ...S("e404"), ...json],
+        ["models", "create", "n", "--query", "q", ...S("e422"), ...json],
+        ["models", "delete", "mm-1", "--yes", ...S("e403"), ...json],
+        // profile set / reset
+        ["profile", "set", "--empathy", "5", ...S("s"), ...json],
+        ["profile", "set", "--mission", "New mission.", "--skepticism", "1", ...S("s"), ...json],
+        ["profile", "set", "--mission", "@" + charter, ...S("s"), ...json],
+        ["profile", "reset", "--yes", ...S("s"), ...json],
+        ["profile", "reset", "--yes", ...S("hostile"), ...json],
+        ["profile", "reset", ...S("s"), ...json],
+        ["profile", "set", "--empathy", "5", ...S("e404"), ...json],
+        // rules
+        ["rules", "list", ...S("s"), ...json],
+        ["rules", "list", ...S("hostile"), ...json],
+        ["rules", "add", "Never X.", ...S("s"), ...json],
+        ["rules", "add", "  Never   X\t\u00a0again.  ", "--name", "N", "--priority", "5", "--no-active", "--tags", "a,b", ...S("s"), ...json],
+        ["rules", "add", "w ".repeat(50), ...S("s"), ...json],
+        ["rules", "edit", "r-1", "--text", "Y.", "--priority", "3", ...S("s"), ...json],
+        ["rules", "edit", "r-1", "--active", "--tags", "z", ...S("s"), ...json],
+        ["rules", "delete", "r-1", "--yes", ...S("s"), ...json],
+        ["rules", "delete", "r-1", ...S("s"), ...json],
+        ["rules", "add", "Never X.", ...S("e422"), ...json],
+        // webhooks
+        ["webhooks", "list", ...S("s"), ...json],
+        ["webhooks", "list", ...S("hostile"), ...json],
+        ["webhooks", "create", "https://x.example/h", "--events", "memory.created,memory.consolidated", "--no-enabled", ...S("s"), ...json],
+        ["webhooks", "create", "https://nosecret.example", ...S("s"), ...json],
+        ["webhooks", "edit", "w-1", "--url", "https://z.example", "--events", "memory.created", "--enabled", ...S("s"), ...json],
+        ["webhooks", "delete", "w-1", "--yes", ...S("s"), ...json],
+        ["webhooks", "delete", "w-1", ...S("s"), ...json],
+        ["webhooks", "deliveries", "w-1", "--limit", "5", "--cursor", "c", ...S("s"), ...json],
+        ["webhooks", "deliveries", "w-1", ...S("hostile"), ...json],
+        ["webhooks", "create", "https://x.example/h", ...S("e403"), ...json],
+        // graph and entities
+        ["graph", ...S("s"), ...json],
+        ["graph", "--limit", "5", "--min-count", "2", ...S("hostile"), ...json],
+        ["graph", "draw", "by week", ...S("s"), ...json],
+        ["graph", "draw", "by week", "--model", "m", ...S("hostile"), ...json],
+        ["graph", "draw", "mermaid", ...S("s"), ...json],
+        ["graph", "draw", "diagram", ...S("s"), ...json],
+        ["graph", "draw", "nothing", ...S("s"), ...json],
+        ["graph", ...S("e404"), ...json],
+        ["entities", "list", "--limit", "5", "--offset", "1", ...S("s"), ...json],
+        ["entities", "list", ...S("hostile"), ...json],
+        ["entities", "get", "e1", ...S("s"), ...json],
+        ["entities", "get", "e1", ...S("hostile"), ...json],
+        ["entities", "get", "e1", ...S("empty"), ...json],
+        ["entities", "get", "e1", ...S("e404"), ...json],
+        // receipts, ask-user, space-types, chat
+        ["receipts", "get", "req_1", ...K(), ...json],
+        ["receipts", "get", "req_1", "--explain", "--memory-id", "m1", ...K(), ...json],
+        ["receipts", "get", "req_1", "--explain", "--memory-id", "m-bare", ...K(), ...json],
+        ["ask-user", "alice", "What does she like?", ...S("s"), ...json],
+        ["ask-user", "alice", "What does she like?", "--model", "m", "--depth", "thorough", ...S("hostile"), ...json],
+        ["ask-user", "alice", "blank", ...S("s"), ...json],
+        ["ask-user", "alice", "none", ...S("s"), ...json],
+        ["ask-user", "alice", "q", ...S("e404"), ...json],
+        ["space-types", ...K(), ...json],
+        ["chat", "hi", ...S("s"), ...json],
+        ["chat", "hi", "--model", "m", "--no-memory", ...S("hostile"), ...json],
+        ["chat", "empty", ...S("s"), ...json],
+        ["chat", "nochoice", ...S("s"), ...json],
+        ["chat", "hi", ...S("e429"), ...json],
+        // routing settings
+        ["routing-settings", "get", ...S("s"), ...json],
+        ["routing-settings", "get", ...S("empty"), ...json],
+        ["routing-settings", "get", ...S("hostile"), ...json],
+        ["routing-settings", "set", "--charter", "Billing", "--topics", "a, b", "--no-auto-route", ...S("s"), ...json],
+        ["routing-settings", "set", "--charter", "@" + charter, "--rules-file", rulesFile, "--shared-auto-route", ...S("s"), ...json],
+        ["routing-settings", "set", "--clear", "topics", "--clear", "rules", ...S("s"), ...json],
+        ["routing-settings", "reset", "--yes", ...S("s"), ...json],
+        ["routing-settings", "reset", ...S("s"), ...json],
+        ["routing-settings", "get", ...S("e404"), ...json],
+        // account views
+        ["org", ...K(), ...json],
+        ["org", "--base-url", srv.base, "--api-key", "anona_live_NOPLANKEYKEYKEY", ...json],
+        ["org", "--base-url", srv.base, "--api-key", "anona_live_ERRSESSIONKEYKEY", ...json],
+        ["orgs", "list", ...K(), ...json],
+        ["projects", "list", ...K(), ...json],
+        ["keys", "list", ...K(), ...json],
+        ["members", "list", ...K(), ...json],
+        ["members", "me", ...K(), ...json],
+        ["members", "invitations", ...K(), ...json],
+        ["invitations", "pending", ...K(), ...json],
+        ["invitations", "accept", "tok-1", ...K(), ...json],
+        ["invitations", "accept", "tok-2", ...K(), ...json],
+        ["invitations", "decline", "tok-1", ...K(), ...json],
+        ["billing", ...K(), ...json],
+        ["billing", "--base-url", srv.base, "--api-key", "anona_live_BANKEDKEYKEYKEY", ...json],
+        ["billing", "topups", ...K(), ...json],
+        ["usage", "--history", ...K(), ...json],
+        ["usage", "--history", "--days", "1", ...K(), ...json],
+        ["usage", "--breakdown", ...K(), ...json],
+        ["usage", "--breakdown", "--days", "1", ...K(), ...json],
+        ["exports", "list", ...S("s"), ...json],
+        ["exports", "list", ...S("empty"), ...json],
+        ["exports", "create", ...S("s"), ...json],
+        ["spaces", "members", "list", "notes", ...K(), ...json],
+        ["spaces", "members", "list", "empty", ...K(), ...json],
+        // an API key or a temporary profile on an account route
+        ...[["org"], ["orgs", "list"], ["projects", "list"], ["keys", "list"], ["members", "list"], ["members", "me"], ["members", "invitations"], ["invitations", "pending"], ["billing"], ["billing", "topups"], ["usage", "--history"], ["usage", "--breakdown"]].map((c) => [...c, ...ES, ...json]),
+        ["spaces", "members", "list", "notes", ...ES, ...json],
+        ["exports", "list", "--space", "s", ...ES, ...json],
+        ["invitations", "accept", "tok-1", ...ES, ...json],
+      );
+      // exports download: the credential never goes to the link; --yes lets both CLIs overwrite
+      for (const [job, name] of [["j-link", "link"], ["j-relative", "relative"], ["j-stream", "stream"], ["j-redirect", "redirect"]]) {
+        cases.push(["exports", "download", job as string, "--out", out(`${name}.zip`), "--yes", ...S("s"), ...json]);
+      }
+      cases.push(
+        ["exports", "download", "j-nolink", "--out", out("nolink.zip"), "--yes", ...S("s"), ...json],
+        ["exports", "download", "j-badlink", "--out", out("badlink.zip"), "--yes", ...S("s"), ...json],
+        ["exports", "download", "j-deadlink", "--out", out("deadlink.zip"), "--yes", ...S("s"), ...json],
+        ["exports", "download", "j-slow", "--timeout", "0.5", "--out", out("slow.zip"), "--yes", ...S("s"), ...json],
+        ["exports", "download", "j-die", "--out", out("die.zip"), "--yes", ...S("s"), ...json],
+        ["exports", "download", "j-refused", "--out", out("refused.zip"), "--yes", ...S("s"), ...json],
+        ["exports", "download", "j-missing", "--out", out("missing.zip"), "--yes", ...S("s"), ...json],
+        ["exports", "download", "j-link", "--out", join(home, "no-such-dir", "x.zip"), "--yes", ...S("s"), ...json],
+        ["exports", "download", "j-link", "--out", out("exists.zip"), ...S("s"), ...json],
+      );
+    }
+    writeFileSync(out("exists.zip"), "PRECIOUS");
+    // The dashboard-only verbs: nothing is sent, no credential is read, and extra words and --yes are ignored.
+    for (const [cmd, act] of [
+      ["keys", "create"], ["keys", "revoke"], ["billing", "upgrade"], ["billing", "checkout"], ["billing", "topup"], ["billing", "cancel"], ["billing", "portal"],
+      ["org", "rename"], ["org", "delete"], ["org", "transfer"], ["org", "leave"], ["members", "invite"], ["members", "remove"],
+    ]) {
+      cases.push(
+        [cmd as string, act as string],
+        [cmd as string, act as string, "some-arg", "--json"],
+        [cmd as string, act as string, ...K()],
+        [cmd as string, act as string, "--yes"],
+        [cmd as string, act as string, "some-arg", "--yes", ...K()],
+      );
+    }
+    cases.push(
+      ["spaces", "members", "remove"],
+      ["spaces", "members", "remove", "notes", "m1", "--json"],
+      ["spaces", "members", "remove", "notes", "m1", ...K()],
+      ["spaces", "members", "remove", "notes", "m1", "--yes"],
+      // The space's own page, its name escaped as one path segment.
+      ["spaces", "members", "remove", "acme:a b/c?#", "m1"],
+      ["spaces", "members", "remove", "it's(1)*!~ü", "m1"],
+      // `projects create` is gone: a usage error in both.
+      ["projects", "create", "Docs"],
+    );
+    const before = srv.seen.length;
+    await compare(cases);
+    expect(srv.seen.length).toBeGreaterThan(before);
+    expect(readFileSync(out("link.zip"), "utf8")).toBe("ZIPDATA-LINK");
+    expect(readFileSync(out("relative.zip"), "utf8")).toBe("ZIPDATA-LINK");
+    expect(readFileSync(out("stream.zip"), "utf8")).toBe("ZIPDATA-STREAM");
+    expect(readFileSync(out("redirect.zip"), "utf8")).toBe("ZIPDATA-LINK");
+    expect(readFileSync(out("slow.zip"), "utf8")).toBe("aaaabbbbccccddddeeeeffff");
+    // A download that failed leaves neither the target nor a temporary file.
+    for (const name of ["die.zip", "refused.zip"]) expect(existsSync(out(name))).toBe(false);
+    expect(readdirSync(home).filter((n) => n.startsWith(".anona-export-"))).toEqual([]);
+    expect(readFileSync(out("exists.zip"), "utf8")).toBe("PRECIOUS");
+    // The API credential reached the download endpoint and never the link.
+    for (const seen of srv.seen.filter((x) => x.path.startsWith("/blob/"))) expect(seen.auth).toBeUndefined();
+  });
+
+  it("the new commands' usage errors: same message, same exit, nothing sent", async () => {
+    const before = srv.seen.length;
+    const k = S("s");
+    const home = process.env.HOME as string;
+    writeFileSync(join(home, "bad-rules.json"), '{"not": "an array"}');
+    writeFileSync(join(home, "ok-rules.json"), "[]");
+    await compare([
+      ["models", ...K()],
+      ["models", "wat", ...K()],
+      ["models", "create", ...k],
+      ["models", "create", "n", ...k],
+      ["models", "create", "  ", "--query", "q", ...k],
+      ["models", "create", "n", "--query", " ", ...k],
+      ["models", "create", "n", "--query", "q", "--mode", "partial", ...k],
+      ["models", "create", "n", "--query", "q", "--memory-type", "summary", ...k],
+      ["models", "create", "n", "--query", "q", "--max-tokens", "10", ...k],
+      ["models", "create", "n", "--query", "q", "--tags", "a,,b", ...k],
+      ["models", "list", "--limit", "0", ...k],
+      ["models", "list", "--offset", "-1", ...k],
+      ["models", "edit", "mm-1", ...k],
+      ["models", "get", ...k],
+      ["models", "delete", "mm-1", ...k],
+      ["profile", "set", ...k],
+      ["profile", "wat", ...k],
+      ["profile", "--mission", "x", ...k],
+      ["profile", "reset", "--empathy", "3", "--yes", ...k],
+      ["profile", "set", "--empathy", "9", ...k],
+      ["profile", "set", "--skepticism", "x", ...k],
+      ["rules", "add", ...k],
+      ["rules", "add", "   ", ...k],
+      ["rules", "add", "x", "--priority", "1001", ...k],
+      ["rules", "edit", "r-1", ...k],
+      ["rules", "edit", "r-1", "--text", "@/nonexistent/rule.txt", ...k],
+      ["rules", "delete", "r-1", ...k],
+      ["webhooks", "create", ...k],
+      ["webhooks", "create", "https://x.example", "--events", "a,,b", ...k],
+      ["webhooks", "edit", "w-1", ...k],
+      ["webhooks", "delete", "w-1", ...k],
+      ["webhooks", "deliveries", "w-1", "--limit", "201", ...k],
+      ["graph", "draw", ...k],
+      ["graph", "draw", "  ", ...k],
+      ["graph", "chart", ...k],
+      ["graph", "--limit", "0", ...k],
+      ["graph", "--model", "m", ...k],
+      ["entities", "list", "--limit", "501", ...k],
+      ["entities", "get", ...k],
+      ["receipts", "get", ...K()],
+      ["receipts", "get", "req_1", "--explain", ...K()],
+      ["receipts", "get", "req_1", "--memory-id", "m1", ...K()],
+      ["ask-user", "alice", ...k],
+      ["ask-user", " ", "q", ...k],
+      ["ask-user", "alice", "  ", ...k],
+      ["ask-user", "alice", "q", "--depth", "medium", ...k],
+      ["chat", ...k],
+      ["chat", "  ", ...k],
+      ["routing-settings", ...k],
+      ["routing-settings", "set", ...k],
+      ["routing-settings", "set", "--clear", "auto_route_enabled", ...k],
+      ["routing-settings", "set", "--clear", "shared_auto_route", ...k],
+      ["routing-settings", "set", "--topics", "a,,b", ...k],
+      ["routing-settings", "set", "--charter", "x", "--clear", "charter", ...k],
+      ["routing-settings", "set", "--rules-file", join(home, "bad-rules.json"), ...k],
+      ["routing-settings", "set", "--rules-file", "/nonexistent/rules.json", ...k],
+      ["routing-settings", "reset", ...k],
+      ["org", "wat", ...K()],
+      ["billing", "wat", ...K()],
+      ["orgs", ...K()],
+      ["keys", ...K()],
+      ["keys", "list", "--space", "s", ...K()],
+      ["members", "wat", ...K()],
+      ["invitations", "accept", ...K()],
+      ["usage", "--days", "3", ...K()],
+      ["usage", "--history", "--breakdown", ...K()],
+      ["usage", "--history", "--days", "0", ...K()],
+      ["usage", "--history", "--days", "366", ...K()],
+      ["exports", ...k],
+      ["exports", "download", ...k],
+      ["spaces", "members", ...K()],
+      ["spaces", "members", "wat", ...K()],
+      ["spaces", "members", "list", ...K()],
+      ["spaces", "members", "remove", "notes", "m1", "--yes", ...K()],
+      ["keys", "create", "--wat"],
+      ["members", "invite", "--space"],
+      ["space-types", "extra", ...K()],
+    ]);
+    expect(srv.seen.length).toBe(before);
+  });
+
+  it("--help of the new commands says the same thing in both CLIs, wrapping aside", async () => {
+    // argparse and the hand-rolled renderer break lines at different places
+    // (including inside a hyphenated word), so the words are compared with
+    // every space and line break removed: names, order, choices and help text.
+    const squash = (text: string) => text.replace(/\s+/g, "");
+    const topics = [
+      ["models"], ["models", "create"], ["models", "edit"], ["rules", "add"], ["rules", "edit"], ["webhooks", "create"], ["webhooks", "deliveries"],
+      ["graph"], ["entities", "list"], ["receipts", "get"], ["ask-user"], ["chat"], ["profile"], ["usage"], ["org"], ["billing"], ["keys"], ["keys", "create"],
+      ["members", "invite"], ["invitations", "accept"], ["exports", "download"], ["spaces"], ["spaces", "members"], ["spaces", "members", "remove"],
+      ["routing-settings"], ["routing-settings", "set"], ["routing-settings", "reset"], ["space-types"], ["projects"],
+    ];
+    const python: Array<[number, string, string]> = await py(RUN_MANY, topics.flatMap((w) => [[[...w, "--help"], ""], [["help", ...w], ""]]));
+    for (let i = 0; i < topics.length; i++) {
+      const w = topics[i] as string[];
+      const viaFlag = await run([...w, "--help"]);
+      const viaHelp = await run(["help", ...w]);
+      expect([viaFlag.rc, viaFlag.err], w.join(" ")).toEqual([0, ""]);
+      expect(squash(viaFlag.out), w.join(" ")).toBe(squash(python[2 * i]![1]));
+      expect(squash(viaHelp.out), w.join(" ")).toBe(squash(python[2 * i + 1]![1]));
+    }
   });
 
   it("usage errors: same message, same exit, nothing sent", async () => {

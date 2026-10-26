@@ -81,11 +81,23 @@ SETTINGS_FIELDS: dict[str, tuple[str, ...]] = {
     "chat-settings": ("memory_limit", "memory_token_budget", "auto_record", "memory", "chat_model"),
     "reason-settings": ("model", "depth"),
     "extraction-settings": ("mode", "guidance", "custom_prompt", "labels", "free_form_entities"),
+    "routing-settings": ("charter", "topics", "rules", "auto_route_enabled", "shared_auto_route"),
+}
+# Fields a `... set --clear` may unset. The two switches are booleans the API
+# will not take as null.
+CLEARABLE: dict[str, tuple[str, ...]] = {
+    kind: tuple(f for f in fields if f not in ("auto_route_enabled", "shared_auto_route"))
+    for kind, fields in SETTINGS_FIELDS.items()
 }
 
 
 def _destroy_message(verb: tuple[str, str | None], args: argparse.Namespace, space: str | None) -> str | None:
     """What a destructive verb would do, or None when the verb destroys nothing."""
+    from . import resources
+
+    more = resources.destroy_message(verb, args, space)
+    if more is not None:
+        return more
     where = f"in space '{_p(space or 'default')}'"
     if verb == ("memories", "delete"):
         return f"delete memory {_p(args.memory_id)} {where}"
@@ -113,11 +125,40 @@ COMMANDS = (
     "chat-settings",
     "reason-settings",
     "extraction-settings",
+    "routing-settings",
+    "models",
+    "rules",
+    "webhooks",
+    "graph",
+    "entities",
+    "receipts",
+    "ask-user",
+    "space-types",
+    "chat",
+    "org",
+    "orgs",
+    "projects",
+    "keys",
+    "members",
+    "invitations",
+    "billing",
+    "exports",
 )
 
 
 def verb_of(args: argparse.Namespace) -> tuple[str, str | None]:
-    return args.command, getattr(args, "action", None)
+    action = getattr(args, "action", None)
+    if getattr(args, "sub_action", None):
+        action = f"{action} {args.sub_action}"
+    if args.command == "usage":
+        action = "history" if args.history else "breakdown" if args.breakdown else None
+    return args.command, action
+
+
+def needs_space(verb: tuple[str, str | None]) -> bool:
+    from . import resources
+
+    return verb in SPACE_VERBS or verb in resources.SPACE_VERBS
 
 
 def _limit(low: int, high: int) -> Callable[[str], int]:
@@ -184,6 +225,24 @@ def _text_arg(value: str) -> str:
     return _read_arg_file(value, "text")
 
 
+def _topics(value: str) -> list[str]:
+    topics = [t.strip() for t in value.split(",")]
+    if not all(topics):
+        raise argparse.ArgumentTypeError("must be a comma-separated list of non-empty topics")
+    return topics
+
+
+def _rules(value: str) -> list:
+    text = _read_arg_file(value if value.startswith("@") else "@" + value, "--rules-file")
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must hold a JSON array of routing rules") from None
+    if not isinstance(parsed, list) or not all(isinstance(g, dict) for g in parsed):
+        raise argparse.ArgumentTypeError("must hold a JSON array of routing-rule objects")
+    return parsed
+
+
 def _labels(value: str) -> list:
     text = _read_arg_file(value if value.startswith("@") else "@" + value, "--labels-file")
     try:
@@ -210,6 +269,8 @@ def add_parsers(sub, common: argparse.ArgumentParser, space_help: str, key_help:
                 f"--{name}-id", type=non_empty, default=None, help=f"Only memories recorded with this {name}_id"
             )
 
+    from . import resources
+
     sp = sub.add_parser("spaces", parents=[common], help="List, create or show spaces")
     spaces = sp.add_subparsers(dest="action", required=True)
     creds(spaces.add_parser("list", parents=[common], help="List the spaces you can use"), None)
@@ -224,6 +285,7 @@ def add_parsers(sub, common: argparse.ArgumentParser, space_help: str, key_help:
     sd.add_argument("space_id", help="The space to delete")
     sd.add_argument("--yes", action="store_true", help="Confirm the deletion; without it nothing is sent")
     creds(sd, None)
+    resources.add_space_members(spaces, common, creds)
 
     mp = sub.add_parser("memories", parents=[common], help="List, edit, delete or trace stored memories")
     mems = mp.add_subparsers(dest="action", required=True)
@@ -303,7 +365,9 @@ def add_parsers(sub, common: argparse.ArgumentParser, space_help: str, key_help:
     jc.add_argument("--yes", action="store_true", help="Confirm the cancel; without it nothing is sent")
     creds(jc, "cancel in")
 
-    creds(sub.add_parser("profile", parents=[common], help="Show a space's profile: mission and disposition"), "read")
+    pf = sub.add_parser("profile", parents=[common], help="Show a space's profile (mission and disposition), or change it with set / reset")
+    creds(pf, "read or change")
+    resources.add_profile_actions(pf)
     md = sub.add_parser("model", parents=[common], help="Show one memory model and its current content")
     md.add_argument("model_id", help="The memory model's id")
     creds(md, "read")
@@ -312,7 +376,9 @@ def add_parsers(sub, common: argparse.ArgumentParser, space_help: str, key_help:
     up.add_argument("--limit", type=_limit(1, 200), default=None, help="At most this many memories (1-200)")
     up.add_argument("--offset", type=_offset, default=None, help="Skip this many memories first")
     creds(up, "read")
-    creds(sub.add_parser("usage", parents=[common], help="Show your credits and rate limit"), None)
+    us = sub.add_parser("usage", parents=[common], help="Show your credits and rate limit, or your operation counts over time")
+    creds(us, None)
+    resources.add_usage_flags(us)
     creds(
         sub.add_parser(
             "llm-models",
@@ -322,6 +388,7 @@ def add_parsers(sub, common: argparse.ArgumentParser, space_help: str, key_help:
         None,
     )
     _settings_parsers(sub, common, creds)
+    resources.add_parsers(sub, common, creds)
 
 
 def wait_flags(parser: argparse.ArgumentParser) -> None:
@@ -359,6 +426,7 @@ def _settings_parsers(sub, common, creds) -> None:
         "chat-settings": "Show or change a space's defaults for the drop-in LLM proxy",
         "reason-settings": "Show or change which model and depth `reason` uses in a space",
         "extraction-settings": "Show or change how a space turns text into memories",
+        "routing-settings": "Show or change how writes and reads are routed between spaces",
     }
     for kind, fields in SETTINGS_FIELDS.items():
         top = sub.add_parser(kind, parents=[common], help=blurbs[kind])
@@ -394,6 +462,30 @@ def _settings_parsers(sub, common, creds) -> None:
                 help="Inject memories into proxied calls",
             )
             st.add_argument("--chat-model", default=None, help="The LLM proxied calls use (see `anona llm-models`)")
+        elif kind == "routing-settings":
+            st.add_argument("--charter", type=_text_arg, default=None, help="What belongs in this space, in words; @FILE reads it")
+            st.add_argument("--topics", type=_topics, default=None, help="Comma-separated topics the space covers")
+            st.add_argument(
+                "--rules-file",
+                type=_rules,
+                default=None,
+                dest="rules",
+                metavar="PATH",
+                help='A JSON array of routing rules, e.g. [{"field":"agent_id","op":"equals","value":"billing-bot","space_id":"billing"}]',
+            )
+            st.add_argument(
+                "--auto-route",
+                action=argparse.BooleanOptionalAction,
+                default=None,
+                dest="auto_route_enabled",
+                help="Let writes with no space land by topic (--no-auto-route turns it off)",
+            )
+            st.add_argument(
+                "--shared-auto-route",
+                action=argparse.BooleanOptionalAction,
+                default=None,
+                help="Let writes route into spaces shared with you",
+            )
         else:
             st.add_argument(
                 "--mode",
@@ -427,10 +519,10 @@ def _settings_parsers(sub, common, creds) -> None:
         st.add_argument(
             "--clear",
             action="append",
-            choices=fields,
+            choices=CLEARABLE[kind],
             default=None,
             metavar="FIELD",
-            help=f"Unset a field so it follows the platform default; repeatable. One of: {', '.join(fields)}",
+            help=f"Unset a field so it follows the platform default; repeatable. One of: {', '.join(CLEARABLE[kind])}",
         )
         rs = acts.add_parser("reset", parents=[common], help=f"Clear every {kind} override (needs --yes)")
         rs.add_argument("--yes", action="store_true", help="Confirm the reset; without it nothing is sent")
@@ -440,7 +532,12 @@ def _settings_parsers(sub, common, creds) -> None:
 def precheck(args: argparse.Namespace) -> int | None:
     """Usage errors the server would certainly reject, caught before the
     credential is looked up, so they exit 2 and send nothing."""
+    from . import resources
+
     verb = verb_of(args)
+    more = resources.precheck(verb, args)
+    if more is not None:
+        return more
     if verb == ("spaces", "create"):
         return _reject_blank("space name", args.name)
     if verb == ("memories", "edit"):
@@ -539,7 +636,9 @@ def run(args: argparse.Namespace, base_url: str, space: str | None, api_key: str
     if args.json:
         _emit_json(doc)
         return 0
-    _RENDER[verb](doc, args, space)
+    from . import resources
+
+    (resources.RENDER.get(verb) or _RENDER[verb])(doc, args, space)
     return 0
 
 
@@ -614,6 +713,10 @@ def _settings_set(client: AnonaClient, kind: str, space: str, changes: dict) -> 
 
 
 def _call(client: AnonaClient, verb: tuple[str, str | None], args: argparse.Namespace, space: str | None):
+    from . import resources
+
+    if resources.handles(verb):
+        return resources.call(client, verb, args, space)
     if verb == ("spaces", "list"):
         # The whole response: list_spaces() returns only the rows and drops
         # `total`, and --json promises the API's document.

@@ -21,11 +21,12 @@ import { redact } from "./credential.js";
 import * as exits from "./exits.js";
 import { readFileSync } from "node:fs";
 import * as jobs from "./jobs.js";
-import { afterQueued, emitJson, given, invoke, jobIds, tokenAndSpace, USAGE_EXIT, type Bearer, type CliClient, type DataIO } from "./memory.js";
+import { d, count, given, or, out, p, renderModel, renderProfile, rows, type Render, type Values } from "./fmt.js";
+import { afterQueued, emitJson, invoke, jobIds, tokenAndSpace, USAGE_EXIT, type Bearer, type CliClient, type DataIO } from "./memory.js";
+import * as resources from "./resources.js";
 import { isObject, printable, printableBlock, pyJson, pyStr, truthy } from "./py.js";
 
 export type Verb = [string, string | null];
-type Values = Record<string, unknown>;
 
 const key = (v: Verb) => `${v[0]} ${v[1] ?? ""}`.trim();
 
@@ -47,12 +48,14 @@ export const SPACE_VERBS = new Set([
   ...Object.keys(SETTINGS_FIELDS).flatMap((k) => [`${k} get`, `${k} set`, `${k} reset`]),
 ]);
 
-export const needsSpace = (v: Verb) => SPACE_VERBS.has(key(v));
+export const needsSpace = (v: Verb) => SPACE_VERBS.has(key(v)) || resources.SPACE_VERBS.has(key(v));
 
 export const DEFAULT_WAIT = 300;
 
 /** What a destructive verb would do, or null when the verb destroys nothing. */
 function destroyMessage(verb: Verb, args: Values, space: string | undefined): string | null {
+  const more = resources.destroyMessage(verb, args, space);
+  if (more !== null) return more;
   const where = `in space '${p(space || "default")}'`;
   const k = key(verb);
   if (k === "memories delete") return `delete memory ${p(args.memory_id)} ${where}`;
@@ -78,6 +81,8 @@ function isFile(path: string): boolean {
  * credential is looked up, so they exit 2 and send nothing.
  */
 export function precheck(io: DataIO, verb: Verb, args: Values): number | null {
+  const more = resources.precheck(io, verb, args);
+  if (more !== null) return more;
   const k = key(verb);
   if (k === "spaces create") return rejectBlank(io, "space name", args.name as string);
   if (k === "memories edit") return rejectBlank(io, "memory text", args.text as string);
@@ -163,7 +168,7 @@ export async function runVerb(
     emitJson(io, r.value);
     return 0;
   }
-  (RENDER[key(verb)] as Render)(io, r.value, args, space);
+  ((resources.RENDER[key(verb)] ?? RENDER[key(verb)]) as Render)(io, r.value, args, space);
   return 0;
 }
 
@@ -231,6 +236,7 @@ async function call(io: DataIO, client: CliClient, verb: Verb, args: Values, spa
   const k = key(verb);
   const str = (name: string) => args[name] as string;
   const seg = encodeURIComponent;
+  if (resources.handles(verb)) return resources.call(client, verb, args, space);
   // The whole response: listSpaces() returns only the rows and drops `total`,
   // and --json promises the API's document.
   if (k === "spaces list") return client.raw({ method: "GET", path: "/v1/spaces/" });
@@ -329,25 +335,6 @@ async function call(io: DataIO, client: CliClient, verb: Verb, args: Values, spa
 // every server string through printable. Fields are read defensively, so one
 // the server stops sending prints as missing rather than throwing.
 
-type Render = (io: DataIO, doc: unknown, args: Values, space: string | undefined) => void;
-
-const d = (doc: unknown): Record<string, unknown> => (isObject(doc) ? doc : {});
-
-function rows(doc: unknown, field: string): Record<string, unknown>[] {
-  const r = d(doc)[field];
-  return Array.isArray(r) ? r.filter(isObject) : [];
-}
-
-/** Redacted as well: an id argument echoed back may be a key pasted into the wrong place. */
-function p(value: unknown): string {
-  return value === null || value === undefined || value === "" ? "-" : printable(redact(pyStr(value)));
-}
-
-const or = (...xs: unknown[]) => xs.find(truthy) ?? xs[xs.length - 1];
-
-/** A non-negative integer from the server, or 0. Never a bool. */
-const count = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0);
-
 function spaceLine(s: Record<string, unknown>): string {
   let line = p(or(s.qualified_id, s.space_id));
   if (truthy(s.shared_by)) line += `  (shared by ${p(s.shared_by)})`;
@@ -359,8 +346,6 @@ function memoryLine(m: Record<string, unknown>): string {
   const content = or(m.content, m.text, "");
   return `${p(or(m.id, m.memory_id))}  ${p(m.type)}  ${printable(content)}`;
 }
-
-const out = (io: DataIO, line: string) => void io.stdout.write(line + "\n");
 
 function renderSettings(io: DataIO, doc: unknown, args: Values, space: string | undefined, kind: string): void {
   const x = d(doc);
@@ -450,28 +435,8 @@ const RENDER: Record<string, Render> = {
         `${p(x.running_parts)} already running will finish.`,
     );
   },
-  profile: (io, doc, _args, space) => {
-    const x = d(doc);
-    out(io, `Space: ${p(or(x.space_id, space))}`);
-    out(io, `Mission: ${p(x.mission)}`);
-    const disp = x.disposition;
-    if (isObject(disp) && Object.keys(disp).length) {
-      out(io, "Disposition: " + Object.entries(disp).map(([k, v]) => `${printable(k)}=${p(v)}`).join(", "));
-    }
-  },
-  model: (io, doc, args) => {
-    const x = d(doc);
-    out(io, `${p(x.name)} (${p(or(x.id, args.model_id))})`);
-    if (truthy(x.query)) out(io, `Query: ${p(x.query)}`);
-    const content = x.content;
-    if (typeof content === "string" && content.trim()) {
-      // Markdown: paragraph breaks kept, as `reason` keeps them.
-      out(io, "");
-      out(io, printableBlock(content));
-    } else {
-      out(io, "No content yet: the first refresh has not finished, or it was cleared.");
-    }
-  },
+  profile: renderProfile,
+  model: renderModel,
   "user-profile": (io, doc, args, space) => {
     const x = d(doc);
     out(

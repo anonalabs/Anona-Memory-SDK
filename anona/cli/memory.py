@@ -348,6 +348,15 @@ def _retry_notice(attempt: int, delay: float, status: int, total: int) -> None:
     notice(f"anona: {reason}, retrying in {delay:.0f} s ({attempt}/{total})")
 
 
+LINK_REFUSED = "download_link_refused"
+
+
+def link_refused(exc: AnonaError) -> bool:
+    """A presigned download link that answered a non-2xx: reported as a
+    transport failure (exit 7), with the advice to ask for a fresh link."""
+    return bool(getattr(exc, "transport", False)) and exc.code == LINK_REFUSED
+
+
 def _fail(exc: AnonaError, base_url: str) -> int:
     """Report a failed call in the terms of what actually went wrong.
 
@@ -362,6 +371,14 @@ def _fail(exc: AnonaError, base_url: str) -> int:
     old line buried it inside a Python dict `repr`, single quotes and all,
     which is neither the JSON the docs show nor something a script can read.
     """
+    if link_refused(exc):
+        # The presigned link, not the API, refused: it expired or was never
+        # good. A fresh `download` asks the API for a new one.
+        print(
+            f"anona: download link expired or refused (HTTP {exc.status_code}); run download again.",
+            file=sys.stderr,
+        )
+        return exits.UNAVAILABLE
     if getattr(exc, "transport", False):
         # The detail embeds the repr of the underlying httpx error; the useful
         # half is the last clause, and the whole thing is long and noisy.

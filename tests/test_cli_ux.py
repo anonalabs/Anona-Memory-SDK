@@ -303,6 +303,8 @@ for name, example in guide.EXAMPLES.items():
     assert argv[0] == "anona", example
     ns = parser.parse_args(argv[1:])
     got = [ns.command] + ([ns.action] if getattr(ns, "action", None) else [])
+    if getattr(ns, "sub_action", None):
+        got.append(ns.sub_action)
     assert " ".join(got) == name, (name, example, got)
 for j in json_leaves(doc["commands"]):
     assert j["example"] and j["json_output"], j["name"]
@@ -359,7 +361,7 @@ def test_bash_completion_offers_every_command_and_flag(tmp_path):
     )
     top = {c["path"][0] for c in tree["commands"]}
     assert set(_complete(path, ["anona", "''"])) == top
-    assert set(_complete(path, ["anona", "spaces", "''"])) == {"list", "create", "get", "delete"}
+    assert set(_complete(path, ["anona", "spaces", "''"])) == {"list", "create", "get", "delete", "members"}
     assert set(_complete(path, ["anona", "reason-settings", "''"])) == {"get", "set", "reset"}
     flags = _complete(path, ["anona", "record", "--"])
     for flag in ("--async", "--batch", "--wait", "--wait-timeout", "--space", "--json", "--profile", "--quiet"):

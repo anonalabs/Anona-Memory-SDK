@@ -62,7 +62,7 @@ def test_help_command_prints_that_commands_help(tmp_path):
         for bad in (["nope"], ["spaces", "nope"], ["record", "extra"]):
             err = refused(["help"] + bad)
             assert "no command" in err, (bad, err)
-        assert "Commands here: list, create, get, delete" in refused(["help", "spaces", "nope"])
+        assert "Commands here: list, create, get, delete, members" in refused(["help", "spaces", "nope"])
         refused(["help", "record", "--llm"])
         refused(["help", "record", "--json"])
         # Bare `help` and `help --llm` are unchanged.

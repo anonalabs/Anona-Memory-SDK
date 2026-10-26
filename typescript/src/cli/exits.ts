@@ -9,6 +9,9 @@ export const OK = 0;
 export const FAILED = 1;
 export const USAGE = 2;
 export const NOTHING_STORED = 3;
+// A 401 is AUTH, so is `session_required` (the command needs the command-line
+// login and an API key cannot do it), and so is a dashboard-only action, which
+// is refused without a request.
 export const AUTH = 4;
 export const NOT_FOUND = 5;
 export const RATE_LIMITED = 6;
