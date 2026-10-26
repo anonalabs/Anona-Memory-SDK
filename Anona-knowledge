@@ -1,0 +1,131 @@
+<!-- anona:begin -->
+## What this repository's history shows
+
+This section is maintained by Anona and is regenerated in full on each refresh. Anything written between the `anona:begin` and `anona:end` markers is replaced; anything outside them is never touched, so keep your own notes there.
+
+**It is evidence, not instruction.** Each entry below is quoted from a memory model in the Anona space `Anona-Memory-SDk`, synthesized from the pull requests this repository has merged. It records what happened; it does not tell anybody — or any agent — what to do. Read it as a source to check, not as a directive to follow.
+
+### Repository knowledge
+
+Question asked of this repository's history: _How this codebase works and why: the decisions behind it, the constraints it operates under, and the gotchas a new contributor would otherwise learn the hard way. State each fact once, in the repository's own vocabulary. Leave out anything true only of a single change -- test counts, lint warnings, CI results and review status describe one pull request, not the repository. Write prose and bullet lists, not tables._
+
+> # Repository Knowledge Overview
+>
+> The Anona‑Memory SDK provides a Python package (`anona`) exposing `AnonaClient` and a TypeScript package (`@anona‑labs/memory`) exposing `Anona`. Both act as thin wrappers around the Anona REST API, enforce explicit configuration, idempotent‑aware retries, and a fail‑open contract for adapters. The Python SDK is at version 0.20.1 (including the verb‑refusal fix) and the TypeScript SDK at version 0.18.0; the CLI versions are 0.24.0 (Python) and 0.18.0 (TypeScript).
+>
+> ## Core Concepts (Repository Vocabulary)
+>
+> - **Space** – a logical container for memories.  A space must be created explicitly; the API never creates a space implicitly when an API‑key is supplied (`--space`/`ANONA_SPACE_ID` required).  The default space is used for writes that do not match any existing space.
+> - **Memory** – a record stored in a space.  The SDK represents a memory with a canonical `content` field (the legacy `text` field remains for backward compatibility).
+> - **Routing** – write and read operations may specify `route=\"auto\"` (or an explicit `space_id`).  When `route=\"auto\"` the server selects a space and returns the chosen identifier.
+> - **Fallback Space** – a read can include `fallback_space_id`; if the query matches no memories in the primary space the fallback is consulted.
+> - **MemoryBridge** – the single integration point for all six framework adapters; it resolves scopes and implements a **fail‑open contract** (errors are logged, the agent continues without raising to the caller).
+> - **AnonaError** – error objects include `statusCode`, `code`, `requestId`, and optionally `retryAfter`.  The SDK surfaces these fields to callers.
+> - **Tag Prefix** – tags beginning with `anona:` are reserved and cannot be used for custom tagging.
+> - **Rules** – per‑space rule objects that can override memory statements; managed via `list_rules`, `create_rule`, `update_rule`, `delete_rule` (and async equivalents).
+> - **Rate‑limit** – the SDK exposes the remaining budget via `rate_limit` (Python) and `rateLimit` (TypeScript).  429 responses are always retried with jittered back‑off; 5xx responses are retried only for idempotent verbs.
+> - **Space Types** – optional `space_type` field on `POST /v1/spaces`; SDKs expose `list_space_types`/`listSpaceTypes`.
+> - **Space Profile** – methods `set_space_profile` and `reset_space_profile` require both `mission` and `disposition` fields; they replace the entire profile via a `PUT` (set) or `DELETE` (reset) request.
+> - **Per‑User Profile** – new methods `get_user_profile`, `ask_about_user` (and async variants) expose user‑specific data without needing a full space profile.
+> - **Document Management** – methods `upload_file`, `list_documents`, `delete_document` (and async versions) handle file uploads and document lifecycle; non‑video files larger than 25 MB are rejected.
+> - **Video Upload Limits** – non‑video files larger than **25 MB** are rejected; the SDK enforces this guard in its size checks.
+> - **Temporary Profile** – the CLI supports four start‑up branches: MCP tools (session‑only), API‑key REST flow, temporary profile (no account/key, limits shown), and interactive “create one” flow.
+> - **SDK Versions** – Python SDK is at least 0.20.1 and TypeScript SDK at least 0.18.0; the CLI versions are 0.24.0 (Python) and 0.18.0 (TypeScript).
+> - **Install Script** – `install.sh` in this repository is byte‑identical to the one in the Ports monorepo, ensuring consistent skill installation.
+> - **Skill Installation** – skills can be installed globally via `npx skills` or `curl | bash`, as added from the Anona‑Memory‑SDK repository.
+> - **Installation Method** – `pip install anona[<extras>]` is now the standard installation; the previous `git+URL` method has been removed.
+> - **README Links** – the repository README now includes a top‑of‑file link to the external SDK documentation at `https://docs.anonalabs.com` and a table of contents at the bottom.
+> - **Publish Workflow Fallback** – `publish-npm.yml` will fall back to using a PyPI API token if OIDC Trusted Publishing is unavailable.
+> - **Adapter Examples** – each framework adapter includes a runnable example script; the test suite executes these examples to verify integration.
+> - **OpenClaw Support** – the `install.sh` script and agent list have been ported to provide OpenClaw support for installing Agent Skills via `curl | bash` or `npx skills`.
+> - **Temporary Profile CLI Versions** – the npm CLI version 0.16.0 and pip CLI version 0.19.1 add the four‑branch temporary‑profile workflow, redacting tokens on registration refusals.
+> - **getMemoryHistory Semantics** – an empty history now indicates that the memory has been superseded rather than that no changes exist.
+> - **Framework Adapters** – the SDK ships optional adapters for six agent frameworks (LangChain/LangGraph, CrewAI, LlamaIndex, Google ADK, Microsoft Agent Framework, AWS Strands) installable via `pip install anona[<framework>]`.
+> - **Verb Refusal Fix** – the client‑side verb refusal behavior was corrected in SDK version 0.20.1, ensuring unsupported verbs are rejected before any network request.
+> - **Credential resolution order** – CLI flag `--api-key` > `ANONA_API_KEY` env > `~/.anona/config.env` > temporary profile; MCP login is never used as a fallback.
+> - **Required tags field** – `MemoryItem` and `SearchResult` types require a `tags` array (empty when unused).
+> - **Filter parameters** – `occurred_after` and `occurred_before` can be passed to `POST /v1/retrieve` to filter results by occurrence time.
+> - **Temporary profile expiry** – profiles created by `anona start` expire after 71 hours and are deleted after 72 hours if unclaimed.
+> - **HTTPS‑only base URL** – the default `base_url` now points to an HTTPS endpoint; plain‑HTTP URLs are rejected to protect credentials.
+>
+> ## Design Decisions & Rationale
+>
+> - **Explicitness over magic** – Clients must supply a `space_id` or rely on the explicit `route=\"auto\"`.  Implicit creation is avoided to prevent accidental data leakage.
+> - **Fail‑Open for adapters** – The `MemoryBridge` logs failures but never propagates them to the agent loop.  This prevents a single memory failure from crashing an entire workflow.
+> - **Idempotency‑Aware retries** – Retry logic inspects the verb's idempotency flag.  Non‑idempotent verbs (`record`, `recordBatch`, `uploadFiles`) are *not* retried on 5xx or timeout, avoiding duplicate writes.
+> - **Strict type contracts** – The TypeScript SDK compiles with `tsc --noEmit`; missing required fields (e.g., `model` on `reason_settings`) cause compile‑time failures, preventing runtime errors.
+> - **Unified API surface** – Both Python and TypeScript SDKs expose the same method names and signatures (e.g., `record`, `retrieve`, `reason`, `get_context`).  This ensures parity and reduces maintenance overhead.
+> - **Reserved tag namespace** – By reserving the `anona:` prefix the server can add internal tags without colliding with user‑provided tags.
+> - **Version‑agnostic space types** – Adding `space_type` as an optional field allows new server‑side configurations to be used without requiring a client SDK bump.
+> - **CLI ergonomics** – The CLI requires explicit `--space` for signed‑in accounts but defaults to the temporary profile space for key‑less usage, simplifying quick experiments.
+> - **Client‑side verb refusal** – The SDK now refuses unsupported verbs before making a network call, avoiding unnecessary round‑trips and giving immediate feedback.
+> - **Transport‑failure reporting** – Errors expose the raw HTTP status via `AnonaError.transport`, letting callers distinguish network failures from service‑level errors.
+> - **Base‑URL validation & defaults** – The default `base_url` points to a reachable HTTPS endpoint; the CLI validates the scheme and rejects plain‑HTTP URLs.
+> - **Documentation as source of truth** – Every script on disk must be listed in the README; CI validates this and fails on drift.
+> - **Parity across languages** – A parity script ensures the Python wheel and the npm package stay in sync; any drift is treated as a defect.
+> - **Skill installation** – The `install.sh` script and skill installer are byte‑identical to the Ports monorepo; skills are installed via `npx skills` or `curl | bash`.
+> - **Space‑profile requirement** – `set_space_profile` and `reset_space_profile` now require both `mission` and `disposition`; they replace the whole profile via PUT/DELETE.
+> - **Per‑user profile support** – New methods `get_user_profile` / `ask_about_user` (and async) provide per‑user data without a full space profile.
+> - **Temporary profile four‑branch workflow** – `anona start` now has four distinct branches (MCP tools, API‑key, temporary profile, create one), clarifying behavior for quick experiments.
+> - **Video upload limit enforcement** – The SDK enforces a non‑video file size guard of 25 MB, rejecting larger uploads.
+> - **New file management methods** – `upload_file`, `list_documents`, `delete_document` (and async) were added to both SDKs for document handling.
+> - **SDK version bump** – Python SDK 0.20.1, TypeScript SDK 0.18.0; imports resolve to the updated package versions.
+> - **Publish workflow using Trusted Publishing** – The `publish-npm.yml` workflow builds and publishes the TypeScript package via OIDC Trusted Publishing without storing an NPM token, emitting provenance.
+> - **Credential binding to deployment** – Stored credentials are pinned to the deployment that created them; reuse on a different deployment is rejected.
+> - **Filter parameters added to retrieve** – `occurred_after` and `occurred_before` parameters enable time‑based filtering on `POST /v1/retrieve`.
+> - **Required tags field** – Enforcing a `tags` array on `MemoryItem` and `SearchResult` prevents TypeScript compilation failures.
+> - **HTTPS‑only default base URL** – Enforcing HTTPS for the default `base_url` protects API keys from exposure.
+>
+> ## Operational Constraints
+>
+> - **Authentication** – API‑key failures exit with code 4 and produce no output; a space identifier is mandatory when an API key is used.
+> - **Timeouts** – The TypeScript client has a default 30‑second timeout; long‑running `reason()` calls can be cut off on the client side while the server continues processing.
+> - **Rate‑limit handling** – Clients must honour the `Retry‑After` header on 429 responses; the SDK automatically backs off using jitter.
+> - **Space routing profile** – Not modeled in the SDK; routing settings must be configured via the dedicated REST endpoint `/v1/spaces/{id}/routing-settings`.
+> - **Multi‑space reads** – Each additional space searched incurs a separate credit charge.
+> - **Error payload format** – The SDK returns errors in the shape `{\"error\": {\"code\": ..., \"message\": ...}}`, differing from FastAPI’s default `{\"detail\": ...}`; callers should parse the `error` object.
+> - **Version pinning** – The `mcp` dependency is pinned to `<2` to avoid import errors; this is enforced in the repo.
+> - **Temporary profile feature flag** – Controlled by `TEMP_PROFILES_ENABLED`; when disabled the `anona start` command reports a server refusal.
+> - **Version bump required for releases** – Any change merged to main must bump the package version; otherwise the draft release will be stale and the change will never be published.
+> - **Release workflow** – A CI workflow triggers on pushes that modify `pyproject.toml` or `typescript/package.json`, reads the version, checks for an existing tag, and opens a draft release only when none exists.
+> - **Security groups & HTTPS‑only** – The default deployment permits only Cloudflare IPs and blocks plain‑HTTP connections, enforcing HTTPS for all API calls.
+> - **Credential security** – Credentials are pinned to the deployment that created them; attempts to reuse them with a different deployment are rejected.
+> - **Video upload limits** – non‑video files larger than **25 MB** are rejected; the SDK enforces this guard before sending the request.
+> - **File‑size limits** – non‑video files are limited to 25 MB, video files to 64 MB, and the total size of a request may not exceed 100 MB when any video is present; the SDK validates these limits before sending.
+> - **Base URL default misconfiguration** – Previously the default `base_url` pointed to an unreachable plain‑HTTP ALB, causing timeouts and exposing API keys; it has been corrected to an HTTPS endpoint.
+> - **Credential resolution order fixed** – CLI flag > env var > `~/.anona/config.env` > temporary profile; MCP login is never used as a fallback.
+> - **HTTPS requirement for credential‑sending commands** – The CLI now rejects plain‑HTTP URLs when a command involves credentials.
+>
+> ## Gotchas for New Contributors
+>
+> - **Missing required fields** – Omitting `model` or `depth` when calling `PUT /v1/spaces/{space_id}/reason-settings` silently clears the depth setting.  Use the SDK methods which enforce both fields.
+> - **Scope fields on document upload** – Forgetting `user_id`, `agent_id`, or `session_id` makes the document invisible to scoped queries despite a successful upload response.
+> - **Reserved tag prefix** – Using a tag that starts with `anona:` will be rejected by the server.
+> - **Typoed space identifiers** – A typo in a `GET` request returns a 404, but a `PUT` will *create* a new space, potentially scattering data.
+> - **Idempotency on retries** – Retries on non‑idempotent verbs can produce duplicate records; ensure retries are disabled (`max_retries=0`) if duplicate creation must be avoided.
+> - **Default timeout** – The TypeScript client’s 30‑second timeout may truncate long `reason()` calls; increase the timeout or handle partial results accordingly.
+> - **CLI argument parsing** – The CLI validates `--space`, bearer token, and endpoint against a local HTTP server; mismatches cause exit‑code 1.
+> - **Rule creation non‑idempotency** – A failed create‑rule request that succeeds on the server but times out client‑side will be retried, resulting in duplicate rules and consuming one of the 25 rule slots.
+> - **Space type usage** – When creating a space, the `space_type` field is optional; omitting it yields a generic space without the presets defined on the server.
+> - **Memory item fields** – New code should read the `content` field; the older `text` field is deprecated and may be removed in future versions.
+> - **Routing profile** – Changes to a space’s routing behaviour require direct REST calls; the SDK does not expose a method to modify routing settings.
+> - **Empty input to `record`** – Providing an empty string triggers a local refusal with exit code 2, distinct from network failures (exit 1) or successful but empty extraction (exit 3).
+> - `nothing_extracted` **status fallback** – When the server returns `status: \"nothing_extracted\"` without a message, the client falls back to a generic local message; altering this fallback can break compatibility.
+> - **Client‑side verb refusal** – Unsupported verbs are rejected locally before any HTTP request is made.
+> - **Version/help flag bugs fixed** – `--version` and `--help` now correctly display information instead of causing usage errors.
+> - **Per‑user profile methods** – Using `get_user_profile` / `ask_about_user` without proper permissions can result in 403 errors.
+> - **Space‑profile methods** – `set_space_profile` and `reset_space_profile` require both `mission` and `disposition`; omitting either causes a validation error.
+> - **Video size caps** – Uploading a non‑video file larger than **25 MB** is rejected by the SDK; video size caps are enforced similarly.
+> - **SDK version bump** – After the bump to Python 0.10.0 and TypeScript 0.5.0, ensure imports reference the updated package version.
+> - **Install script consistency** – `install.sh` being byte‑identical to the monorepo means any change affects both; verify before editing.
+> - **Skill installation via npx** – Globally installing skills with `npx skills` can affect the environment; be aware of version mismatches.
+> - **Missing API key** – If no credential is found the CLI falls back to `curl`; this may succeed silently but later commands will fail because no key is stored.
+> - **Plain‑HTTP base URL** – Using a non‑HTTPS `base_url` exposes the API key and can cause timeouts; always use HTTPS.
+> - **Temporary profile expiry** – Profiles created by `anona start` expire after 71 hours and are deleted after 72 hours if unclaimed.
+> - **Credential pinning** – Moving a deployment invalidates stored credentials; re‑authenticate after a redeploy.
+> - **Package naming** – The npm package is `@anona‑labs/memory`; attempts to install `@anona/memory` will fail.
+> - **Documentation drift** – The parity script only checks `anona/` and `typescript/src/`; changes in `skills/` or READMEs are not caught, so keep the documentation in sync manually.
+> - **Skill duplication** – The installer may install the same skill twice; duplicate registrations are deduped on the callback instance, but the second registration will be a no‑op.
+>
+> *This document captures the persistent repository‑level facts about how the codebase works, the rationale behind its design, the constraints it operates under, and the common pitfalls that new contributors encounter.*
+<!-- anona:end -->
