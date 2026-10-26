@@ -98,4 +98,21 @@ describe("command grammar", () => {
     expect(r.rc).toBe(2);
     expect(r.err).toContain("argument shell: invalid choice: 'tcsh' (choose from 'bash', 'zsh', 'fish')");
   });
+
+  it("an unknown command says the copy may be older than the docs", async () => {
+    // `anona guide` on a copy that predated it printed only the list, and
+    // nothing pointed at the version as the cause.
+    const r = await run(["nosuchcommand"]);
+    expect(r.rc).toBe(2);
+    expect(r.err).toContain("invalid choice: 'nosuchcommand'");
+    expect(r.err).toMatch(/this copy \(anona [^)]+\) is older than they are: npm install -g @anona-labs\/memory/);
+  });
+
+  it("login --help says approving claims a temporary profile", async () => {
+    const r = await run(["login", "--help"]);
+    expect(r.rc).toBe(0);
+    const flat = r.out.split(/\s+/).join(" ");
+    expect(flat).toContain("approving also claims it");
+    expect(flat).toContain("email not yet used for Anona");
+  });
 });

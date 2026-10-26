@@ -141,7 +141,25 @@ class _Parser(argparse.ArgumentParser):
         # prints too.
         if action.choices is not None and value not in action.choices:
             choices = ", ".join(repr(c) for c in action.choices)
-            raise argparse.ArgumentError(action, f"invalid choice: {value!r} (choose from {choices})")
+            message = f"invalid choice: {value!r} (choose from {choices})"
+            if action.dest == "command":
+                # The usual cause is a copy older than the docs that named the
+                # command, and the list alone never says so.
+                from anona import __version__
+
+                message += (
+                    f". If the docs name `{value}`, this copy (anona {__version__}) is "
+                    "older than they are: pip install -U anona"
+                )
+            raise argparse.ArgumentError(action, message)
+
+
+# Claiming has no command of its own -- it is what `login` does when a
+# temporary profile is stored -- so `login --help` is where it must be said.
+_LOGIN_DESCRIPTION = (
+    "Approve access in a browser: the command line, then MCP. "
+    "With a temporary profile stored (from `anona start`), approving also claims it: the account you sign in with, which needs an email not yet used for Anona, takes over the profile and everything in it."
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -166,7 +184,7 @@ def _parser() -> argparse.ArgumentParser:
         "--no-browser",
         action="store_true",
         default=argparse.SUPPRESS,
-        help="login: only print the URL; do not try to open it",
+        help="Used by `anona login` only: print the approval URL instead of opening a browser",
     )
     common.add_argument(
         "--profile",
@@ -268,7 +286,7 @@ def _parser() -> argparse.ArgumentParser:
         "--min-score",
         type=_min_score,
         default=None,
-        help="Drop memories scoring below this. Scores are near two-valued; see the docs before setting one",
+        help="Drop memories scoring below this. Scores span orders of magnitude and a correct match can score far below 0.01; see the docs before setting one",
     )
     _scope_flags(ret, "Only memories recorded with")
     ret.add_argument(
@@ -351,6 +369,7 @@ def _parser() -> argparse.ArgumentParser:
         "login",
         parents=[common],
         help="Approve access in a browser: the command line, then MCP",
+        description=_LOGIN_DESCRIPTION,
     )
     _which(li, "approve")
     lo = sub.add_parser("logout", parents=[common], help="Delete the stored credentials")
@@ -554,7 +573,8 @@ def _status(
     # ends up in pastes and logs.
     print(
         f"API key for record/retrieve/reason: {key.display()} "
-        f"(from {target.SOURCE_NAMES[key.source]})."
+        f"(from {target.SOURCE_NAMES[key.source]}). Not checked here; "
+        "`anona doctor` asks the server whether it works."
     )
     url, url_source = credential.find_base_url(base_url_flag, config)
     try:
@@ -640,11 +660,17 @@ def _store_status(requested: str | None = None) -> int:
     print(f"Credential found for {c.base_url}.")
     remaining = c.expires_at - time.time()
     if remaining > 0:
-        print(f"Stored access token expires in {int(remaining // 60)} minutes.")
+        # The minutes alone read as a deadline to act on; the token renews itself.
+        print(
+            f"Its access token expires in {int(remaining // 60)} minutes and is renewed "
+            "automatically when `anona mcp` uses it."
+        )
     else:
-        print("Stored access token has expired; a refresh is attempted on the next MCP call.")
-    print("The server may still reject it (revoked, or unused for 30 days).")
-    print("If `anona mcp` reports an authorization failure, run `anona login`.")
+        print("Its access token has expired; `anona mcp` renews it on its next call.")
+    print(
+        "Run `anona login` again only if `anona mcp` reports an authorization failure "
+        "(the login was revoked, or went unused for 30 days)."
+    )
     return 0
 
 

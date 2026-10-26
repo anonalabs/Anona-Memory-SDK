@@ -122,7 +122,10 @@ function keyStatus(
   config: ReturnType<typeof loadConfigEnv>,
   baseUrlFlag: string | undefined,
 ): number {
-  io.stdout.write(`API key for record/retrieve/reason: ${displayKey(key)} (from ${SOURCE_NAMES[key.source]}).\n`);
+  io.stdout.write(
+    `API key for record/retrieve/reason: ${displayKey(key)} (from ${SOURCE_NAMES[key.source]}). ` +
+      "Not checked here; `anona doctor` asks the server whether it works.\n",
+  );
   const [url, urlSource] = findBaseUrl(baseUrlFlag, config);
   let base: string;
   try {
@@ -184,12 +187,17 @@ function mcpStatus(io: IO, requested?: string): number {
   io.stdout.write(`Credential found for ${c.baseUrl}.\n`);
   const remaining = c.expiresAt - Date.now() / 1000;
   if (remaining > 0) {
-    io.stdout.write(`Stored access token expires in ${Math.floor(remaining / 60)} minutes.\n`);
+    // The minutes alone read as a deadline to act on; the token renews itself.
+    io.stdout.write(
+      `Its access token expires in ${Math.floor(remaining / 60)} minutes and is renewed automatically when \`anona mcp\` uses it.\n`,
+    );
   } else {
-    io.stdout.write("Stored access token has expired; a refresh is attempted on the next MCP call.\n");
+    io.stdout.write("Its access token has expired; `anona mcp` renews it on its next call.\n");
   }
-  io.stdout.write("The server may still reject it (revoked, or unused for 30 days).\n");
-  io.stdout.write("If `anona mcp` reports an authorization failure, run `anona login`.\n");
+  io.stdout.write(
+    "Run `anona login` again only if `anona mcp` reports an authorization failure " +
+      "(the login was revoked, or went unused for 30 days).\n",
+  );
   return 0;
 }
 

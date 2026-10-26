@@ -101,9 +101,9 @@ An unset flag is left out of the request. Dates are ISO 8601. `--json` output:
 `record` gives `status`, `memory_id`, `memory_ids`; `retrieve` gives
 `{"results": [...]}`; `reason` gives `{"insights", "sources", ...}`.
 
-Leave `--min-score` unset: scores are close to two-valued (about 1.1 for a
-near-verbatim match, about 0.0001 for a correct paraphrase), so a floor drops
-correct answers. `reason` takes tens of seconds; use `--depth thorough` only
+Leave `--min-score` unset: scores span orders of magnitude (about 1.1 for a
+near-verbatim match, 0.1 down to 0.00001 for a correct paraphrase), so a floor
+drops correct answers. `reason` takes tens of seconds; use `--depth thorough` only
 when a `fast` answer reads stale.
 
 ### Spaces, memories, jobs
