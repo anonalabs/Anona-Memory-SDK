@@ -98,6 +98,37 @@ In order of preference:
    says so once and gets on with the task. A memory layer that blocks work is
    worse than no memory layer.
 
+## Hooks (Claude Code)
+
+The Claude Code plugin ships hooks that keep Anona in sync without the agent
+having to remember to:
+
+| Event | What it does |
+| --- | --- |
+| `SessionStart` | Pulls what the space knows about the repo, branch and recent commits into context. |
+| `PreCompact` | Pushes a redacted excerpt of the conversation about to be compacted (prompts and assistant prose, no tool output) as an async record. |
+| `SessionStart` (`compact`) | Prompts the agent to record the facts the summary kept. |
+| `SessionEnd` | Pushes a work log: task, branch, files changed, commits made. |
+
+`hooks/anona_sync.py` is standard-library Python 3 and needs no key of its
+own. With `ANONA_API_KEY` (environment or `~/.anona/config.env`) it calls the
+REST API; without one it speaks MCP over stdio to `anona mcp`, the CLI's bridge,
+which holds and refreshes the login from `anona login`. With neither it is a
+silent no-op. It never blocks the session: recall is an async hook, and pushes
+run in a detached child. With more than
+one space visible and no `ANONA_SPACE_ID`, the pull sends `route: "auto"` with
+the repository's space as the fallback. The pushes write only to an own space
+(the repository's, once it exists, or `ANONA_SPACE_ID`), route only with
+`ANONA_HOOK_ROUTE=auto`, and are skipped while the repository has no space of
+its own: they carry raw session text, and routing or a bare name could file it
+in a space other people read. Switches: `ANONA_HOOKS=off`,
+`ANONA_HOOK_RECALL=0`, `ANONA_HOOK_DIGEST=0`, `ANONA_HOOK_WORKLOG=0`,
+`ANONA_HOOK_ROUTE=auto|off`, `ANONA_HOOK_TRANSPORT=rest|mcp`.
+
+The installer and `npx skills` do not register hooks; see
+[the docs](https://docs.anonalabs.com/integrations/skills#hooks) to add them
+by hand.
+
 ## Layout
 
 ```
