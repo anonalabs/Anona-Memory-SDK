@@ -202,6 +202,22 @@ Note the field names differ by endpoint: `retrieve` answers with `results`,
 Scope a write and a read to one end user by adding `"user_id": "customer-42"`
 to either body.
 
+When the key sees more than one space and `ANONA_SPACE_ID` is not set, let
+Anona pick (see the skill's **Which space**). Replace `space_id` with `route`
+and name a fallback:
+
+```bash
+curl -sS https://api.anonalabs.com/v1/retrieve \
+  -H "Authorization: Bearer $ANONA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"route":"auto","fallback_space_id":"my-project","query":"how is auth wired","limit":5}'
+```
+
+The response carries `searched` (a write carries `routed_to`): the space or
+spaces that were actually used. Sending both `space_id` and `route`, or neither,
+is `422 route_conflict`. The MCP `record` and `retrieve` tools take the same
+two fields; the `anona` CLI does not, so keep `--space` there.
+
 A write that should not block the caller takes `"async": true` and answers with
 a `job_id` instead of a `memory_id`. Poll it at
 `GET /v1/spaces/{space_id}/jobs/{job_id}`.
