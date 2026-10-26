@@ -666,7 +666,7 @@ const RESOURCE_COMMANDS: CommandSpec[] = [
           { flags: ["--limit"], dest: "limit", kind: "value", type: limitBetween(1, 200), typeName: "parse", help: "At most this many (1-200, default 50)" },
           { flags: ["--offset"], dest: "offset", kind: "value", ...OFFSET, help: "Skip this many first (default 0)" },
           { flags: ["--q"], dest: "q", kind: "value", help: "Only memories whose text or context contains this (case-insensitive)" },
-          { flags: ["--type"], dest: "memory_type", kind: "value", help: "Only memories of this type: fact, experience, note or summary" },
+          { flags: ["--type"], dest: "memory_type", kind: "value", help: "Only memories of this type: fact, experience, note or summary (facts a note covers are hidden unless --no-prefer-observations)" },
           {
             flags: ["--prefer-observations"],
             dest: "prefer_observations",
@@ -675,7 +675,7 @@ const RESOURCE_COMMANDS: CommandSpec[] = [
               "List a synthesized note instead of the facts behind it (the server default); " +
               "--no-prefer-observations lists both layers",
           },
-          { flags: ["--member-id"], dest: "member_id", kind: "value", help: "Only memories this member wrote; `me` for your own (shared spaces only)" },
+          { flags: ["--member-id"], dest: "member_id", kind: "value", help: "Only memories this member wrote; `me` for your own (in a personal space every memory is yours, so `me` matches them all)" },
           {
             flags: ["--tag-groups"],
             dest: "tag_groups",
@@ -897,7 +897,7 @@ export const COMMANDS: CommandSpec[] = [
         typeName: "tag_groups",
         help: "Compound tag filter: a JSON array of {tags, match} / {and} / {or} / {not}, AND-ed together and with any scope; @FILE reads it",
       },
-      { flags: ["--member-id"], dest: "member_id", kind: "value", help: "Only memories this member wrote; `me` for your own (shared spaces only)" },
+      { flags: ["--member-id"], dest: "member_id", kind: "value", help: "Only memories this member wrote; `me` for your own (in a personal space every memory is yours, so `me` matches them all)" },
       {
         flags: ["--prefer-observations"],
         dest: "prefer_observations",

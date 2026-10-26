@@ -7,12 +7,12 @@ carries each command's shape in `json_output`.
 
 | Command | Document |
 | --- | --- |
-| `record` | `{"memory_id", "memory_ids": [...], "status", "message"?, "usage"}` |
+| `record` | `{"memory_id", "memory_ids": [...], "status", "message"?, "usage", "routed_to"}` |
 | `record --async` | `{"job_id", "status"}` |
-| `record --batch` | `{"job_id", "job_ids", "status", "accepted"}` |
+| `record --batch` | `{"job_id", "job_ids", "status", "accepted"}` (`job_ids` null unless the batch was split) |
 | any `--wait` | `{"submitted": <the submit document>, "jobs": [<jobs get>...]}` |
 | `retrieve` | `{"results": [{"memory_id", "content", "relevance_score", "memory_type", "tags", ...}]}` |
-| `retrieve --format block` | `{"results": [...], "context", "token_estimate"}` |
+| `retrieve --format block` | `{"results": [...], "context", "token_estimate", "usage"}` |
 | `reason` | `{"insights", "sources": {"models", "memories", "notes"}, "rules_applied", "model", "usage"}` |
 | `spaces list` | `{"spaces": [{"space_id", "name", "description", "qualified_id", "shared_by", ...}], "total"}` |
 | `memories list` | `{"items": [{"id", "content", "type", "state", "tags", "source_ids", ...}], "total", "limit", "offset"}` |

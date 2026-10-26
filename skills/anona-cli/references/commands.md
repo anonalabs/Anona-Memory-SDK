@@ -37,7 +37,8 @@ anona reason "..." --space S --json --user-id alice             # same scope fla
   correct answers.
 - `--tag-groups JSON` (or `@file.json`) is a compound filter:
   `[{"or": [{"tags": ["project:alpha"]}, {"tags": ["project:beta"]}]}, {"not": {"tags": ["status:archived"]}}]`.
-- `--member-id me` limits to what you wrote, in a shared space.
+- `--member-id me` limits to what you wrote in a shared space. In a personal
+  space every memory is yours, so it matches them all.
 - `--tags` with the default `--tags-match any` (or `all`) also returns memories
   with no tags at all: untagged memories match every non-strict filter. Use
   `any_strict`, `all_strict` or `exact` to exclude them.
@@ -95,6 +96,7 @@ anona memories list --space S --json --limit 50 --q pnpm     # text or context, 
 anona memories list --space S --json --member-id me
 anona memories list --space S --json --limit 50 --offset 50     # the next page
 anona memories list --space S --json --type note                # fact, note, experience, summary
+anona memories list --space S --json --type fact --no-prefer-observations  # facts a note covers are hidden by default
 anona memories list --space S --json --user-id alice            # also --agent-id, --session-id
 anona memories list --space S --json --no-prefer-observations   # notes and the facts behind them
 anona memories edit MEMORY_ID --text "Corrected sentence." --reason "was wrong" --space S --json

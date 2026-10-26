@@ -457,6 +457,24 @@ def test_status_names_the_key_source_and_only_its_prefix(tmp_path):
     """, tmp_path))
 
 
+def test_status_with_a_key_introduces_the_stored_profile_as_mcps(tmp_path):
+    """The stored temporary profile is what `anona mcp` uses. Printed bare
+    after the key, its "Temporary profile ... claim it" line read as the
+    credential the data commands were using."""
+    ok(_run("""
+        temp_profile()
+        key = "anona_live_abc1" + "Z" * 40
+        rc, out, err = run_main(["status", "--api-key", key])
+        assert rc == 0, (rc, out, err)
+        lines = out.splitlines()
+        intro = "Also stored, for `anona mcp` (the data commands use the API key above):"
+        assert intro in lines, out
+        profile = next(i for i, l in enumerate(lines) if l.startswith("Temporary profile for"))
+        assert lines.index(intro) < profile, out
+        print("OK")
+    """, tmp_path))
+
+
 def test_status_without_a_key_is_unchanged(tmp_path):
     ok(_run("""
         rc, out, err = run_main(["status"])
