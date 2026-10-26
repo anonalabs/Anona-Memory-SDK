@@ -188,6 +188,34 @@ Over the CLI (`--metadata`) or REST, include `metadata` so a memory can be
 traced back: `{"source": "claude-code", "repo": "<repo name>"}`. The MCP
 `record` tool takes no `metadata`; do not put these in `tags` instead.
 
+## Saving a session on request
+
+The user may ask outright: "save this to Anona", "remember what we did",
+"export this session", or the `/anona-memory:save` command. Treat that as a
+full record pass, not as a request to store the conversation:
+
+1. Go through the whole conversation, including any compaction summary at the
+   top, and list every durable fact it settled that is not yet in Anona. If the
+   user named a topic ("save the deploy decisions"), cover only that.
+2. Apply the rules under **Record**: one fact per memory, no secrets, nothing
+   already in the repository, nothing still a hypothesis.
+3. Record each one into the session's space (see **Which space**). Skip what you
+   already recorded this session; when unsure, one `retrieve` settles it. Over
+   the CLI or REST, add `"trigger": "manual-save"` to `metadata`.
+4. End with one line: how many memories you wrote and to which space, or that
+   there was nothing new to save.
+
+Never paste the transcript, a summary of it, or an exported file as one memory.
+A blob retrieves badly and is mostly narration, and the hooks already keep a
+redacted excerpt at compaction.
+
+**An exported conversation the user hands you** (a `/export` file, or a
+conversation out of a claude.ai data export) gets the same treatment: read it
+and record the durable facts in it, one per memory. For more than a handful of
+conversations, a pass per conversation is slow and costly; suggest writing the
+facts to a JSON Lines file and loading it with `anona record --batch FILE`
+(up to 100 per call) instead.
+
 ## Compaction
 
 Compacting a conversation replaces everything said so far with a summary, and
