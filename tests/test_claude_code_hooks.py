@@ -396,3 +396,13 @@ def test_bridge_record_sends_only_what_the_mcp_tool_accepts(sync, bridge, tmp_pa
     record = next(c for c in bridge() if c["name"] == "record")["arguments"]
     assert record == {"content": "x", "space_id": "Proj"}
     assert not job.exists()
+
+
+def test_save_command_points_at_a_skill_section_that_exists():
+    plugin = HOOKS.parent
+    command = (plugin / "commands" / "save.md").read_text()
+    skill = (plugin / "skills" / "anona-memory" / "SKILL.md").read_text()
+    assert command.startswith("---\ndescription: ")
+    assert "$ARGUMENTS" in command
+    assert '"Saving a session on request"' in command
+    assert "\n## Saving a session on request\n" in skill

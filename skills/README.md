@@ -98,6 +98,12 @@ In order of preference:
    says so once and gets on with the task. A memory layer that blocks work is
    worse than no memory layer.
 
+## Saving a session
+
+Asked to save, remember or export the session, the `anona-memory` skill makes a
+full record pass, one fact per memory, and reports how many it wrote. In Claude
+Code the plugin also adds `/anona-memory:save [topic]` (`commands/save.md`).
+
 ## Hooks (Claude Code)
 
 The Claude Code plugin ships hooks that keep Anona in sync without the agent
