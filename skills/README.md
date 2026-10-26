@@ -117,9 +117,11 @@ which holds and refreshes the login from `anona login`. With neither it is a
 silent no-op. It never blocks the session: recall is an async hook, and pushes
 run in a detached child. With more than
 one space visible and no `ANONA_SPACE_ID`, the pull sends `route: "auto"` with
-the repository's space as the fallback. The pushes write to that space and
-route only with `ANONA_HOOK_ROUTE=auto`: they carry raw session text, and
-routing could file it in a space other people read. Switches: `ANONA_HOOKS=off`,
+the repository's space as the fallback. The pushes write only to an own space
+(the repository's, once it exists, or `ANONA_SPACE_ID`), route only with
+`ANONA_HOOK_ROUTE=auto`, and are skipped while the repository has no space of
+its own: they carry raw session text, and routing or a bare name could file it
+in a space other people read. Switches: `ANONA_HOOKS=off`,
 `ANONA_HOOK_RECALL=0`, `ANONA_HOOK_DIGEST=0`, `ANONA_HOOK_WORKLOG=0`,
 `ANONA_HOOK_ROUTE=auto|off`, `ANONA_HOOK_TRANSPORT=rest|mcp`.
 

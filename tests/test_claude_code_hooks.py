@@ -145,7 +145,52 @@ def test_a_read_never_names_a_fallback_that_does_not_exist(sync, monkeypatch):
     monkeypatch.setattr(sync, "repo_name", lambda cwd: "new-repo")
     spaces = FakeTransport(["a", "b"])
     assert sync.target(".", spaces, read=True) == {"route": "auto"}
-    assert sync.target(".", spaces) == {"space_id": "new-repo"}
+
+
+def test_a_write_with_no_own_space_is_skipped_not_guessed(sync, monkeypatch):
+    # By bare name, a space someone shared under the repository's name is the
+    # one a write would land in.
+    monkeypatch.setattr(sync, "repo_name", lambda cwd: "new-repo")
+    assert sync.target(".", FakeTransport(["a", "b"])) is None
+    monkeypatch.setenv("ANONA_HOOK_ROUTE", "auto")
+    assert sync.target(".", FakeTransport(["a", "b"])) is None
+    monkeypatch.setenv("ANONA_SPACE_ID", "pinned")
+    assert sync.target(".", FakeTransport(["a", "b"])) == {"space_id": "pinned"}
+
+
+def test_an_own_space_listed_qualified_is_addressed_qualified(sync, monkeypatch):
+    # Listed as own-slug:name because a share by the same name exists.
+    monkeypatch.setattr(sync, "repo_name", lambda cwd: "proj")
+    assert sync.target(".", FakeTransport(["me:Proj", "other"])) == {
+        "space_id": "me:Proj"
+    }
+
+
+def test_rest_never_offers_a_space_shared_in_from_another_org(sync, monkeypatch):
+    listing = {
+        "spaces": [
+            {"space_id": "proj", "shared_by": "Someone Else Inc"},
+            {"space_id": "mine", "shared_by": None},
+        ]
+    }
+    monkeypatch.setattr(sync, "_request", lambda *a, **k: listing)
+    assert sync.Rest().spaces() == ["mine"]
+
+
+def test_send_skips_when_there_is_no_own_space(sync, tmp_path, monkeypatch):
+    sent = []
+
+    class Spy(FakeTransport):
+        def record(self, payload):
+            sent.append(payload)
+            return "ok"
+
+    monkeypatch.setattr(sync, "transport", lambda: Spy(["unrelated"]))
+    monkeypatch.setattr(sync, "repo_name", lambda cwd: "proj")
+    job = tmp_path / "job.json"
+    job.write_text(json.dumps({"payload": {"content": "x"}, "cwd": "."}))
+    sync._send(str(job))
+    assert sent == [] and not job.exists()
 
 
 def test_recalled_text_is_fenced_and_cannot_close_the_fence(sync, monkeypatch, capsys):

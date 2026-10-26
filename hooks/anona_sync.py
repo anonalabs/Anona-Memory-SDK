@@ -40,7 +40,8 @@ as data, never sourced):
   ANONA_HOOK_DIGEST    "0" disables the pre-compact digest
   ANONA_HOOK_WORKLOG   "0" disables the session-end work log
   ANONA_HOOK_ROUTE     default: reads route when more than one space is
-                       visible, writes go to the repository's space. "auto"
+                       visible; writes go only to the repository's own
+                       space, and are skipped while it has none. "auto"
                        routes writes too; "off" routes nothing
 
 Standard library only, so it runs wherever python3 does.
@@ -250,8 +251,12 @@ class Rest:
         resp = _request("GET", "/v1/spaces/", None, timeout=3.0)
         if not resp or "_status" in resp:
             return None
+        # Own spaces only. A space shared in from another organization is
+        # listed with `shared_by`; it is never a place this hook may write to.
         return [
-            s.get("space_id") for s in resp.get("spaces") or [] if s.get("space_id")
+            s.get("space_id")
+            for s in resp.get("spaces") or []
+            if s.get("space_id") and not s.get("shared_by")
         ]
 
     def retrieve(self, query: str, where: dict, timeout: float) -> str | None:
@@ -390,6 +395,8 @@ class Mcp:
             self.proc.kill()
 
     def spaces(self) -> list[str] | None:
+        # The MCP listing holds the caller's own spaces only; one that shares a
+        # name with a share they hold appears qualified, as `own-slug:name`.
         out = self._tool("list_spaces", {}, timeout=10.0)
         if out is None or out[0]:
             return None
@@ -466,47 +473,71 @@ def _spaces(t) -> list[str]:
     return spaces
 
 
-def target(cwd: str, t=None, *, read: bool = False) -> dict:
-    """The space selector for a request, following the skill's order.
+def _own_match(home: str, spaces: list[str]) -> str | None:
+    """The caller's own space this repository means, by exact id if possible.
 
-    A pinned ANONA_SPACE_ID always wins. Otherwise, when there is more than one
-    space to choose from, a read lets Anona route (`route: "auto"`) with the
-    repository's space as the fallback. With one space or none, routing has
-    nothing to choose between and only costs a decision, so name the space
-    directly.
+    Space ids are case-sensitive and the repository name is lowercased, so a
+    checkout of `anona-memory` means an existing `Anona-memory`. An own space
+    listed in its qualified `own-slug:name` form (because a share by the same
+    name exists) is matched on its name and returned qualified, which is the
+    only unambiguous way to address it.
+    """
 
-    Writes do NOT route unless ANONA_HOOK_ROUTE=auto says so. What a hook
-    writes is raw session text the agent never judged, and routing chooses
-    among every space the caller can see: one shared from another
-    organization, or one a Slack channel or GitHub repository reads from. A
-    conversation excerpt filed there is disclosed to everyone on that space.
-    The agent's own records, made under the skill, still route: it chose
-    each fact.
+    def name(space: str) -> str:
+        return space.split(":", 1)[1] if ":" in space else space
 
-    Space ids are case-sensitive and the repository name is lowercased, so the
-    fallback is matched against the spaces that exist: `Anona-memory` is the
-    space a checkout of `anona-memory` means. A read must not name a fallback
-    that does not exist (it is an error, where a write would create it).
+    for same in (lambda a, b: a == b, lambda a, b: a.lower() == b.lower()):
+        for space in spaces:
+            if same(name(space), home):
+                return space
+    return None
+
+
+def target(cwd: str, t=None, *, read: bool = False) -> dict | None:
+    """The space selector for a request, or None when a write must not happen.
+
+    A pinned ANONA_SPACE_ID always wins.
+
+    Reads: with more than one space to choose from, let Anona route
+    (`route: "auto"`) with the repository's space as the fallback; with one
+    space or none, name it directly. A read never names a fallback that does
+    not exist, because that is an error.
+
+    Writes go only to a space confirmed to be the caller's own. What a hook
+    writes is raw session text the agent never judged, so two things that are
+    fine for a read are refused for a write:
+
+    * Routing. It chooses among every visible space, including one shared from
+      another organization or one a Slack channel or GitHub repository reads
+      from, and an excerpt filed there is disclosed to everyone on it. Only
+      ANONA_HOOK_ROUTE=auto turns it on, and even then the fallback must be an
+      own space.
+    * A bare name with no own space behind it. Addressed by bare name, a space
+      someone else shared with you under the repository's name is the one the
+      write would land in. So when the repository has no own space yet, the
+      push is skipped (None) rather than guessed at. The skill's first record,
+      the dashboard, or a pinned ANONA_SPACE_ID gives it one.
     """
     pinned = setting("ANONA_SPACE_ID")
     if pinned:
         return {"space_id": pinned}
     home = repo_name(cwd) or "default"
     mode = setting("ANONA_HOOK_ROUTE").lower()
-    # Listed for writes too: the case-insensitive match is what keeps a write
-    # out of a new lowercase twin of the space that already exists.
     spaces = _spaces(t) if t is not None else []
-    match = next((s for s in spaces if s == home), None) or next(
-        (s for s in spaces if s.lower() == home.lower()), None
-    )
-    home = match or home
-    if mode in ("off", "0", "false", "no"):
-        return {"space_id": home}
-    if mode == "auto" or (read and len(spaces) > 1):
-        if read and match is None:
-            return {"route": "auto"}
-        return {"route": "auto", "fallback_space_id": home}
-    return {"space_id": home}
+    match = _own_match(home, spaces)
+    if not read:
+        if match is None:
+            return None
+        if mode == "auto":
+            return {"route": "auto", "fallback_space_id": match}
+        return {"space_id": match}
+    if mode not in ("off", "0", "false", "no") and (mode == "auto" or len(spaces) > 1):
+        return (
+            {"route": "auto", "fallback_space_id": match}
+            if match
+            else {"route": "auto"}
+        )
+    return {"space_id": match or home}
 
 
 # ---------------------------------------------------------------- transcript
@@ -806,7 +837,10 @@ def _send(path: str) -> None:
         t = transport()
         if t is None:
             return
-        payload = {**job["payload"], **target(job["cwd"], t)}
+        where = target(job["cwd"], t)
+        if where is None:
+            return  # no own space to write to; never guess at a bare name
+        payload = {**job["payload"], **where}
         if t.record(payload) == "refused" and "route" in payload:
             # Routing refused to place it (a definite non-write, unlike a
             # timeout, which may have stored it): file it in the fallback space
