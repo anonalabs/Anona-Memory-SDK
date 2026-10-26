@@ -232,7 +232,7 @@ def add_parsers(sub, common: argparse.ArgumentParser, space_help: str, key_help:
     ls.add_argument("--limit", type=_limit(1, 200), default=None, help="At most this many (1-200, default 50)")
     ls.add_argument("--offset", type=_offset, default=None, help="Skip this many first (default 0)")
     ls.add_argument("--q", default=None, help="Only memories whose text or context contains this (case-insensitive)")
-    ls.add_argument("--type", default=None, dest="memory_type", help="Only memories of this type: fact, experience, note or summary")
+    ls.add_argument("--type", default=None, dest="memory_type", help="Only memories of this type: fact, experience, note or summary (facts a note covers are hidden unless --no-prefer-observations)")
     ls.add_argument(
         "--prefer-observations",
         action=argparse.BooleanOptionalAction,
@@ -243,7 +243,7 @@ def add_parsers(sub, common: argparse.ArgumentParser, space_help: str, key_help:
     ls.add_argument(
         "--member-id",
         default=None,
-        help="Only memories this member wrote; `me` for your own (shared spaces only)",
+        help="Only memories this member wrote; `me` for your own (in a personal space every memory is yours, so `me` matches them all)",
     )
     ls.add_argument(
         "--tag-groups",

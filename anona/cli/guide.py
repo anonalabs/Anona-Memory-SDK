@@ -80,7 +80,7 @@ CREDENTIAL_NOTES = (
 )
 
 COMMON_ERRORS = (
-    ("exit 4, `no credential`", "run `anona login --cli`, set ANONA_API_KEY, or `anona start`"),
+    ("exit 4, `no credential`", "a data command found nothing to send; run `anona login --cli`, set ANONA_API_KEY, or `anona start`"),
     ("exit 2, `an API key needs a space`", "pass --space NAME or set ANONA_SPACE_ID; `anona spaces list` shows them"),
     ("exit 4, `the stored `anona login` credential is for MCP`", "run `anona login --cli` to sign the command line in"),
     ("exit 4, `refusing to send the API key ... to <host>`", "pass --api-key and --base-url together, or unset ANONA_BASE_URL"),
@@ -102,6 +102,11 @@ COMMON_ERRORS = (
     ("exit 7, `could not reach`", "check the network and `anona doctor`; a write that timed out may still have been stored"),
     ("exit 8 from --wait", "the job is still running; check later with `anona jobs get JOB_ID`"),
     ("exit 1, `unsupported_file_type` / `file_too_large`", "documents upload: the server's message names the supported types and limits"),
+    ("exit 1 from `anona status`, `Not logged in`", "nothing is stored; status only reports that. Run `anona start` or `anona login`"),
+    ("exit 1 from a second `anona start`", "a temporary profile already exists here; keep using it (`anona status` shows its deadline)"),
+    ("exit 1 from `anona logout`", "it will not discard an unclaimed temporary profile; claim it with `anona login` first"),
+    ("exit 1, `job_not_cancellable`", "the job has already finished; `anona jobs get JOB_ID` shows how it ended"),
+    ("exit 1, `unsupported_model`", "that model id is not offered; `anona llm-models` lists the ones that are"),
 )
 
 # One example per command. Each must parse (a test runs every one through
@@ -152,10 +157,10 @@ EXAMPLES: dict[str, str] = {
 # What --json prints, per command (the API's response unless noted).
 JSON_SHAPES: dict[str, str] = {
     "start": "no --json; prints the profile's deadline",
-    "record": '{"memory_id","memory_ids":[...],"status","message"?,"usage"}; --async: {"job_id","status"}; '
-    '--batch: {"job_id","job_ids","status","accepted"}; with --wait: {"submitted":<that>,"jobs":[<jobs get>...]}',
+    "record": '{"memory_id","memory_ids":[...],"status","message"?,"usage","routed_to"(null on an addressed write)}; --async: {"job_id","status"}; '
+    '--batch: {"job_id","job_ids"(null unless the batch was split),"status","accepted"}; with --wait: {"submitted":<that>,"jobs":[<jobs get>...]}',
     "retrieve": '{"results":[{"memory_id","content","relevance_score","memory_type","tags",...}]}; '
-    '--format block: {"results":[...],"context","token_estimate"}',
+    '--format block: {"results":[...],"context","token_estimate","usage"}',
     "reason": '{"insights","sources":{"models","memories","notes"},"rules_applied":[...],"model","usage"}',
     "spaces list": '{"spaces":[{"space_id","name","description","qualified_id","shared_by",...}],"total"}',
     "spaces create": '{"space_id","name","description","created_at","space_type",...}',

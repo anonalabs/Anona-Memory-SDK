@@ -313,7 +313,7 @@ def _parser() -> argparse.ArgumentParser:
     ret.add_argument(
         "--member-id",
         default=None,
-        help="Only memories this member wrote; `me` for your own (shared spaces only)",
+        help="Only memories this member wrote; `me` for your own (in a personal space every memory is yours, so `me` matches them all)",
     )
     ret.add_argument(
         "--prefer-observations",
@@ -570,6 +570,9 @@ def _status(
         return 0
     # The stored credential is still worth describing: it is what `anona mcp`
     # uses. Its exit code does not decide this one -- the key works either way.
+    # Introduced as such, or its "Temporary profile ..." line reads as the
+    # credential this command just said the key had replaced.
+    print("Also stored, for `anona mcp` (the data commands use the API key above):")
     _store_status(None)
     return 0
 

@@ -265,6 +265,20 @@ describe("data command credentials", () => {
     expect(r.rc).toBe(4);
   });
 
+  it("status with a key introduces the stored profile as anona mcp's", async () => {
+    // Printed bare after the key, the profile's "claim it" line read as the
+    // credential the data commands were using.
+    writeMcpFile({ base: srv.base, tempHours: 1 });
+    const key = "anona_live_abc1" + "Z".repeat(40);
+    const r = await run(["status", "--api-key", key]);
+    expect(r.rc).toBe(0);
+    const lines = r.out.split("\n");
+    const intro = "Also stored, for `anona mcp` (the data commands use the API key above):";
+    expect(lines).toContain(intro);
+    const profile = lines.findIndex((l) => l.startsWith("Temporary profile for"));
+    expect(profile).toBeGreaterThan(lines.indexOf(intro));
+  });
+
   it("status without a key is unchanged", async () => {
     let r = await run(["status"]);
     expect([r.rc, r.out.trim()]).toEqual([1, "Not logged in. Run `anona login`."]);

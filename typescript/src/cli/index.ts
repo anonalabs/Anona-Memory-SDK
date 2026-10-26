@@ -141,6 +141,9 @@ function keyStatus(
     io.stdout.write("No `anona login` credential is stored for MCP (that one is for `anona mcp`).\n");
     return 0;
   }
+  // Introduced as such, or its "Temporary profile ..." line reads as the
+  // credential this command just said the key had replaced.
+  io.stdout.write("Also stored, for `anona mcp` (the data commands use the API key above):\n");
   mcpStatus(io);
   return 0;
 }
