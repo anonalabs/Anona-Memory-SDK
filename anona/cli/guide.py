@@ -105,6 +105,7 @@ COMMON_ERRORS = (
     ("exit 1 from `anona status`, `Not logged in`", "nothing is stored; status only reports that. Run `anona start` or `anona login`"),
     ("exit 1 from a second `anona start`", "a temporary profile already exists here; keep using it (`anona status` shows its deadline)"),
     ("exit 1 from `anona logout`", "it will not discard an unclaimed temporary profile; claim it with `anona login` first"),
+    ("exit 1, `memory_not_editable`", "only facts and experiences can be edited; a note is rebuilt from them, so edit a fact it came from"),
     ("exit 1, `job_not_cancellable`", "the job has already finished; `anona jobs get JOB_ID` shows how it ended"),
     ("exit 1, `unsupported_model`", "that model id is not offered; `anona llm-models` lists the ones that are"),
 )
@@ -157,7 +158,7 @@ EXAMPLES: dict[str, str] = {
 # What --json prints, per command (the API's response unless noted).
 JSON_SHAPES: dict[str, str] = {
     "start": "no --json; prints the profile's deadline",
-    "record": '{"memory_id","memory_ids":[...],"status","message"?,"usage","routed_to"(null on an addressed write)}; --async: {"job_id","status"}; '
+    "record": '{"memory_id","memory_ids":[...],"status","message"?,"usage","routed_to"(null on an addressed write)}; --async: the same keys, with "job_id" set and "status":"processing"; '
     '--batch: {"job_id","job_ids"(null unless the batch was split),"status","accepted"}; with --wait: {"submitted":<that>,"jobs":[<jobs get>...]}',
     "retrieve": '{"results":[{"memory_id","content","relevance_score","memory_type","tags",...}]}; '
     '--format block: {"results":[...],"context","token_estimate","usage"}',

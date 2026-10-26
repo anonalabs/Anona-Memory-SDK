@@ -32,9 +32,9 @@ anona reason "..." --space S --json --user-id alice             # same scope fla
 - `--timestamp` is when the event happened, for importing history.
 - `--occurred-after` / `--occurred-before` filter on when the event happened;
   `--as-of` on when it was recorded ("what did we know on this date").
-- Leave `--min-score` unset: scores are near two-valued (about 1.1 for a
-  near-verbatim match, about 0.0001 for a correct paraphrase), so a floor drops
-  correct answers.
+- Leave `--min-score` unset: scores span orders of magnitude (about 1.1 for a
+  near-verbatim match, 0.1 down to 0.00001 for a correct paraphrase), so a
+  floor drops correct answers.
 - `--tag-groups JSON` (or `@file.json`) is a compound filter:
   `[{"or": [{"tags": ["project:alpha"]}, {"tags": ["project:beta"]}]}, {"not": {"tags": ["status:archived"]}}]`.
 - `--member-id me` limits to what you wrote in a shared space. In a personal

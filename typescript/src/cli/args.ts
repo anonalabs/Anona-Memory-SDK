@@ -58,6 +58,8 @@ export interface PositionalSpec {
 export interface CommandSpec {
   name: string;
   help: string;
+  /** Printed under the usage line of this command's own --help. */
+  description?: string;
   positionals?: PositionalSpec[];
   options?: OptionSpec[];
   /** Subcommands, chosen by the first positional (stored as `action`). */
@@ -425,7 +427,7 @@ export const COMMON_OPTIONS: OptionSpec[] = [
       `${DEFAULT_BASE_URL_TEXT} for login and start. A stored login or ` +
       "temporary profile always uses the server that issued it",
   },
-  { flags: ["--no-browser"], dest: "no_browser", kind: "store_true", help: "login: only print the URL; do not try to open it" },
+  { flags: ["--no-browser"], dest: "no_browser", kind: "store_true", help: "Used by `anona login` only: print the approval URL instead of opening a browser" },
   {
     flags: ["--profile"],
     dest: "profile",
@@ -866,7 +868,7 @@ export const COMMANDS: CommandSpec[] = [
         kind: "value",
         type: minScore,
         typeName: "_min_score",
-        help: "Drop memories scoring below this. Scores are near two-valued; see the docs before setting one",
+        help: "Drop memories scoring below this. Scores span orders of magnitude and a correct match can score far below 0.01; see the docs before setting one",
       },
       ...scope("Only memories recorded with"),
       {
@@ -934,7 +936,18 @@ export const COMMANDS: CommandSpec[] = [
     ],
   },
   ...RESOURCE_COMMANDS,
-  { name: "login", help: "Approve access in a browser: the command line, then MCP", options: which("approve") },
+  {
+    name: "login",
+    help: "Approve access in a browser: the command line, then MCP",
+    // Claiming has no command of its own -- it is what `login` does when a
+    // temporary profile is stored -- so `login --help` is where it must be said.
+    description:
+      "Approve access in a browser: the command line, then MCP. " +
+      "With a temporary profile stored (from `anona start`), approving also claims it: " +
+      "the account you sign in with, which needs an email not yet used for Anona, " +
+      "takes over the profile and everything in it.",
+    options: which("approve"),
+  },
   {
     name: "logout",
     help: "Delete the stored credentials",
@@ -1150,6 +1163,7 @@ function usageLine(prog: string, spec: CommandSpec | null): string {
 
 export function commandHelp(prog: string, spec: CommandSpec): string {
   let out = usageLine(prog, spec);
+  if (spec.description) out += "\n" + wrap(spec.description, 79).join("\n") + "\n";
   const positionals = spec.positionals ?? [];
   if (positionals.length || spec.actions) {
     out += "\npositional arguments:\n";
@@ -1358,7 +1372,11 @@ function parseOrThrow(argv: string[], io: Out, version: string): Parsed {
       throw new UsageError(
         "anona",
         null,
-        `argument command: invalid choice: '${tok}' (choose from ${COMMANDS.map((c) => `'${c.name}'`).join(", ")})`,
+        `argument command: invalid choice: '${tok}' (choose from ${COMMANDS.map((c) => `'${c.name}'`).join(", ")})` +
+          // The usual cause is a copy older than the docs that named the
+          // command, and the list alone never says so.
+          `. If the docs name \`${tok}\`, this copy (anona ${version}) is older than they are: ` +
+          "npm install -g @anona-labs/memory",
       );
     }
     i++;

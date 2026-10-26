@@ -64,15 +64,15 @@ describe("anona command", () => {
     const t = io();
     expect(await main(["status"], t)).toBe(0);
     expect(t.o()).toContain(as.base);
-    expect(t.o()).toMatch(/Credential found for .*\n.*Stored access token expires in \d+ minutes/);
-    expect(t.o()).toMatch(/may still reject it/);
+    expect(t.o()).toMatch(/Credential found for .*\n.*Its access token expires in \d+ minutes and is renewed automatically/);
+    expect(t.o()).toMatch(/only if `anona mcp` reports an authorization failure/);
     expect(t.o() + t.e()).not.toMatch(/SECRET|cid-1/);
   });
   it("status explains an expired access token as normal", async () => {
     seed(as.base, { offset: -100 });
     const t = io();
     expect(await main(["status"], t)).toBe(0);
-    expect(t.o()).toMatch(/Stored access token has expired; a refresh is attempted/);
+    expect(t.o()).toMatch(/Its access token has expired; `anona mcp` renews it/);
     expect(t.o()).not.toMatch(/Logged in/);
   });
   it("logout deletes the credential", async () => {

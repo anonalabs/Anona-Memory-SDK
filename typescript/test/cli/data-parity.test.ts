@@ -103,7 +103,14 @@ function normalise(err: string): string {
     inUsage = false;
     kept.push(l);
   }
-  return kept.join("\n");
+  // Each package names its own version and upgrade command on an unknown
+  // command; the rest of the message is the same.
+  return kept
+    .join("\n")
+    .replace(
+      /this copy \(anona [^)]*\) is older than they are: (?:pip install -U anona|npm install -g @anona-labs\/memory)/g,
+      "this copy (anona V) is older than they are: UPGRADE",
+    );
 }
 
 /** doctor: the runtime is legitimately different; everything else is compared. */
