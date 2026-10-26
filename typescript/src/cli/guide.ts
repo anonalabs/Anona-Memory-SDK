@@ -73,7 +73,7 @@ export const COMMON_ERRORS: ReadonlyArray<readonly [string, string]> = [
   ["exit 4, `the stored `anona login` credential is for MCP`", "run `anona login --cli` to sign the command line in"],
   ["exit 4, `refusing to send the API key ... to <host>`", "pass --api-key and --base-url together, or unset ANONA_BASE_URL"],
   ["exit 3 from record", "nothing was extracted; re-record with a sentence of context"],
-  ["exit 5, `space_not_found`", "check the id with `anona spaces list` (a shared space may need owner:name)"],
+  ["exit 5, `space_not_found`", "check the id with `anona spaces list` (a shared space may need owner:name; a temporary profile has only `default`)"],
   ["exit 5, `job_not_found`", "jobs get / --wait: that id is not a job in this space; check --space"],
   [
     "exit 4, `temp_profile_single_space`",
