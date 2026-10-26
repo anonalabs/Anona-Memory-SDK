@@ -116,7 +116,7 @@ def run_start(base_url: str) -> int:
         print(f"anona start: could not save the profile to {store.path()}: {exc.strerror}.", file=sys.stderr)
         return 1
     print(f"Temporary profile created. It {describe_deadline(deadline)}.")
-    print("Nothing warns you before then: run `anona status` to check, and")
+    print("The only reminder comes in the last 24 hours: run `anona status` to check, and")
     print("`anona login` to claim it and keep what it holds.")
     print("Its space, `default`, is normally created now; if a retrieve reports no space, the first memory you write creates it.")
     return 0
