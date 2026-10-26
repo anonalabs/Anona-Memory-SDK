@@ -17,6 +17,8 @@ export interface Seen {
   method: string;
   path: string;
   query: Record<string, string>;
+  /** The query string as sent, for a key that repeats. */
+  search: string;
   body: any;
   auth: string | undefined;
   /** The raw request body, for multipart. */
@@ -24,7 +26,16 @@ export interface Seen {
   contentType: string;
 }
 
-export type Reply = { status: number; body?: unknown; headers?: Record<string, string>; raw?: string; hang?: boolean };
+/** A body written in pieces with a pause before each, optionally promising more than it sends and then dropping the connection. */
+export interface StreamBody {
+  chunks: string[];
+  delayMs: number;
+  /** Content-Length to announce; larger than the chunks add up to makes a download that dies. */
+  length?: number;
+  die?: boolean;
+}
+
+export type Reply = { status: number; body?: unknown; headers?: Record<string, string>; raw?: string; hang?: boolean; stream?: StreamBody };
 export type Responder = (seen: Seen) => Reply;
 
 export interface DataServer {
@@ -48,6 +59,7 @@ export async function startDataServer(respond: Responder): Promise<DataServer> {
         method: req.method ?? "",
         path: url.pathname,
         query: Object.fromEntries(url.searchParams),
+        search: url.search,
         // JSON for the API; the OAuth token endpoint takes a form.
         body: !raw ? null : ctype.includes("json") ? JSON.parse(raw) : ctype.includes("multipart") ? null : Object.fromEntries(new URLSearchParams(raw)),
         auth: req.headers.authorization,
@@ -58,6 +70,22 @@ export async function startDataServer(respond: Responder): Promise<DataServer> {
       const reply = state.respond(seen);
       // Never answer: what a server that has gone quiet looks like.
       if (reply.hang) return;
+      if (reply.stream) {
+        const st = reply.stream;
+        const len = st.length ?? st.chunks.reduce((n, c) => n + Buffer.byteLength(c), 0);
+        res.writeHead(reply.status, { "content-type": "application/zip", "content-length": String(len), ...(reply.headers ?? {}) });
+        void (async () => {
+          for (const c of st.chunks) {
+            await new Promise((r) => setTimeout(r, st.delayMs));
+            res.write(c);
+          }
+          if (st.die) {
+            await new Promise((r) => setTimeout(r, st.delayMs));
+            res.destroy();
+          } else res.end();
+        })();
+        return;
+      }
       if (reply.body === undefined && reply.raw === undefined) {
         res.writeHead(reply.status, reply.headers ?? {});
         res.end();

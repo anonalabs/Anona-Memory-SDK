@@ -20,6 +20,13 @@ carries each command's shape in `json_output`.
 | `documents list` | `{"documents": [{"document_id", "source", "created_at", "memory_count", "tags"}], "total", "limit", "offset"}` |
 | `jobs get` | `{"job_id", "status", "created_at", "completed_at", "error", "memory_count", "memory_ids", "items_submitted", "zero_yield_items", "progress"}` |
 | `jobs cancel` | `{"job_id", "status", "cancelled_parts", "running_parts"}` |
+| `models list` | `{"items": [{"id", "name", "query", "tags", "is_stale", ...}], "total", "limit", "offset"}` |
+| `models create`, `models refresh` | `{"model_id", "job_id", "status"}` (poll `jobs get`) |
+| `rules list` | `{"items": [{"id", "name", "content", "priority", "is_active", "tags"}], "total"}` |
+| `webhooks create` | `{"id", "url", "event_types", "enabled", "secret"}` (the secret is shown only here) |
+| `graph` | `{"nodes", "edges", "total_entities", "total_edges"}` |
+| `org`, `orgs list`, `keys list`, `billing`, `usage --history` | the control-plane document as the API returns it; `keys list` never has a secret |
+| `exports download` | `{"job_id", "path", "bytes"}` |
 | any delete | `{"deleted": true, ...ids}` (written by the CLI) |
 | any settings `reset` | `{"reset": true, "space_id", "settings"}` |
 | `doctor` | `{"credential": {"kind", "source", "why", ...}, "health": {"ok", ...}, "space": {"id", "accessible", ...}, "credits": {"remaining", "exhausted", ...}, "ok"}` |
@@ -86,7 +93,7 @@ which is lowercase snake_case: `space_not_found`, `space_ambiguous`,
 `space_owner_only`, `space_read_only`, `temp_profile_single_space`, `job_not_found`,
 `validation_error`, `reserved_tag`, `invalid_scope`, `rate_limited`,
 `credits_exhausted`, `reason_timeout`, `write_status_unknown`,
-`unsupported_file_type`, `file_too_large`. A failure to connect is
+`unsupported_file_type`, `file_too_large`, `session_required`. A failure to connect is
 `anona: could not reach <host>: ...`, never an HTTP status.
 
 `temp_profile_single_space` (exit `4`): a temporary profile has only the
@@ -97,3 +104,6 @@ which is lowercase snake_case: `space_not_found`, `space_ambiguous`,
 `write_status_unknown` means the write timed out server-side and **may have
 landed**: read back before retrying. `reason_timeout` means ask something
 narrower, or retry with `--depth fast`.
+
+`session_required` (exit `4`): the command reads the control plane and an API
+key or temporary profile cannot. Run `anona login --cli`.

@@ -1005,11 +1005,17 @@ def _main(argv: list[str] | None = None) -> int:
     if args.command in verbs.COMMANDS:
         # Usage first, as above: nothing is looked up or sent for a command
         # that is wrong.
+        from . import resources
+
+        if resources.is_dashboard_only(verbs.verb_of(args)):
+            # Said before any credential is read: it needs none, and a script
+            # that cannot do this from here should learn so on any machine.
+            return resources.refuse_dashboard(verbs.verb_of(args), args)
         bad = verbs.precheck(args)
         if bad is not None:
             return bad
         got = _data_credential(
-            args, base_url, requested, need_space=verbs.verb_of(args) in verbs.SPACE_VERBS
+            args, base_url, requested, need_space=verbs.needs_space(verbs.verb_of(args))
         )
         if isinstance(got, int):
             return got

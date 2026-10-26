@@ -26,6 +26,7 @@ import type { RequestOptions } from "../http.js";
 import { readErrorName, readUtf8 } from "./args.js";
 import { redact } from "./credential.js";
 import * as exits from "./exits.js";
+import { given, LINK_REFUSED } from "./fmt.js";
 import { isObject, printable, printableBlock, pyJson, pyStr, truthy, g3 } from "./py.js";
 import { cliCredentialsPath, isSignedIn, liveTempToken, loadCredentials } from "./store.js";
 import { accessToken, CLI_RELOGIN, NotLoggedIn } from "./tokens.js";
@@ -167,6 +168,12 @@ export function retryingFetch(stderr: DataIO["stderr"], inner: typeof fetch = gl
 
 /** The SDK client, plus a raw call for the routes where the CLI sends exactly what the pip package sends. */
 export class CliClient extends Anona {
+  /**
+   * What a download needs to talk to the API outside the SDK's JSON path: the
+   * credential, the server, and the same retrying transport. Set by makeClient.
+   */
+  link: { token: string; baseUrl: string; fetch: typeof fetch; rawFetch: typeof fetch; timeoutMs: number } | null = null;
+
   raw<T = unknown>(options: RequestOptions): Promise<T> {
     return this.http.request<T>(options);
   }
@@ -176,15 +183,20 @@ export class CliClient extends Anona {
 export const transport: { fetch?: typeof fetch } = {};
 
 export function makeClient(token: string, baseUrl: string, stderr: DataIO["stderr"]): CliClient {
-  return new CliClient({
+  const fetchImpl = retryingFetch(stderr, transport.fetch);
+  const client = new CliClient({
     apiKey: token,
     baseUrl,
     // Retries happen in retryingFetch, which is also where the per-attempt
     // timeout lives; the client's own timer is only a backstop.
     maxRetries: 0,
     timeoutMs: 2_000_000_000,
-    fetch: retryingFetch(stderr, transport.fetch),
+    fetch: fetchImpl,
   });
+  // rawFetch has no timer of its own: a download's body is bounded by the idle clock in resources.ts.
+  const rawFetch = transport.fetch ?? globalThis.fetch.bind(globalThis);
+  client.link = { token, baseUrl: baseUrl.replace(/\/+$/, ""), fetch: fetchImpl, rawFetch, timeoutMs: (OPTIONS.timeout ?? DEFAULT_TIMEOUT_S) * 1000 };
+  return client;
 }
 
 // --- credentials --------------------------------------------------------------
@@ -329,6 +341,9 @@ export async function invoke<T>(
   }
 }
 
+/** A presigned download link that answered a non-2xx (see LINK_REFUSED). */
+const linkRefused = (e: AnonaError) => isTransport(e) && e.code === LINK_REFUSED;
+
 /** No server answered at all: the SDK wraps the fetch failure as its detail. */
 export function isTransport(e: AnonaError): boolean {
   return e.detail instanceof Error;
@@ -396,6 +411,12 @@ function messageOf(e: AnonaError): string {
  * the one exits.ts gives that outcome.
  */
 export function fail(io: DataIO, e: AnonaError, baseUrl: string): number {
+  if (linkRefused(e)) {
+    // The link, not the API, refused: it expired or was never good. A fresh
+    // `download` asks the API for a new one.
+    io.stderr.write(`anona: download link expired or refused (HTTP ${e.statusCode}); run download again.\n`);
+    return exits.UNAVAILABLE;
+  }
   if (isTransport(e)) {
     io.stderr.write(`anona: could not reach ${printable(hostOf(baseUrl))}: ${printable(transportReason(e))}\n`);
     return exits.UNAVAILABLE;
@@ -467,10 +488,7 @@ export function emitJson(io: DataIO, doc: unknown): void {
   io.stdout.write(pyJson(doc) + "\n");
 }
 
-/** Only what the caller named: an unset flag is omitted, never sent as a default. */
-export function given(values: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(values).filter(([, v]) => v !== undefined && v !== null));
-}
+export { given };
 
 // --- what a record response says happened -------------------------------------
 //

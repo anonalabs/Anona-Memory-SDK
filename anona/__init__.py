@@ -23,4 +23,4 @@ __all__ = [
     "RetrieveResults",
     "RetrieveWithReceipt",
 ]
-__version__ = "0.25.4"
+__version__ = "0.26.0"

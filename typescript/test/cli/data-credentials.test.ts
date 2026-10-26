@@ -338,6 +338,44 @@ describe("data command credentials", () => {
     expect(srv.seen.filter((s) => s.path === "/oauth/token").length).toBe(1);
   });
 
+  it("exports download retries with the renewed login, and sends no credential to the link", async () => {
+    // The download fetches the API by hand, outside the SDK; the retry after a
+    // renewal must carry the new token, not the one the first client held.
+    writeCliFile({ base: srv.base, access: "cli_OLD" });
+    TOKEN.reply = { status: 200, body: { access_token: "cli_NEW", refresh_token: "cli_R2", expires_in: 3600, token_type: "Bearer" } };
+    let calls = 0;
+    srv.respond = (s) => {
+      if (s.path === "/v1/spaces/s/exports/j1/download") {
+        if (calls++ === 0) return { status: 401, body: { error: { code: "invalid_token", message: "Token rejected." } } };
+        return { status: 200, body: { download_url: srv.base + "/blob/j1", expires_in: 300 } };
+      }
+      if (s.path === "/blob/j1") return { status: 200, raw: "ZIPDATA", headers: { "content-type": "application/zip" } };
+      return respond(s);
+    };
+    const target = join(process.env.HOME as string, "renewed.zip");
+    const r = await run(["exports", "download", "j1", "--space", "s", "--out", target]);
+    expect(r.rc, r.err).toBe(0);
+    expect(auths()).toEqual(["Bearer cli_OLD", "Bearer cli_NEW"]);
+    expect(srv.seen.filter((s) => s.path === "/oauth/token").length).toBe(1);
+    expect(srv.seen.find((s) => s.path === "/blob/j1")?.auth).toBeUndefined();
+    expect(existsSync(target)).toBe(true);
+  });
+
+  it("a 401 from the download link is not the login's: no renewal, exit 7", async () => {
+    writeCliFile({ base: srv.base, access: "cli_OLD" });
+    TOKEN.reply = { status: 200, body: { access_token: "cli_NEW", refresh_token: "cli_R2", expires_in: 3600, token_type: "Bearer" } };
+    srv.respond = (s) => {
+      if (s.path === "/v1/spaces/s/exports/j1/download") return { status: 200, body: { download_url: srv.base + "/blob/j1", expires_in: 300 } };
+      if (s.path === "/blob/j1") return { status: 401, raw: "denied", headers: { "content-type": "text/plain" } };
+      return respond(s);
+    };
+    const r = await run(["exports", "download", "j1", "--space", "s", "--out", join(process.env.HOME as string, "x.zip")]);
+    expect(r.rc).toBe(7);
+    expect(r.err).toBe("anona: download link expired or refused (HTTP 401); run download again.\n");
+    expect(auths()).toEqual(["Bearer cli_OLD"]);
+    expect(srv.seen.filter((s) => s.path === "/oauth/token").length).toBe(0);
+  });
+
   it("a refused renewal is an auth exit with what to do", async () => {
     writeCliFile({ base: srv.base, access: "cli_OLD" });
     srv.respond = (s) => (s.path.startsWith("/v1/") ? { status: 401, body: { error: { code: "invalid_token", message: "no" } } } : respond(s));
