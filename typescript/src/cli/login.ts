@@ -315,7 +315,7 @@ export interface LoginOptions {
   stderr?: { write(s: string): unknown };
 }
 
-/** The deployment will not grant the command-line scope. Not fatal to a combined login. */
+/** The deployment will not grant the command-line scope. Not fatal to a plain `anona login`: it falls back to MCP. */
 export class ScopeRefused extends Abort {
   constructor(message: string) {
     super(message);
@@ -350,7 +350,10 @@ async function forgetTemp(baseUrl: string): Promise<void> {
   }
 }
 
-async function approve(baseUrl: string, opts: LoginOptions, scope: string): Promise<number> {
+/** What `approve` returns, instead of 1, when the scope is refused and the caller asked to fall back. */
+const REFUSED = -1;
+
+async function approve(baseUrl: string, opts: LoginOptions, scope: string, fallback = false): Promise<number> {
   const out = opts.stdout ?? process.stdout;
   const err = opts.stderr ?? process.stderr;
   const cli = scope === CLI_SCOPE;
@@ -435,7 +438,7 @@ async function approve(baseUrl: string, opts: LoginOptions, scope: string): Prom
   } catch (e) {
     if (e instanceof Abort || e instanceof OAuthError) {
       err.write(`anona login: ${e.message}\n`);
-      return 1;
+      return fallback && e instanceof ScopeRefused ? REFUSED : 1;
     }
     throw e;
   } finally {
@@ -443,56 +446,39 @@ async function approve(baseUrl: string, opts: LoginOptions, scope: string): Prom
   }
   out.write(
     cli
-      ? "Signed in for the command line: the pip package's record, retrieve, reason and other data commands now use this login.\n"
+      ? "Signed in. The command line (record, retrieve, reason and the other data commands) and `anona mcp` now use this login.\n"
       : "Signed in. MCP clients can now connect without an API key.\n",
   );
   return 0;
 }
 
-/** The MCP approval alone: `anona login --mcp`, and the second half of `anona login`. */
+/** The MCP-only approval: `anona login --mcp`, and `anona login`'s fallback on a deployment without command-line tokens. */
 export async function runLogin(baseUrl: string, opts: LoginOptions = {}): Promise<number> {
   return approve(baseUrl, opts, MCP_SCOPE);
 }
 
-/** The command-line approval alone: `anona login --cli`, and the first half of `anona login`. */
+/** The command-line approval: `anona login --cli`, and what `anona login` asks for. `anona mcp` uses it too. */
 export async function runCliLogin(baseUrl: string, opts: LoginOptions = {}): Promise<number> {
   return approve(baseUrl, opts, CLI_SCOPE);
 }
 
-const STEP_NAMES = {
-  cli: "the command line (`anona login --cli`)",
-  mcp: "MCP (`anona login --mcp`)",
-} as const;
-
 /**
- * Each requested approval in turn: the command line's, then MCP's. One failing
- * does not stop the other, and the exit code is non-zero only when everything
- * asked for failed. The command line goes first so an unclaimed temporary
- * profile is claimed by the first approval and the MCP token is minted for the
- * claimed account.
+ * `anona login`: one approval that signs in the command line and MCP.
+ *
+ * The command-line token is accepted on `/mcp` as well as the REST API, so
+ * `anona mcp` uses it and there is no second approval. (Two approvals, one per
+ * token, is what this used to do; the MCP token is narrower, but both files sit
+ * side by side in `~/.anona`, so the split protected nothing on the machine and
+ * cost a second trip to the browser.) `anona login --mcp` still mints an
+ * MCP-only token for anyone who wants one.
+ *
+ * A deployment that predates command-line tokens refuses the scope; then the
+ * MCP approval runs instead, so MCP clients still get signed in.
  */
-export async function runLogins(
-  baseUrl: string,
-  opts: LoginOptions = {},
-  which: { cli?: boolean; mcp?: boolean } = {},
-): Promise<number> {
-  const out = opts.stdout ?? process.stdout;
+export async function runLogins(baseUrl: string, opts: LoginOptions = {}): Promise<number> {
   const err = opts.stderr ?? process.stderr;
-  const steps = (["cli", "mcp"] as const).filter((s) => which[s] !== false);
-  const results = new Map<"cli" | "mcp", number>();
-  for (const [i, step] of steps.entries()) {
-    if (steps.length > 1) out.write(`\nApproval ${i + 1} of ${steps.length}: ${step === "cli" ? "command line" : "MCP"}.\n`);
-    const rc = step === "cli" ? await runCliLogin(baseUrl, opts) : await runLogin(baseUrl, opts);
-    results.set(step, rc);
-    if (rc !== 0 && i + 1 < steps.length) err.write("Continuing with the next approval.\n");
-  }
-  const failed = steps.filter((s) => results.get(s) !== 0);
-  if (steps.length > 1 && failed.length > 0 && failed.length < steps.length) {
-    const done = steps.filter((s) => !failed.includes(s));
-    err.write(
-      `Signed in for ${done.map((s) => STEP_NAMES[s]).join(" and ")}; not for ${failed.map((s) => STEP_NAMES[s]).join(" and ")}.\n`,
-    );
-  }
-  if (failed.length > 0 && failed.length === steps.length) return results.get(failed[failed.length - 1] as "cli" | "mcp") as number;
-  return 0;
+  const rc = await approve(baseUrl, opts, CLI_SCOPE, true);
+  if (rc !== REFUSED) return rc;
+  err.write("Signing in for MCP only; the command line needs an API key on this deployment.\n");
+  return runLogin(baseUrl, opts);
 }

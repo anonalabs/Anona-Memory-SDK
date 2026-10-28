@@ -64,14 +64,14 @@ CREDENTIALS = (
     "--api-key KEY on the command line (visible in the process list; prefer the variable)",
     "ANONA_API_KEY in the environment",
     "ANONA_API_KEY in ~/.anona/config.env (or the active profile's config.env)",
-    "the command-line login from `anona login --cli` (refreshed automatically)",
+    "the command-line login from `anona login` (refreshed automatically)",
     "a temporary profile from `anona start` (no account; its one space is `default`)",
 )
 
 CREDENTIAL_NOTES = (
     "An API key or the command-line login reaches an account, which can hold many spaces: "
     "name one with --space or ANONA_SPACE_ID.",
-    "The MCP login (`anona login --mcp`) is for `anona mcp` only; the REST API refuses it.",
+    "`anona mcp` uses the command-line login too. A separate MCP-only login (`anona login --mcp`) is for `anona mcp` only; the REST API refuses it.",
     "An API key from the environment or config.env is only sent to api.anonalabs.com or "
     "memory.anonalabs.com unless ANONA_BASE_URL is set in the same place.",
     "--profile NAME (or ANONA_PROFILE) switches to a separate set of credentials and "
