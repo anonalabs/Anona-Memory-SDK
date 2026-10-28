@@ -176,6 +176,8 @@ One fact per memory, in a sentence that will still make sense in six months.
 - Anything already in the repo: file structure, function names, git history,
   the contents of a README or a CLAUDE.md. Memory is for what is *not* written down.
 - Narration of this session. "The user asked me to fix the test" is not a fact.
+- Your own answers and lookups, above all "nothing is stored about X": that
+  sentence is a memory about X, and the next lookup finds it.
 - Speculation. If it is not settled, it is not a memory yet.
 
 Write in the third person about the durable thing, not about the conversation:

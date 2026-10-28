@@ -24,6 +24,8 @@ the repository?** If it could just read the code, do not store it.
 | "Might be worth switching to uv later." | Speculation. Record it when it is decided. |
 | "API key is anona_live_abc123." | Never. Secrets do not go in memory. |
 | "The user seemed frustrated." | Not durable, and not yours to store. |
+| "No information about Amy is stored." | A failed lookup, recorded, becomes a memory *about Amy*: it puts her in the graph and is what the next search finds. |
+| "User asked what we know about X; I said nothing." | Your own answers are narration. Record what the human told you, not what you replied. |
 
 ## Shape
 
