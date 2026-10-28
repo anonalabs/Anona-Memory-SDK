@@ -173,13 +173,13 @@ describe("anona command", () => {
   it("login names its target, and says when it is replacing a credential for another deployment", async () => {
     seed("https://other.test");
     const t = io();
-    await main(["--base-url", "http://127.0.0.1:1", "login", "--no-browser"], t);
+    await main(["--base-url", "http://127.0.0.1:1", "login", "--mcp", "--no-browser"], t);
     expect(t.o()).toContain("Signing in to http://127.0.0.1:1\n");
     expect(t.o()).toContain("Note: the stored credential is for https://other.test; this replaces it.");
     // Same deployment (trailing slash aside): no note.
     seed("http://127.0.0.1:1");
     const u = io();
-    await main(["--base-url", "http://127.0.0.1:1/", "login", "--no-browser"], u);
+    await main(["--base-url", "http://127.0.0.1:1/", "login", "--mcp", "--no-browser"], u);
     expect(u.o()).not.toContain("Note:");
   });
   it("login's --base-url beats ANONA_BASE_URL", async () => {

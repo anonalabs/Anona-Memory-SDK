@@ -63,16 +63,15 @@ temporary profile expires. It never prints a token.
 
 ```bash
 anona start                 # temporary profile: no account, one space, 72 hours
-anona login                 # a person approves in a browser: CLI, then MCP
-anona login --cli           # only the command-line credential
-anona login --mcp           # only the MCP credential
+anona login                 # a person approves once in a browser: CLI and MCP
+anona login --mcp           # a separate MCP-only credential instead
 anona status
 anona logout                # both; --cli or --mcp for one
-anona mcp                   # stdio MCP server, using the MCP login
+anona mcp                   # stdio MCP server, using the same login
 ```
 
 `anona login` claims a stored temporary profile, keeping its memories. To give
-an MCP client the tools: `anona login --mcp`, then
+an MCP client the tools: `anona login`, then
 `claude mcp add anona -- anona mcp`, then restart the client.
 
 ### Record, retrieve, reason

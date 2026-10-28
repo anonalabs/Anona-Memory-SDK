@@ -157,7 +157,7 @@ class _Parser(argparse.ArgumentParser):
 # Claiming has no command of its own -- it is what `login` does when a
 # temporary profile is stored -- so `login --help` is where it must be said.
 _LOGIN_DESCRIPTION = (
-    "Approve access in a browser: the command line, then MCP. "
+    "Approve access in a browser, once: the command line and `anona mcp` both use the login. "
     "With a temporary profile stored (from `anona start`), approving also claims it: the account you sign in with, which needs an email not yet used for Anona, takes over the profile and everything in it."
 )
 
@@ -368,7 +368,7 @@ def _parser() -> argparse.ArgumentParser:
     li = sub.add_parser(
         "login",
         parents=[common],
-        help="Approve access in a browser: the command line, then MCP",
+        help="Approve access in a browser, once, for the command line and MCP",
         description=_LOGIN_DESCRIPTION,
     )
     _which(li, "approve")
@@ -410,18 +410,23 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _which(parser: argparse.ArgumentParser, verb: str) -> None:
-    """`--cli` / `--mcp` on login and logout. Neither means both."""
+    """`--cli` / `--mcp` on login and logout.
+
+    Neither flag: login asks for the one command-line approval, which `anona
+    mcp` uses too; logout removes both credentials.
+    """
     group = parser.add_mutually_exclusive_group()
-    group.add_argument(
-        "--cli",
-        action="store_true",
-        help=f"only {verb} the command-line credential (record, retrieve, reason and the other data commands)",
-    )
-    group.add_argument(
-        "--mcp",
-        action="store_true",
-        help=f"only {verb} the MCP credential (`anona mcp`)",
-    )
+    if verb == "approve":
+        cli_help = (
+            "approve the command-line credential only, with no fallback to MCP "
+            "(record, retrieve, reason, the other data commands and `anona mcp`)"
+        )
+        mcp_help = "approve a separate MCP-only credential for `anona mcp` instead"
+    else:
+        cli_help = f"only {verb} the command-line credential (record, retrieve, reason and the other data commands)"
+        mcp_help = f"only {verb} the MCP credential (`anona mcp`)"
+    group.add_argument("--cli", action="store_true", help=cli_help)
+    group.add_argument("--mcp", action="store_true", help=mcp_help)
 
 
 def _version() -> str:
@@ -562,12 +567,9 @@ def _status(
             return _store_status(requested)
         if cli_rc != 0:
             return cli_rc
-        if store.load() is None:
-            print("No MCP credential is stored. Run `anona login --mcp` to connect MCP clients.")
-            return 0
-        # A working command-line login decides the exit code; the MCP part is
-        # described for what it is, whatever it says.
-        _store_status(requested)
+        # A working command-line login decides the exit code, and it is also
+        # what `anona mcp` presents; an MCP file beside it is only described.
+        _shadowed_store_status()
         return 0
     # The data verbs' credential. The source and a prefix only: this output
     # ends up in pastes and logs.
@@ -584,7 +586,9 @@ def _status(
     print(f"It is sent to {_safe(base)}.")
     space = credential.find_space(None, config)
     print(f"Space: {_safe(space)}." if space else "Space: none set; pass --space or set ANONA_SPACE_ID.")
-    _cli_status(None, shadowed=True)
+    if _cli_status(None, shadowed=True) is not None:
+        _shadowed_store_status()
+        return 0
     if store.load() is None:
         print("No `anona login` credential is stored for MCP (that one is for `anona mcp`).")
         return 0
@@ -612,9 +616,9 @@ def _cli_status(requested: str | None, *, shadowed: bool) -> int | None:
         except target.TargetError as exc:
             return _refuse(exc)
     use = (
-        "not used while an API key is set"
+        "used by `anona mcp`; not by the data commands while an API key is set"
         if shadowed
-        else "used by record, retrieve, reason and the other data commands"
+        else "used by record, retrieve, reason, the other data commands and `anona mcp`"
     )
     print(f"Command-line login for {c.base_url} ({use}).")
     remaining = c.expires_at - time.time()
@@ -624,6 +628,24 @@ def _cli_status(requested: str | None, *, shadowed: bool) -> int | None:
         print("Its access token has expired; a refresh is attempted on the next command.")
     print("If a command reports an authorization failure, run `anona login --cli`.")
     return 0
+
+
+def _shadowed_store_status() -> None:
+    """The MCP file beside a command-line login, which `anona mcp` presents
+    ahead of it. Described so nothing stored goes unmentioned; no exit code."""
+    c = store.load()
+    if c is None:
+        return
+    if c.signed_in:
+        print(
+            f"An MCP-only login for {c.base_url} is also stored; `anona mcp` uses the "
+            "command-line login instead (`anona logout --mcp` removes it)."
+        )
+    if c.temp_token and c.temp_expires_at is not None and c.temp_expires_at > time.time():
+        print(
+            f"Temporary profile for {c.base_url}: {temp.describe_deadline(c.temp_expires_at)}; "
+            "not used while you are logged in."
+        )
 
 
 def _store_status(requested: str | None = None) -> int:
@@ -1028,9 +1050,10 @@ def _main(argv: list[str] | None = None) -> int:
         except target.TargetError as exc:
             return _refuse(exc)
         print(f"Signing in to {base}")
-        # Neither flag means both approvals; argparse keeps the two exclusive.
+        # Neither flag means the one approval that covers both the command line
+        # and `anona mcp`; argparse keeps the two flags exclusive.
         want_cli = not args.mcp
-        want_mcp = not args.cli
+        want_mcp = args.mcp
         held_cli = store.load(store.cli_path()) if want_cli else None
         if held_cli and held_cli.signed_in and held_cli.base_url.rstrip("/") != base.rstrip("/"):
             print(
@@ -1038,6 +1061,22 @@ def _main(argv: list[str] | None = None) -> int:
                 "this replaces it."
             )
         stored = store.load()
+        if not want_mcp and stored and stored.base_url.rstrip("/") != base.rstrip("/"):
+            # The command-line approval leaves the MCP file alone, so nothing in
+            # it is lost -- but `anona mcp` and the data commands present this
+            # login ahead of it from now on, which is worth saying.
+            if stored.live_temp_token():
+                print(
+                    f"Note: the unclaimed temporary profile for {stored.base_url} "
+                    f"(it {temp.describe_deadline(stored.temp_expires_at)}) is kept, "
+                    f"but this login is used instead of it. Claim it with "
+                    f"`anona login --base-url {stored.base_url}`."
+                )
+            elif stored.signed_in:
+                print(
+                    f"Note: the MCP-only login for {stored.base_url} is kept, but "
+                    "`anona mcp` uses this login instead."
+                )
         if want_mcp and stored and stored.base_url.rstrip("/") != base.rstrip("/"):
             print(f"Note: the stored credential is for {stored.base_url}; this replaces it.")
             # A profile belongs to the deployment that minted it, so its token
@@ -1058,7 +1097,7 @@ def _main(argv: list[str] | None = None) -> int:
                 f"Signing in will try to claim your temporary profile, which "
                 f"{temp.describe_deadline(stored.temp_expires_at)}."
             )
-        if want_cli and want_mcp:
+        if not args.cli and not args.mcp:
             return login.run_logins(base, open_browser=not no_browser)
         if want_cli:
             return login.run_cli_login(base, open_browser=not no_browser)
@@ -1073,7 +1112,15 @@ def _main(argv: list[str] | None = None) -> int:
         return doctor.run(args, base_url, requested, version=_version())
     # mcp: a credential belongs to the deployment that issued it. Naming
     # another is refused on stderr; stdout is the client's JSON-RPC stream.
-    stored = store.load()
+    # The command-line login is the one `anona login` makes and the proxy
+    # presents first, so its deployment wins, unless the user named the MCP
+    # file's deployment and not its own.
+    cli_login = store.load(store.cli_path())
+    held = [c for c in (cli_login if cli_login and cli_login.signed_in else None, store.load()) if c]
+    stored = next(
+        (c for c in held if requested is None or c.base_url.rstrip("/") == requested.rstrip("/")),
+        held[0] if held else None,
+    )
     try:
         base = target.resolve(requested, stored.base_url if stored else None)
     except target.TargetError as exc:

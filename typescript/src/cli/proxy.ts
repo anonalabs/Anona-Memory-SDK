@@ -10,6 +10,11 @@
  * transport implementation, and the remote's tool list appears here with no
  * schema maintained on this side.
  *
+ * Which credential it presents, highest first: the command-line login (`anona
+ * login`; the gateway accepts it on /mcp), then an MCP-only login (`anona login
+ * --mcp`), then an unclaimed temporary profile. The command-line login is used
+ * only for the deployment it was issued by.
+ *
  * Three rules, each pinned by a test:
  *   * stdout is the transport and carries nothing but JSON-RPC. Diagnostics go
  *     to stderr.
@@ -20,7 +25,7 @@
  */
 import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
-import { isSignedIn, liveTempToken, loadCredentials } from "./store.js";
+import { cliCredentialsPath, isSignedIn, liveTempToken, loadCredentials } from "./store.js";
 import { accessToken, NotLoggedIn } from "./tokens.js";
 
 // `reason` is an agent loop and can legitimately run for a minute and a half.
@@ -59,37 +64,52 @@ function post(url: string, token: string, msg: Json): Promise<Response> {
   });
 }
 
+type Kind = "cli" | "mcp" | "temp";
+
+/** Whether the command-line login exists for this deployment. */
+function hasCliLogin(baseUrl: string): boolean {
+  const c = loadCredentials(cliCredentialsPath());
+  return c !== null && isSignedIn(c) && c.baseUrl.replace(/\/+$/, "") === baseUrl.replace(/\/+$/, "");
+}
+
 /**
- * The bearer to present, and whether it is a temp token. A signed-in OAuth
- * credential always wins: once someone has logged in their session is the
- * credential, and a leftover temp token must not be sent.
+ * The bearer to present, and which credential it is. A login always wins: once
+ * someone has logged in their session is the credential, and a leftover temp
+ * token must not be sent. Re-read on every message, so an `anona login` made
+ * while a client is running takes effect on its next call.
  *
  * The temp token is chosen here rather than in `accessToken` because that
  * function's whole contract is the refresh-and-rotate path, which a temp token
  * has no part in. Keeping it out by construction beats guarding it.
  */
-async function bearer(): Promise<{ token: string; isTemp: boolean }> {
+async function bearer(baseUrl: string): Promise<{ token: string; kind: Kind }> {
+  if (hasCliLogin(baseUrl)) return { token: await accessToken({ file: cliCredentialsPath() }), kind: "cli" };
   const c = loadCredentials();
-  if (c !== null && isSignedIn(c)) return { token: await accessToken(), isTemp: false };
+  if (c !== null && isSignedIn(c)) return { token: await accessToken(), kind: "mcp" };
   const temp = c !== null ? liveTempToken(c) : null;
-  if (temp !== null) return { token: temp, isTemp: true };
+  if (temp !== null) return { token: temp, kind: "temp" };
   if (c !== null && c.tempToken) {
     throw new NotLoggedIn("The temporary profile has expired. Run `anona start` for a new one, or `anona login`.");
   }
-  return { token: await accessToken(), isTemp: false }; // throws NotLoggedIn
+  return { token: await accessToken(), kind: "mcp" }; // throws NotLoggedIn
 }
 
 /** The response line to write, or null when there is nothing to say. */
-async function forward(url: string, msg: Json): Promise<string | null> {
-  const first = await bearer();
+async function forward(baseUrl: string, msg: Json): Promise<string | null> {
+  const url = baseUrl.replace(/\/+$/, "") + "/mcp";
+  const first = await bearer(baseUrl);
   let token = first.token;
   let resp = await post(url, token, msg);
-  if (resp.status === 401 && first.isTemp) {
+  if (resp.status === 401 && first.kind === "temp") {
     // Opaque and fixed: there is nothing to refresh, only expired or claimed.
     throw new Failure("The server rejected the temporary profile (expired, or already claimed). Run `anona login`.");
   }
   if (resp.status === 401) {
-    token = await accessToken({ forceRefresh: true, rejected: token });
+    token = await accessToken({
+      forceRefresh: true,
+      rejected: token,
+      file: first.kind === "cli" ? cliCredentialsPath() : undefined,
+    });
     resp = await post(url, token, msg);
     if (resp.status === 401) throw new Failure("The server rejected the stored login. Run `anona login` again.");
   }
@@ -117,7 +137,7 @@ function isRequest(m: Json): boolean {
   return !(isObject(m) && !("id" in m));
 }
 
-async function handle(url: string, line: string, stderr: { write(s: string): unknown }): Promise<string | null> {
+async function handle(baseUrl: string, line: string, stderr: { write(s: string): unknown }): Promise<string | null> {
   let msg: Json;
   try {
     msg = JSON.parse(line);
@@ -135,7 +155,7 @@ async function handle(url: string, line: string, stderr: { write(s: string): unk
   // Ids that are owed a reply. A message with no "id" is a notification.
   const owed = items.filter(isRequest).map((m) => (isObject(m) ? m.id : null));
   try {
-    const out = await forward(url, msg);
+    const out = await forward(baseUrl, msg);
     if (out === null && owed.length > 0) throw new Failure("The Anona server sent no response to a request.");
     return out;
   } catch (e) {
@@ -156,13 +176,12 @@ export async function runProxy(
   stdout: { write(s: string): unknown },
   stderr: { write(s: string): unknown },
 ): Promise<number> {
-  const url = baseUrl.replace(/\/+$/, "") + "/mcp";
   const rl = createInterface({ input: stdin, crlfDelay: Infinity });
   // `for await` serialises: one message at a time, replies in order.
   for await (const raw of rl) {
     const line = raw.trim();
     if (!line) continue;
-    const out = await handle(url, line, stderr);
+    const out = await handle(baseUrl, line, stderr);
     if (out !== null) stdout.write(out + "\n");
   }
   return 0;

@@ -271,7 +271,7 @@ anona status                 # which credentials are stored (local files only)
 anona doctor --json          # which credential wins and why; server, space, credits left
 anona start                  # temporary profile, no account, 72 hours
 anona login                  # a person approves in a browser; never run it and wait
-anona login --cli            # only the command-line login (--mcp: only the MCP one)
+anona login --cli            # the same login, with no fallback (--mcp: a separate MCP-only login)
 anona login --no-browser     # print the approval URL instead of opening it
 anona logout --cli           # remove the command-line login only
 anona logout --mcp           # remove the MCP login only

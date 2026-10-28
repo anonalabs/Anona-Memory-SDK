@@ -294,8 +294,10 @@ describe("data command credentials", () => {
     process.env.ANONA_API_KEY = "anona_live_K";
     const r = await run(["status"]);
     expect(r.rc).toBe(0);
-    expect(r.out).toContain(`Command-line login for ${srv.base} (not used while an API key is set).`);
-    expect(r.out).toContain("No `anona login` credential is stored for MCP");
+    expect(r.out).toContain(
+      `Command-line login for ${srv.base} (used by \`anona mcp\`; not by the data commands while an API key is set).`,
+    );
+    expect(r.out).not.toContain("No `anona login` credential is stored for MCP");
   });
 
   // --- the command-line login ---------------------------------------------------

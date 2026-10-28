@@ -9,6 +9,11 @@ complete JSON response and there is no session. So this is a forwarder, not a
 transport implementation, and the remote's tool list (including tools added
 later) appears here with no schema maintained on this side.
 
+Which credential it presents, highest first: the command-line login (`anona
+login`; the gateway accepts it on /mcp), then an MCP-only login (`anona login
+--mcp`), then an unclaimed temporary profile. The command-line login is used
+only for the deployment it was issued by.
+
 Three rules, each pinned by a test:
   * stdout is the transport and carries nothing but JSON-RPC. Diagnostics go to
     stderr.
@@ -62,41 +67,60 @@ def _post(client: httpx.Client, url: str, token: str, msg: dict | list) -> httpx
     )
 
 
-def _bearer(client: httpx.Client) -> tuple[str, bool]:
-    """(token, is_temp). A signed-in OAuth credential always wins.
+def _cli_login(base_url: str) -> store.Credentials | None:
+    """The command-line login, when there is one for this deployment."""
+    c = store.load(store.cli_path())
+    if c is None or not c.signed_in:
+        return None
+    if c.base_url.rstrip("/") != base_url.rstrip("/"):
+        return None
+    return c
 
-    The temp token is the fallback only when there is no login: once someone
-    has logged in, their session is the credential and a leftover temp token
-    must not be sent. It lives here rather than in `tokens.access_token`
-    because that function's whole contract is the refresh-and-rotate path,
-    which a temp token has no part in.
+
+def _bearer(client: httpx.Client, base_url: str) -> tuple[str, str]:
+    """(token, kind), kind being "cli", "mcp" or "temp". A login always wins.
+
+    Re-read on every message, so an `anona login` made while a client is
+    running takes effect on its next call. The temp token is the fallback only
+    when there is no login: once someone has logged in, their session is the
+    credential and a leftover temp token must not be sent. It lives here rather
+    than in `tokens.access_token` because that function's whole contract is
+    the refresh-and-rotate path, which a temp token has no part in.
     """
+    if _cli_login(base_url) is not None:
+        return tokens.access_token(client, p=store.cli_path()), "cli"
     c = store.load()
     if c is not None and c.signed_in:
-        return tokens.access_token(client), False
+        return tokens.access_token(client), "mcp"
     temp = c.live_temp_token() if c is not None else None
     if temp is not None:
-        return temp, True
+        return temp, "temp"
     if c is not None and c.temp_token:
         raise tokens.NotLoggedIn(
             "The temporary profile has expired. Run `anona start` for a new one, "
             "or `anona login`."
         )
-    return tokens.access_token(client), False  # raises NotLoggedIn
+    return tokens.access_token(client), "mcp"  # raises NotLoggedIn
 
 
-def _forward(client: httpx.Client, url: str, msg: dict | list) -> str | None:
+def _forward(client: httpx.Client, base_url: str, msg: dict | list) -> str | None:
     """The response line to write, or None when there is nothing to say."""
-    token, is_temp = _bearer(client)
+    url = base_url.rstrip("/") + "/mcp"
+    token, kind = _bearer(client, base_url)
     resp = _post(client, url, token, msg)
-    if resp.status_code == 401 and is_temp:
+    if resp.status_code == 401 and kind == "temp":
         # Opaque and fixed: there is nothing to refresh, only expired or claimed.
         raise _Failure(
             "The server rejected the temporary profile (expired, or already claimed). "
             "Run `anona login`."
         )
     if resp.status_code == 401:
-        token = tokens.access_token(client, force_refresh=True, rejected=token)
+        token = tokens.access_token(
+            client,
+            force_refresh=True,
+            rejected=token,
+            p=store.cli_path() if kind == "cli" else None,
+        )
         resp = _post(client, url, token, msg)
         if resp.status_code == 401:
             raise _Failure("The server rejected the stored login. Run `anona login` again.")
@@ -119,7 +143,7 @@ def _is_request(m: Any) -> bool:
     return not (isinstance(m, dict) and "id" not in m)
 
 
-def _handle(client: httpx.Client, url: str, line: str, stderr) -> str | None:
+def _handle(client: httpx.Client, base_url: str, line: str, stderr) -> str | None:
     try:
         msg = json.loads(line)
     except ValueError:
@@ -135,7 +159,7 @@ def _handle(client: httpx.Client, url: str, line: str, stderr) -> str | None:
     owed = [m.get("id") if isinstance(m, dict) else None for m in (msg if isinstance(msg, list) else [msg]) if _is_request(m)]
     batch = isinstance(msg, list)
     try:
-        out = _forward(client, url, msg)
+        out = _forward(client, base_url, msg)
         if out is None and owed:
             raise _Failure("The Anona server sent no response to a request.")
         return out
@@ -154,13 +178,18 @@ def _handle(client: httpx.Client, url: str, line: str, stderr) -> str | None:
 
 
 def run_proxy(base_url: str, stdin, stdout, stderr) -> int:
-    url = base_url.rstrip("/") + "/mcp"
     # stdout is the transport and carries nothing but JSON-RPC; stderr is
     # where this proxy already puts diagnostics (see `_handle`). An unclaimed
     # profile has no email address, so there is no other channel to warn on
     # at all -- `anona status` is the only other place the deadline appears.
     c = store.load()
-    if c is not None and c.live_temp_token() and c.temp_expires_at:
+    if (
+        _cli_login(base_url) is None
+        and c is not None
+        and not c.signed_in
+        and c.live_temp_token()
+        and c.temp_expires_at
+    ):
         remaining = c.temp_expires_at - time.time()
         if 0 < remaining <= 24 * 3600:
             print(
@@ -175,7 +204,7 @@ def run_proxy(base_url: str, stdin, stdout, stderr) -> int:
             line = raw.strip()
             if not line:
                 continue
-            out = _handle(client, url, line, stderr)
+            out = _handle(client, base_url, line, stderr)
             if out is not None:
                 stdout.write(out + "\n")
                 stdout.flush()

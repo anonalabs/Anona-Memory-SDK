@@ -878,15 +878,25 @@ const RESOURCE_COMMANDS: CommandSpec[] = [
   ...addCommands(HELPERS),
 ];
 
+/** `--cli` / `--mcp`. Neither: login asks for the one command-line approval, which `anona mcp` uses too; logout removes both. */
 const which = (verb: string): OptionSpec[] => [
   {
     flags: ["--cli"],
     dest: "cli",
     kind: "store_true",
     exclusive: "which",
-    help: `only ${verb} the command-line credential (record, retrieve, reason and the other data commands)`,
+    help:
+      verb === "approve"
+        ? "approve the command-line credential only, with no fallback to MCP (record, retrieve, reason, the other data commands and `anona mcp`)"
+        : `only ${verb} the command-line credential (record, retrieve, reason and the other data commands)`,
   },
-  { flags: ["--mcp"], dest: "mcp", kind: "store_true", exclusive: "which", help: `only ${verb} the MCP credential (\`anona mcp\`)` },
+  {
+    flags: ["--mcp"],
+    dest: "mcp",
+    kind: "store_true",
+    exclusive: "which",
+    help: verb === "approve" ? "approve a separate MCP-only credential for `anona mcp` instead" : `only ${verb} the MCP credential (\`anona mcp\`)`,
+  },
 ];
 
 /** Every command, in the order the pip package's parser declares them. */
@@ -1011,11 +1021,11 @@ export const COMMANDS: CommandSpec[] = [
   ...RESOURCE_COMMANDS,
   {
     name: "login",
-    help: "Approve access in a browser: the command line, then MCP",
+    help: "Approve access in a browser, once, for the command line and MCP",
     // Claiming has no command of its own -- it is what `login` does when a
     // temporary profile is stored -- so `login --help` is where it must be said.
     description:
-      "Approve access in a browser: the command line, then MCP. " +
+      "Approve access in a browser, once: the command line and `anona mcp` both use the login. " +
       "With a temporary profile stored (from `anona start`), approving also claims it: " +
       "the account you sign in with, which needs an email not yet used for Anona, " +
       "takes over the profile and everything in it.",

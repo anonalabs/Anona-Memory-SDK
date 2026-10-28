@@ -47,12 +47,12 @@ console.log(memories[0]?.content);
 ## `anona` command
 
 Installing the package also installs an `anona` binary: `anona login` signs in
-through the browser (two approvals: the command line, then MCP; `--cli` or
-`--mcp` for one), `anona status` and `anona logout` manage the stored
-credentials, and `anona mcp` is a stdio MCP server that forwards to Anona with
-that credential, so an MCP client needs no API key. It reads and writes the same
-`~/.anona/credentials.json` and `~/.anona/cli-credentials.json` as the Python
-package's `anona` command, whose data commands use the second.
+through the browser with one approval, which the data commands and `anona mcp`
+both use (`--mcp` asks for a separate MCP-only credential instead), `anona
+status` and `anona logout` manage the stored credentials, and `anona mcp` is a
+stdio MCP server that forwards to Anona with that credential, so an MCP client
+needs no API key. It reads and writes the same `~/.anona/cli-credentials.json`
+and `~/.anona/credentials.json` as the Python package's `anona` command.
 
 `anona start` makes a temporary profile with no account. It is deleted after 72
 hours unless you claim it with `anona login`; `anona status` shows the deadline,

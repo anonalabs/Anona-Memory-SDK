@@ -592,19 +592,30 @@ describe("login and the temp token", () => {
     expect(err.text()).toBe("anona login: Client registration failed with 403: line one anona login: forged\n");
   });
 
-  it("login names the abandoned profile when the stored one is for another deployment", async () => {
+  it("login --mcp names the abandoned profile when the stored one is for another deployment", async () => {
     seedTemp("https://other.test");
     const t = io();
-    await main(["login", "--no-browser", "--base-url", "http://127.0.0.1:1"], t);
+    await main(["login", "--mcp", "--no-browser", "--base-url", "http://127.0.0.1:1"], t);
     expect(t.o()).toContain("that includes an unclaimed temporary profile");
     expect(t.o()).toContain("anona login --base-url https://other.test");
     expect(all(t)).not.toContain(TEMP);
   });
 
-  it("login says nothing about a profile when the stored one is expired", async () => {
-    seedTemp("https://other.test", { tempExpiresAt: now() - HOUR });
+  it("login keeps a profile stored for another deployment and says it is no longer used", async () => {
+    seedTemp("https://other.test");
     const t = io();
     await main(["login", "--no-browser", "--base-url", "http://127.0.0.1:1"], t);
+    expect(t.o()).toContain("unclaimed temporary profile for https://other.test");
+    expect(t.o()).toContain("is kept");
+    expect(t.o()).not.toContain("abandoned");
+    expect(t.o()).toContain("anona login --base-url https://other.test");
+    expect(all(t)).not.toContain(TEMP);
+  });
+
+  it("login --mcp says nothing about a profile when the stored one is expired", async () => {
+    seedTemp("https://other.test", { tempExpiresAt: now() - HOUR });
+    const t = io();
+    await main(["login", "--mcp", "--no-browser", "--base-url", "http://127.0.0.1:1"], t);
     expect(t.o()).toContain("this replaces it.");
     expect(t.o()).not.toContain("unclaimed temporary profile");
   });

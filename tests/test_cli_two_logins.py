@@ -1,10 +1,12 @@
-"""`anona login` holds two credentials: the command line's and MCP's.
+"""`anona login`: one approval for the command line and `anona mcp`.
 
-`anona login` runs two browser approvals, one per grant, each stored in its
-own file: `cli-credentials.json` (scope `cli`, `typ=cli_access`, accepted only
-on the REST data plane) and `credentials.json` (scope `mcp`, unchanged). The
-data commands use the first; `anona mcp` the second; neither ever falls back
-to the other.
+`anona login` runs ONE browser approval, scope `cli`, stored in
+`cli-credentials.json` (`typ=cli_access`). The gateway accepts that token on
+the REST data plane and on `/mcp`, so the data commands and `anona mcp` both
+present it. `anona login --mcp` still mints a separate MCP-only token
+(`credentials.json`, `typ=mcp_access`, refused on REST), which `anona mcp`
+uses only when there is no command-line login for its deployment. A
+deployment that will not grant `cli` gets the MCP approval instead.
 
 Every case runs a real authorization server and data plane on loopback inside
 the subprocess (see _cli.py), and plays the user with a fake
@@ -23,13 +25,13 @@ from contextlib import redirect_stdout, redirect_stderr
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
-from anona.cli import login, main as cli, store
+from anona.cli import login, main as cli, proxy, store
 
 os.environ.pop("ANONA_BASE_URL", None)
 os.environ.pop("ANONA_SPACE_ID", None)
 
 MODE = {"cli_scope": "grant", "claim": False}
-REG, AUTHZ, GRANTS, REVOKED, DATA, OPENED = [], [], [], [], [], []
+REG, AUTHZ, GRANTS, REVOKED, DATA, OPENED, MCPS = [], [], [], [], [], [], []
 CODES, LIVE, REFRESH, DEAD = {}, set(), {}, set()
 N = {"n": 0}
 
@@ -104,6 +106,8 @@ class H(BaseHTTPRequestHandler):
         if path == "/oauth/revoke":
             REVOKED.append(parse_qs(raw.decode())["token"][0])
             return self._send(200, {"ok": True})
+        if path == "/mcp":
+            return self._mcp(json.loads(raw))
         return self._data(json.loads(raw or b"{}"))
 
     def _data(self, body):
@@ -121,6 +125,14 @@ class H(BaseHTTPRequestHandler):
         if self.path.endswith("/retrieve"):
             return self._send(200, {"results": [{"content": "x"}]})
         return self._send(200, {"spaces": [], "total": 0})
+
+    def _mcp(self, msg):
+        # The gateway's /mcp: either OAuth typ, or a temp token.
+        token = (self.headers.get("authorization") or "").removeprefix("Bearer ")
+        MCPS.append(token)
+        if not token.startswith("anona_") and (token not in LIVE or token in DEAD):
+            return self._send(401, {"error": "invalid_token"})
+        return self._send(200, {"jsonrpc": "2.0", "id": msg.get("id"), "result": {"tools": []}})
 
     def log_message(self, *a):
         pass
@@ -194,6 +206,17 @@ def seed_mcp(temp=False, signed_in=True, base=None):
     return body
 
 
+def typ_of(t):
+    return json.loads(base64.urlsafe_b64decode(t.split(".")[1] + "=="))["typ"]
+
+
+def mcp_call(base=None):
+    out, err = io.StringIO(), io.StringIO()
+    line = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}) + "\n"
+    rc = proxy.run_proxy(base or BASE, io.StringIO(line), out, err)
+    return rc, out.getvalue(), err.getvalue()
+
+
 def secrets_in(text):
     toks = [t for t in list(LIVE) + list(REFRESH) + REVOKED if t]
     return [t for t in toks if t in text] + (["temp"] if "TEMPSECRET" in text else [])
@@ -208,29 +231,22 @@ def _run(body, tmp_path, env=None, timeout=60):
     )
 
 
-# --- login: two approvals, two files -----------------------------------------
+# --- login: one approval ------------------------------------------------------
 
 
-def test_login_runs_both_approvals_into_two_separate_files(tmp_path):
+def test_login_is_one_approval_into_the_command_line_file(tmp_path):
     ok(_run("""
         rc, out, err = run_main(["login", "--base-url", BASE])
         assert rc == 0, (rc, out, err)
-        assert OPENED == ["cli", "mcp"], OPENED
-        # The fake browser never fetches /oauth/authorize, so this is the CLI's own
-        # preflight of the cli scope -- and only of that one.
+        assert OPENED == ["cli"] and len(REG) == 1, (OPENED, REG)
+        # The CLI's own preflight of the cli scope.
         assert [a["scope"] for a in AUTHZ] == ["cli"], AUTHZ
-        # Two registrations: each grant has its own client and refresh family.
-        assert len(REG) == 2 and all(r["redirect_uris"][0].startswith("http://127.0.0.1:") for r in REG)
-        c, m = doc(CLI_FILE), doc(MCP_FILE)
-        assert c["client_id"] == "cid-1" and m["client_id"] == "cid-2", (c, m)
-        typ = lambda t: json.loads(base64.urlsafe_b64decode(t.split(".")[1] + "=="))["typ"]
-        assert typ(c["access_token"]) == "cli_access" and typ(m["access_token"]) == "mcp_access"
-        assert c["refresh_token"] != m["refresh_token"]
-        assert c["base_url"] == BASE and m["base_url"] == BASE
-        # The MCP file keeps exactly the shape it always had.
-        assert sorted(m) == ["access_token", "base_url", "client_id", "expires_at", "refresh_token"], m
-        assert sorted(c) == sorted(m), c
-        assert mode(CLI_FILE) == 0o600 and mode(MCP_FILE) == 0o600
+        assert REG[0]["redirect_uris"][0].startswith("http://127.0.0.1:"), REG
+        c = doc(CLI_FILE)
+        assert typ_of(c["access_token"]) == "cli_access" and c["base_url"] == BASE, c
+        assert sorted(c) == ["access_token", "base_url", "client_id", "expires_at", "refresh_token"], c
+        assert mode(CLI_FILE) == 0o600 and not MCP_FILE.exists()
+        assert "`anona mcp`" in out, out
         assert not secrets_in(out + err), secrets_in(out + err)
         print("OK")
     """, tmp_path))
@@ -270,7 +286,7 @@ def test_login_cli_and_mcp_together_is_a_usage_error(tmp_path):
 # --- a deployment that will not grant `cli` ----------------------------------
 
 
-def test_invalid_scope_skips_the_cli_approval_and_still_signs_in_mcp(tmp_path):
+def test_invalid_scope_falls_back_to_the_mcp_approval(tmp_path):
     ok(_run("""
         MODE["cli_scope"] = "refuse"
         rc, out, err = run_main(["login", "--base-url", BASE])
@@ -278,7 +294,7 @@ def test_invalid_scope_skips_the_cli_approval_and_still_signs_in_mcp(tmp_path):
         # Refused before any browser: the only window opened is MCP's.
         assert OPENED == ["mcp"], OPENED
         assert "does not issue command-line credentials" in err and "not granted here" in err, err
-        assert "not for the command line" in err, err
+        assert "Signing in for MCP only" in err, err
         assert MCP_FILE.exists() and not CLI_FILE.exists()
         print("OK")
     """, tmp_path))
@@ -325,16 +341,15 @@ def test_everything_failing_is_a_non_zero_exit(tmp_path):
     """, tmp_path))
 
 
-def test_a_temp_profile_is_claimed_by_the_first_approval_and_not_resent(tmp_path):
+def test_a_temp_profile_is_claimed_by_the_one_approval_and_forgotten(tmp_path):
     ok(_run("""
         seed_mcp(temp=True, signed_in=False)
         MODE["claim"] = True
         rc, out, err = run_main(["login", "--base-url", BASE])
         assert rc == 0, (rc, out, err)
-        assert REG[0].get("temp_token") == "anona_tmp_TEMPSECRET", REG[0]
-        # Spent by the command-line approval, so the MCP one does not resend it.
-        assert "temp_token" not in REG[1], REG[1]
-        assert "temp_token" not in doc(MCP_FILE) and "temp_token" not in doc(CLI_FILE)
+        assert len(REG) == 1 and REG[0].get("temp_token") == "anona_tmp_TEMPSECRET", REG
+        # Spent by the claim: a file that held only the profile is gone.
+        assert not MCP_FILE.exists() and "temp_token" not in doc(CLI_FILE)
         assert not secrets_in(out + err)
         print("OK")
     """, tmp_path))
@@ -593,7 +608,8 @@ def test_status_reports_both_credentials_and_no_secret(tmp_path):
         rc, out, err = run_main(["status"])
         assert rc == 0, (rc, out, err)
         assert "Command-line login for " + BASE in out, out
-        assert "Credential found for " + BASE in out, out
+        assert "`anona mcp`" in out, out
+        assert "An MCP-only login for " + BASE + " is also stored" in out, out
         assert not secrets_in(out + err) and "cid-" not in out, out
         print("OK")
     """, tmp_path))
@@ -604,7 +620,9 @@ def test_status_with_only_the_cli_login_is_success(tmp_path):
         seed_cli()
         rc, out, err = run_main(["status"])
         assert rc == 0, (rc, out)
-        assert "Command-line login" in out and "anona login --mcp" in out, out
+        assert "Command-line login" in out and "`anona mcp`" in out, out
+        # One login covers MCP: nothing tells the user to sign in again for it.
+        assert "anona login --mcp" not in out, out
         print("OK")
     """, tmp_path))
 
@@ -615,7 +633,9 @@ def test_status_says_an_api_key_shadows_the_cli_login(tmp_path):
         os.environ["ANONA_API_KEY"] = "anona_live_FROMENVxxxxxxxxxxxxxxxx"
         rc, out, err = run_main(["status"])
         assert rc == 0, (rc, out)
-        assert "not used while an API key is set" in out, out
+        assert "not by the data commands while an API key is set" in out, out
+        assert "used by `anona mcp`" in out, out
+        assert "No `anona login` credential is stored for MCP" not in out, out
         assert "FROMENVxxxx" not in out
         print("OK")
     """, tmp_path))
@@ -627,5 +647,74 @@ def test_start_refuses_beside_a_cli_login(tmp_path):
         rc, out, err = run_main(["start", "--base-url", BASE])
         assert rc == 1 and "already signed in" in err, (rc, err)
         assert DATA == []
+        print("OK")
+    """, tmp_path))
+
+
+# --- which credential `anona mcp` presents ------------------------------------
+
+
+def test_anona_mcp_presents_the_command_line_login(tmp_path):
+    ok(_run("""
+        c = seed_cli()
+        rc, out, err = mcp_call()
+        assert rc == 0 and json.loads(out)["result"] == {"tools": []}, (out, err)
+        assert MCPS == [c["access_token"]], MCPS
+        print("OK")
+    """, tmp_path))
+
+
+def test_the_command_line_login_beats_an_mcp_login_and_a_temp_profile(tmp_path):
+    ok(_run("""
+        seed_mcp(temp=True)
+        c = seed_cli()
+        rc, out, err = mcp_call()
+        assert MCPS == [c["access_token"]], MCPS
+        assert "temporary profile" not in err, err
+        print("OK")
+    """, tmp_path))
+
+
+def test_a_command_line_login_for_another_deployment_is_never_sent(tmp_path):
+    ok(_run("""
+        m = seed_mcp()
+        seed_cli(base="https://other.example")
+        rc, out, err = mcp_call()
+        assert MCPS == [m["access_token"]], MCPS
+        print("OK")
+    """, tmp_path))
+
+
+def test_the_mcp_only_login_still_works_alone(tmp_path):
+    ok(_run("""
+        m = seed_mcp()
+        rc, out, err = mcp_call()
+        assert MCPS == [m["access_token"]], MCPS
+        print("OK")
+    """, tmp_path))
+
+
+def test_a_refused_command_line_token_is_renewed_in_its_own_file(tmp_path):
+    ok(_run("""
+        m = seed_mcp()
+        c = seed_cli()
+        DEAD.add(c["access_token"])
+        rc, out, err = mcp_call()
+        assert json.loads(out)["result"] == {"tools": []}, (out, err)
+        assert len(MCPS) == 2 and MCPS[0] == c["access_token"], MCPS
+        assert typ_of(MCPS[1]) == "cli_access", MCPS
+        assert doc(CLI_FILE)["access_token"] == MCPS[1]
+        assert doc(MCP_FILE)["refresh_token"] == m["refresh_token"]
+        print("OK")
+    """, tmp_path))
+
+
+def test_anona_mcp_follows_the_command_line_login_deployment(tmp_path):
+    ok(_run("""
+        c = seed_cli()
+        sys.stdin = io.StringIO(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}) + "\\n")
+        rc, out, err = run_main(["mcp"])
+        assert rc == 0, (rc, out, err)
+        assert MCPS == [c["access_token"]], (MCPS, err)
         print("OK")
     """, tmp_path))

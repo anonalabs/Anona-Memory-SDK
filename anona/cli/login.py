@@ -233,7 +233,12 @@ def _register(
 
 class ScopeRefused(Abort):
     """The deployment will not grant the command-line scope. Not fatal to a
-    combined login: the MCP approval still runs."""
+    plain `anona login`: it falls back to the MCP approval."""
+
+
+# What `_approve` returns, instead of 1, when the deployment will not grant the
+# command-line scope and the caller asked to fall back. Never an exit code.
+_REFUSED = -1
 
 
 def _forget_temp(base_url: str) -> None:
@@ -265,8 +270,14 @@ def _forget_temp(base_url: str) -> None:
         pass
 
 
-def _approve(base_url: str, open_browser: bool, scope: str) -> int:
-    """One browser approval for one grant, stored in that grant's own file."""
+def _approve(
+    base_url: str, open_browser: bool, scope: str, *, fallback: bool = False
+) -> int:
+    """One browser approval for one grant, stored in that grant's own file.
+
+    With `fallback`, a deployment that will not grant the command-line scope
+    returns `_REFUSED` rather than 1, so `run_logins` can ask for MCP instead.
+    """
     cli = scope == oauth.CLI_SCOPE
     where = store.cli_path() if cli else store.path()
     server = None
@@ -375,14 +386,14 @@ def _approve(base_url: str, open_browser: bool, scope: str) -> int:
             ) from exc
     except (Abort, oauth.OAuthError) as exc:
         print(f"anona login: {exc}", file=sys.stderr)
-        return 1
+        return _REFUSED if fallback and isinstance(exc, ScopeRefused) else 1
     finally:
         if server is not None:
             server.server_close()
     if cli:
         print(
-            "Signed in for the command line: record, retrieve, reason and the "
-            "other data commands now use this login."
+            "Signed in. The command line (record, retrieve, reason and the other "
+            "data commands) and `anona mcp` now use this login."
         )
     else:
         print("Signed in. MCP clients can now connect without an API key.")
@@ -390,62 +401,37 @@ def _approve(base_url: str, open_browser: bool, scope: str) -> int:
 
 
 def run_login(base_url: str, open_browser: bool = True) -> int:
-    """The MCP approval alone: `anona login --mcp`, and the second half of
-    `anona login`. Stored in `credentials.json`, exactly as it always was."""
+    """The MCP-only approval: `anona login --mcp`, and `anona login`'s fallback
+    on a deployment without command-line tokens. Stored in `credentials.json`,
+    exactly as it always was."""
     return _approve(base_url, open_browser, oauth.MCP_SCOPE)
 
 
 def run_cli_login(base_url: str, open_browser: bool = True) -> int:
-    """The command-line approval alone: `anona login --cli`, and the first half
-    of `anona login`. Stored in `cli-credentials.json`."""
+    """The command-line approval: `anona login --cli`, and what `anona login`
+    asks for. Stored in `cli-credentials.json`; `anona mcp` uses it too."""
     return _approve(base_url, open_browser, oauth.CLI_SCOPE)
 
 
-_STEP_NAMES = {
-    "cli": "the command line (`anona login --cli`)",
-    "mcp": "MCP (`anona login --mcp`)",
-}
+def run_logins(base_url: str, open_browser: bool = True) -> int:
+    """`anona login`: one approval that signs in the command line and MCP.
 
+    The command-line token is accepted on `/mcp` as well as the REST API, so
+    `anona mcp` uses it and there is no second approval. (Two approvals, one
+    per token, is what this used to do; the MCP token is narrower, but both
+    files sit side by side in `~/.anona`, so the split protected nothing on the
+    machine and cost a second trip to the browser.) `anona login --mcp` still
+    mints an MCP-only token for anyone who wants one.
 
-def run_logins(
-    base_url: str, open_browser: bool = True, *, cli: bool = True, mcp: bool = True
-) -> int:
-    """Each requested approval in turn: the command line's, then MCP's.
-
-    Two approvals rather than one token for both, because the two grants differ
-    on purpose: the command-line token reaches the whole memory API,
-    deletes included, and is granted only to this machine's loopback; the MCP
-    token reaches only /mcp. One failing does not stop the other -- a
-    deployment that predates command-line tokens still gets its MCP sign-in --
-    and the exit code is non-zero only when everything asked for failed.
-
-    The command line goes first so that an unclaimed temporary profile is
-    claimed by the first approval and the MCP token is then minted for the
-    claimed account, never the one the claim replaced.
+    A deployment that predates command-line tokens refuses the scope; then the
+    MCP approval runs instead, so MCP clients still get signed in.
     """
-    steps = [name for name, on in (("cli", cli), ("mcp", mcp)) if on]
-    results: dict[str, int] = {}
-    for i, step in enumerate(steps):
-        if len(steps) > 1:
-            label = "command line" if step == "cli" else "MCP"
-            print(f"\nApproval {i + 1} of {len(steps)}: {label}.", flush=True)
-        if step == "cli":
-            results[step] = run_cli_login(base_url, open_browser=open_browser)
-        else:
-            results[step] = run_login(base_url, open_browser=open_browser)
-        if results[step] != 0 and i + 1 < len(steps):
-            print("Continuing with the next approval.", file=sys.stderr, flush=True)
-    failed = [s for s in steps if results[s] != 0]
-    if len(steps) > 1 and failed and len(failed) < len(steps):
-        done = [s for s in steps if s not in failed]
-        print(
-            "Signed in for "
-            + " and ".join(_STEP_NAMES[s] for s in done)
-            + "; not for "
-            + " and ".join(_STEP_NAMES[s] for s in failed)
-            + ".",
-            file=sys.stderr,
-        )
-    if failed and len(failed) == len(steps):
-        return results[failed[-1]]
-    return 0
+    rc = _approve(base_url, open_browser, oauth.CLI_SCOPE, fallback=True)
+    if rc != _REFUSED:
+        return rc
+    print(
+        "Signing in for MCP only; the command line needs an API key on this deployment.",
+        file=sys.stderr,
+        flush=True,
+    )
+    return run_login(base_url, open_browser=open_browser)

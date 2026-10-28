@@ -81,8 +81,8 @@ function cliStatus(io: IO, requested?: string, shadowed = false): number | null 
   // Only what the file says: never a token or the client id, and no network
   // call, which would rotate the refresh token just to look at it.
   const use = shadowed
-    ? "not used while an API key is set"
-    : "used by record, retrieve, reason and the other data commands";
+    ? "used by `anona mcp`; not by the data commands while an API key is set"
+    : "used by record, retrieve, reason, the other data commands and `anona mcp`";
   io.stdout.write(`Command-line login for ${c.baseUrl} (${use}).\n`);
   const remaining = c.expiresAt - Date.now() / 1000;
   if (remaining > 0) {
@@ -101,13 +101,25 @@ function status(io: IO, requested?: string, baseUrlFlag?: string, apiKeyFlag?: s
   const cli = cliStatus(io, requested);
   if (cli === null) return mcpStatus(io, requested);
   if (cli !== 0) return cli;
-  if (loadCredentials() === null) {
-    io.stdout.write("No MCP credential is stored. Run `anona login --mcp` to connect MCP clients.\n");
-    return 0;
-  }
-  // A working command-line login decides the exit code.
-  mcpStatus(io, requested);
+  // A working command-line login decides the exit code, and it is also what
+  // `anona mcp` presents; an MCP file beside it is only described.
+  shadowedMcpStatus(io);
   return 0;
+}
+
+/** The MCP file beside a command-line login, which `anona mcp` presents ahead of it. */
+function shadowedMcpStatus(io: IO): void {
+  const c = loadCredentials();
+  if (c === null) return;
+  if (isSignedIn(c)) {
+    io.stdout.write(
+      `An MCP-only login for ${c.baseUrl} is also stored; \`anona mcp\` uses the ` +
+        "command-line login instead (`anona logout --mcp` removes it).\n",
+    );
+  }
+  if (c.tempToken && c.tempExpiresAt !== undefined && c.tempExpiresAt > Date.now() / 1000) {
+    io.stdout.write(`Temporary profile for ${c.baseUrl}: ${describeDeadline(c.tempExpiresAt)}; not used while you are logged in.\n`);
+  }
 }
 
 /**
@@ -139,7 +151,10 @@ function keyStatus(
   io.stdout.write(`It is sent to ${safe(base)}.\n`);
   const space = findSpace(undefined, config);
   io.stdout.write(space ? `Space: ${safe(space)}.\n` : "Space: none set; pass --space or set ANONA_SPACE_ID.\n");
-  cliStatus(io, undefined, true);
+  if (cliStatus(io, undefined, true) !== null) {
+    shadowedMcpStatus(io);
+    return 0;
+  }
   if (loadCredentials() === null) {
     io.stdout.write("No `anona login` credential is stored for MCP (that one is for `anona mcp`).\n");
     return 0;
@@ -350,15 +365,30 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
     const refused = guarded(io, () => (checkTransport(base), 0));
     if (refused !== 0) return refused;
     io.stdout.write(`Signing in to ${base}\n`);
-    // Neither flag means both approvals; the parser keeps the two exclusive.
+    // Neither flag means the one approval that covers both the command line and
+    // `anona mcp`; the parser keeps the two flags exclusive.
     const wantCli = !args.mcp;
-    const wantMcp = !args.cli;
+    const wantMcp = Boolean(args.mcp);
     const same = (a: string, b: string) => a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
     const heldCli = wantCli ? loadCredentials(cliCredentialsPath()) : null;
     if (heldCli && isSignedIn(heldCli) && !same(heldCli.baseUrl, base)) {
       io.stdout.write(`Note: the stored command-line credential is for ${heldCli.baseUrl}; this replaces it.\n`);
     }
     const stored = loadCredentials();
+    if (!wantMcp && stored && !same(stored.baseUrl, base)) {
+      // The command-line approval leaves the MCP file alone, so nothing in it is
+      // lost -- but `anona mcp` and the data commands present this login ahead
+      // of it from now on, which is worth saying.
+      if (liveTempToken(stored) !== null) {
+        io.stdout.write(
+          `Note: the unclaimed temporary profile for ${stored.baseUrl} ` +
+            `(it ${describeDeadline(stored.tempExpiresAt as number)}) is kept, ` +
+            `but this login is used instead of it. Claim it with \`anona login --base-url ${stored.baseUrl}\`.\n`,
+        );
+      } else if (isSignedIn(stored)) {
+        io.stdout.write(`Note: the MCP-only login for ${stored.baseUrl} is kept, but \`anona mcp\` uses this login instead.\n`);
+      }
+    }
     if (wantMcp && stored && !same(stored.baseUrl, base)) {
       io.stdout.write(`Note: the stored credential is for ${stored.baseUrl}; this replaces it.\n`);
       // A profile belongs to the deployment that minted it, so its token cannot
@@ -378,14 +408,22 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
       );
     }
     const opts: LoginOptions = { ...login, openBrowser: !args.no_browser, stdout: io.stdout, stderr: io.stderr };
-    if (wantCli && wantMcp) return runLogins(base, opts);
+    if (!args.cli && !args.mcp) return runLogins(base, opts);
     return wantCli ? runCliLogin(base, opts) : runLogin(base, opts);
   }
   if (command === "logout") return logout(io, { cli: !args.mcp, mcp: !args.cli, force: Boolean(args.force) });
   if (command === "status") return status(io, requested, baseUrl, args.api_key as string | undefined);
   if (command === "doctor") return runDoctor(io, args, baseUrl, requested, packageVersion());
   // mcp: a credential belongs to the deployment that issued it. Naming another
-  // is refused on stderr; stdout is the client's JSON-RPC stream.
-  const stored = loadCredentials();
+  // is refused on stderr; stdout is the client's JSON-RPC stream. The
+  // command-line login is the one `anona login` makes and the proxy presents
+  // first, so its deployment wins, unless the user named the MCP file's
+  // deployment and not its own.
+  const cliLogin = loadCredentials(cliCredentialsPath());
+  const held = [cliLogin !== null && isSignedIn(cliLogin) ? cliLogin : null, loadCredentials()].filter(
+    (c): c is NonNullable<typeof c> => c !== null,
+  );
+  const trim = (u: string) => u.replace(/\/+$/, "");
+  const stored = held.find((c) => requested === undefined || trim(c.baseUrl) === trim(requested)) ?? held[0];
   return guarded(io, () => runProxy(resolveTarget(requested, stored?.baseUrl), io.stdin, io.stdout, io.stderr));
 }
