@@ -200,7 +200,7 @@ def register_client(
     return client_id
 
 
-# The two grants `anona login` asks for. `mcp` mints `mcp_access`,
+# The two grants `anona-memory login` asks for. `mcp` mints `mcp_access`,
 # which only /mcp accepts; exactly `cli` mints `cli_access`, which only the REST
 # data plane accepts, and is granted only to a client whose every redirect URI
 # is loopback -- which is what `run_login` registers.

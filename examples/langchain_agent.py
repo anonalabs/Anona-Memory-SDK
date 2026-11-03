@@ -1,6 +1,6 @@
 """LangChain / LangGraph agent with Anona memory.
 
-    pip install 'anona[langchain]' langchain-openai
+    pip install 'anona-memory[langchain]' langchain-openai
     export ANONA_API_KEY=anona_live_... OPENAI_API_KEY=sk-...
     python examples/langchain_agent.py
 

@@ -1,6 +1,6 @@
 """LlamaIndex agent with Anona as a memory block.
 
-    pip install 'anona[llamaindex]' llama-index-llms-openai aiosqlite
+    pip install 'anona-memory[llamaindex]' llama-index-llms-openai aiosqlite
     export ANONA_API_KEY=anona_live_... OPENAI_API_KEY=sk-...
     python examples/llamaindex_agent.py
 

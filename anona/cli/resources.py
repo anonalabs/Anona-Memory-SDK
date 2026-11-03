@@ -42,7 +42,7 @@ from .verbs import _count, _d, _limit, _offset, _p, _render_model, _render_profi
 
 DASHBOARD = "https://memory.anonalabs.com"
 
-# verb -> (what, dashboard path). `what` completes "anona: <what> is done in
+# verb -> (what, dashboard path). `what` completes "anona-memory: <what> is done in
 # the dashboard: <URL>".
 DASHBOARD_ONLY: dict[tuple[str, str | None], tuple[str, str]] = {
     ("keys", "create"): ("creating an API key", "/dashboard/keys"),
@@ -107,7 +107,7 @@ def refuse_dashboard(verb: tuple[str, str | None], args: argparse.Namespace | No
     if verb == ("spaces", "members remove") and words:
         # The space's own page, where its members are managed.
         path = f"{path}/{_seg(words[0])}"
-    print(f"anona: {what} is done in the dashboard: {DASHBOARD}{path}", file=sys.stderr)
+    print(f"anona-memory: {what} is done in the dashboard: {DASHBOARD}{path}", file=sys.stderr)
     return exits.AUTH
 
 
@@ -220,7 +220,7 @@ def add_parsers(sub, common: argparse.ArgumentParser, creds: Callable) -> None:
     gp.add_argument("prompt", nargs="?", default=None, metavar="PROMPT", help="With draw: what to chart, in plain language")
     gp.add_argument("--limit", type=_limit(1, 2000), default=None, help="At most this many entities (1-2000, default 500)")
     gp.add_argument("--min-count", type=_limit(1, 1_000_000), default=None, help="Only entities mentioned at least this many times")
-    gp.add_argument("--model", default=None, help="With draw: the LLM that draws it (see `anona llm-models`)")
+    gp.add_argument("--model", default=None, help="With draw: the LLM that draws it (see `anona-memory llm-models`)")
 
     # entities ----------------------------------------------------------------
     acts = group("entities", "List the entities extracted from a space, or show one")
@@ -242,7 +242,7 @@ def add_parsers(sub, common: argparse.ArgumentParser, creds: Callable) -> None:
     creds(p, "ask in")
     p.add_argument("user_id", metavar="USER", type=non_empty, help="The user_id your writes are scoped with")
     p.add_argument("question", metavar="QUESTION", help="The question")
-    p.add_argument("--model", default=None, help="The LLM that answers (see `anona llm-models`; default: the space's)")
+    p.add_argument("--model", default=None, help="The LLM that answers (see `anona-memory llm-models`; default: the space's)")
     p.add_argument("--depth", choices=("fast", "thorough"), default=None, help="How deep it reads")
 
     creds(sub.add_parser("space-types", parents=[common], help="List the space types a new space can start from"), None)
@@ -251,7 +251,7 @@ def add_parsers(sub, common: argparse.ArgumentParser, creds: Callable) -> None:
     p = sub.add_parser("chat", parents=[common], help="Send one message through the memory-backed chat proxy and print the reply")
     creds(p, "chat in")
     p.add_argument("message", metavar="MESSAGE", help="What to say")
-    p.add_argument("--model", default=None, help="The LLM to use (see `anona llm-models`; default: the space's)")
+    p.add_argument("--model", default=None, help="The LLM to use (see `anona-memory llm-models`; default: the space's)")
     p.add_argument("--no-memory", action="store_true", help="Neither recall memories into this turn nor record it")
 
     # account views -----------------------------------------------------------
@@ -347,8 +347,8 @@ def add_profile_actions(p: argparse.ArgumentParser) -> None:
 
 
 def add_usage_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--history", action="store_true", help="Daily operation counts instead of the credit balance (needs `anona login`)")
-    p.add_argument("--breakdown", action="store_true", help="Operation counts per space instead of the credit balance (needs `anona login`)")
+    p.add_argument("--history", action="store_true", help="Daily operation counts instead of the credit balance (needs `anona-memory login`)")
+    p.add_argument("--breakdown", action="store_true", help="Operation counts per space instead of the credit balance (needs `anona-memory login`)")
     p.add_argument("--days", type=_limit(1, 365), default=None, help="With --history or --breakdown: how many days back (1-365, default 30)")
 
 
@@ -366,7 +366,7 @@ def add_space_members(acts, common: argparse.ArgumentParser, creds: Callable) ->
 
 
 def _no(message: str) -> int:
-    print(f"anona: {message} Nothing was sent.", file=sys.stderr)
+    print(f"anona-memory: {message} Nothing was sent.", file=sys.stderr)
     return EMPTY_INPUT_EXIT
 
 
@@ -384,21 +384,21 @@ def precheck(verb: tuple[str, str | None], args: argparse.Namespace) -> int | No
         return _blank("model name", args.name) or _blank("question", args.query)
     if verb == ("models", "edit"):
         if _model_body(args, create=False) == {}:
-            return _no("name at least one field to change (see `anona models edit --help`).")
+            return _no("name at least one field to change (see `anona-memory models edit --help`).")
     if verb == ("rules", "add"):
         return _blank("rule text", args.text)
     if verb == ("rules", "edit"):
         if not _rule_edit_body(args):
-            return _no("name at least one field to change (see `anona rules edit --help`).")
+            return _no("name at least one field to change (see `anona-memory rules edit --help`).")
     if verb == ("webhooks", "edit"):
         if not _given(url=args.url, event_types=args.events, enabled=args.enabled):
-            return _no("name at least one field to change (see `anona webhooks edit --help`).")
+            return _no("name at least one field to change (see `anona-memory webhooks edit --help`).")
     if cmd == "profile":
         flags = [f for f, v in (("--mission", args.mission), ("--skepticism", args.skepticism), ("--literalism", args.literalism), ("--empathy", args.empathy)) if v is not None]
         if act != "set" and flags:
             return _no(f"{', '.join(flags)} needs `profile set`.")
         if act == "set" and not flags:
-            return _no("name at least one field to change (see `anona profile --help`).")
+            return _no("name at least one field to change (see `anona-memory profile --help`).")
     if cmd == "graph":
         if act == "draw":
             if args.prompt is None:
@@ -423,7 +423,7 @@ def precheck(verb: tuple[str, str | None], args: argparse.Namespace) -> int | No
     if verb == ("exports", "download"):
         out = args.out or default_out(args.job_id)
         if os.path.lexists(out) and not args.yes:
-            print(f"anona: {_p(out)} already exists. Pass --yes to overwrite it. Nothing was sent.", file=sys.stderr)
+            print(f"anona-memory: {_p(out)} already exists. Pass --yes to overwrite it. Nothing was sent.", file=sys.stderr)
             return EMPTY_INPUT_EXIT
     return None
 

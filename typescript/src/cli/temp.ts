@@ -1,8 +1,8 @@
 /**
- * `anona start`: make a temporary memory profile with no identity.
+ * `anona-memory start`: make a temporary memory profile with no identity.
  *
  * The profile is deleted 72 hours after creation unless claimed with
- * `anona login`. It has no email address attached, so this CLI is the only
+ * `anona-memory login`. It has no email address attached, so this CLI is the only
  * place its deadline can ever be shown: `start` prints it and `status` repeats it.
  *
  * The space behind it is created on first write, not here. Nothing in this
@@ -49,20 +49,20 @@ export async function runStart(
   const existing = loadCredentials();
   if (existing !== null && isSignedIn(existing)) {
     io.stderr.write(
-      "anona start: you are already signed in. Run `anona logout` first if you want a temporary profile instead.\n",
+      "anona start: you are already signed in. Run `anona-memory logout` first if you want a temporary profile instead.\n",
     );
     return 1;
   }
   if (existing !== null && liveTempToken(existing) !== null) {
     // Creation is rate limited per address, and a second profile would orphan
     // the first one's memories.
-    // Non-zero, because nothing was created: a script running `anona start`
+    // Non-zero, because nothing was created: a script running `anona-memory start`
     // to guarantee itself a fresh profile got exit 0 and a profile belonging
     // to an earlier run. Refusal, not success -- the same code as the
     // signed-in refusal just above.
     io.stdout.write("A temporary profile already exists; not creating another.\n");
     io.stdout.write(`It ${describeDeadline(existing.tempExpiresAt as number)}.\n`);
-    io.stdout.write("Run `anona login` before then to keep it.\n");
+    io.stdout.write("Run `anona-memory login` before then to keep it.\n");
     return 1;
   }
   let deadline: number;
@@ -109,14 +109,14 @@ export async function runStart(
     }
   } catch (e) {
     if (e instanceof StartError) {
-      io.stderr.write(`anona start: ${e.message}\n`);
+      io.stderr.write(`anona-memory start: ${e.message}\n`);
       return 1;
     }
     throw e;
   }
   io.stdout.write(`Temporary profile created. It ${describeDeadline(deadline)}.\n`);
-  io.stdout.write("The only reminder comes in the last 24 hours: run `anona status` to check, and\n");
-  io.stdout.write("`anona login` to claim it and keep what it holds.\n");
+  io.stdout.write("The only reminder comes in the last 24 hours: run `anona-memory status` to check, and\n");
+  io.stdout.write("`anona-memory login` to claim it and keep what it holds.\n");
   io.stdout.write("Its space, `default`, is normally created now; if a retrieve reports no space, the first memory you write creates it.\n");
   return 0;
 }

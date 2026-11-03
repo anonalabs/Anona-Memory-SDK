@@ -1,6 +1,6 @@
 """High-volume writes: queue them, keep serving, poll for the outcome.
 
-    pip install anona
+    pip install anona-memory
     export ANONA_API_KEY=anona_live_...
     python examples/background_ingestion.py
 

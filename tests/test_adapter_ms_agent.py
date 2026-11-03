@@ -371,6 +371,6 @@ def test_import_error_names_the_extra():
             from anona.integrations.ms_agent import AnonaContextProvider
             AnonaContextProvider(bridge=b)
         except ImportError as e:
-            assert "pip install 'anona[msagent]'" in str(e), str(e)
+            assert "pip install 'anona-memory[msagent]'" in str(e), str(e)
             print('OK')
     """))

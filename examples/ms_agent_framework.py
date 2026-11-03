@@ -1,6 +1,6 @@
 """Microsoft Agent Framework agent with Anona memory.
 
-    pip install 'anona[msagent]' agent-framework-openai
+    pip install 'anona-memory[msagent]' agent-framework-openai
     export ANONA_API_KEY=anona_live_... OPENAI_API_KEY=sk-...
     python examples/ms_agent_framework.py
 

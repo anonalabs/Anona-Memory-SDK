@@ -249,13 +249,13 @@ describe("resource verbs", () => {
           expect(r.rc, `${argv.join(" ")} ${status}`).toBe(want);
           expect(srv.seen.length).toBeGreaterThan(n);
           expect(r.out).toBe("");
-          expect(r.err.startsWith("anona: ")).toBe(true);
+          expect(r.err.startsWith("anona-memory: ")).toBe(true);
         }
       }
     }
     MODE.status = 404;
     const [, , err] = await sent(["memories", "history", "nope", ...AUTH], 5);
-    expect(err.trim()).toBe("anona: not_found: Not found. (request_id req_4)");
+    expect(err.trim()).toBe("anona-memory: not_found: Not found. (request_id req_4)");
   });
 
   it("jobs get on a job the space does not hold exits 5, nothing on stdout", async () => {
@@ -264,7 +264,7 @@ describe("resource verbs", () => {
       const r = await run(["jobs", "get", "job-0001-bbbb", ...AUTH, ...extra]);
       expect(r.rc).toBe(5);
       expect(r.out).toBe("");
-      expect(r.err.trim()).toBe("anona: job_not_found: No job with that id in this space.");
+      expect(r.err.trim()).toBe("anona-memory: job_not_found: No job with that id in this space.");
     }
   });
 
@@ -274,7 +274,7 @@ describe("resource verbs", () => {
     let r = await run(["memories", "list", ...AUTH]);
     expect(r.rc).toBe(7);
     expect(srv.seen.length - n).toBe(3);
-    expect(r.err).toContain("anona: server error 500, retrying in 0 s (1/2)");
+    expect(r.err).toContain("anona-memory: server error 500, retrying in 0 s (1/2)");
     n = srv.seen.length;
     r = await run(["spaces", "create", "x", ...KEYED]);
     expect(srv.seen.length - n).toBe(1);
@@ -283,7 +283,7 @@ describe("resource verbs", () => {
 
   it("destructive verbs need --yes and send nothing without it", async () => {
     let err = await refused(["memories", "delete", "mem-0001-aaaa", ...AUTH]);
-    expect(err).toBe("anona: this would delete memory mem-0001-aaaa in space 's'. Pass --yes to do it. Nothing was sent.\n");
+    expect(err).toBe("anona-memory: this would delete memory mem-0001-aaaa in space 's'. Pass --yes to do it. Nothing was sent.\n");
     expect(await refused(["memories", "delete", "mem-0001-aaaa", "--json", ...AUTH])).toContain("--yes");
     err = await refused(["jobs", "cancel", "job-0001-bbbb", ...AUTH]);
     expect(err).toContain("job-0001-bbbb");
@@ -329,7 +329,7 @@ describe("resource verbs", () => {
 
   it("usage errors send nothing", async () => {
     expect(await refused(["memories", "edit", "mem-1", ...AUTH])).toContain("the following arguments are required: --text");
-    expect(await refused(["memories", "edit", "mem-1", "--text", "  ", ...AUTH])).toBe("anona: the memory text is empty. Nothing was sent.\n");
+    expect(await refused(["memories", "edit", "mem-1", "--text", "  ", ...AUTH])).toBe("anona-memory: the memory text is empty. Nothing was sent.\n");
     expect(await refused(["memories", "list", "--limit", "0", ...AUTH])).toContain("argument --limit: must be between 1 and 200");
     await refused(["memories", "list", "--limit", "201", ...AUTH]);
     expect(await refused(["memories", "list", "--offset", "-1", ...AUTH])).toContain("argument --offset: must be 0 or more");
@@ -339,14 +339,14 @@ describe("resource verbs", () => {
     // there the key itself reads as the action -- as argparse reads it.
     expect(await refused(["spaces", ...KEYED])).toContain("argument action: invalid choice: 'anona_live_…'");
     expect(await refused(["spaces", "--base-url", srv.base])).toContain(
-      "anona spaces: error: the following arguments are required: action",
+      "anona-memory spaces: error: the following arguments are required: action",
     );
     await refused(["memories", ...AUTH]);
     await refused(["jobs", ...AUTH]);
     expect(await refused(["spaces", "wat", ...KEYED])).toContain(
       "argument action: invalid choice: 'wat' (choose from 'list', 'create', 'get', 'delete', 'members')",
     );
-    expect(await refused(["spaces", "--json", "list", ...KEYED])).toContain("anona: error: unrecognized arguments: --json");
+    expect(await refused(["spaces", "--json", "list", ...KEYED])).toContain("anona-memory: error: unrecognized arguments: --json");
   });
 
   it("every verb is in help, and each group lists its actions", async () => {

@@ -194,7 +194,7 @@ def test_import_error_names_the_extra():
             from anona.integrations.crewai import AnonaStorage
             AnonaStorage(bridge=b)
         except ImportError as e:
-            assert "pip install 'anona[crewai]'" in str(e), str(e)
+            assert "pip install 'anona-memory[crewai]'" in str(e), str(e)
             print('OK')
     """))
 
@@ -457,7 +457,7 @@ def test_save_survives_sequential_real_socket_calls_without_logging_failure():
     # code: repeated save() calls all still reach the server on loopback
     # (a write "lost" by this bug is still billed -- production, over real
     # TLS rather than loopback, is likely worse, not better, per the
-    # review), but 4 of 8 logged "anona: failed to store turn": a spurious,
+    # review), but 4 of 8 logged "anona-memory: failed to store turn": a spurious,
     # customer-visible failure log for writes that had actually succeeded.
     _ok(_run_real("""
         import logging

@@ -5,14 +5,14 @@ Exposes Anona memory as MCP tools so any MCP client (Claude Desktop, Claude Code
 Cursor) can store and retrieve memories natively.
 
 Run:
-    ANONA_API_KEY=anona_live_... uvx --from 'anona[mcp]' anona-mcp
+    ANONA_API_KEY=anona_live_... uvx --from 'anona-memory[mcp]' anona-memory-mcp
 
 Client config (e.g. claude_desktop_config.json):
     {
       "mcpServers": {
-        "anona": {
+        "anona-memory": {
           "command": "uvx",
-          "args": ["--from", "anona[mcp]", "anona-mcp"],
+          "args": ["--from", "anona-memory[mcp]", "anona-memory-mcp"],
           "env": {"ANONA_API_KEY": "anona_live_..."}
         }
       }
@@ -31,7 +31,7 @@ try:
 except ImportError:  # pragma: no cover
     sys.stderr.write(
         "The Anona MCP server requires the 'mcp' extra:\n"
-        "    pip install 'anona[mcp]'\n"
+        "    pip install 'anona-memory[mcp]'\n"
     )
     raise
 

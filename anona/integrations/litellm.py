@@ -317,7 +317,7 @@ class AnonaMemory:
             from litellm.integrations.custom_logger import CustomLogger
         except ImportError as exc:
             raise ImportError(
-                "litellm required: pip install 'anona[litellm]'"
+                "litellm required: pip install 'anona-memory[litellm]'"
             ) from exc
 
         anona = self

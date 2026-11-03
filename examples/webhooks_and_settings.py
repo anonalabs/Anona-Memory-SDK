@@ -1,6 +1,6 @@
 """Configure a space: webhooks instead of polling, and per-space defaults.
 
-    pip install anona
+    pip install anona-memory
     export ANONA_API_KEY=anona_live_...
     python examples/webhooks_and_settings.py
 

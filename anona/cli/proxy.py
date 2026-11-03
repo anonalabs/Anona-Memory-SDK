@@ -1,4 +1,4 @@
-"""`anona mcp`: a stdio MCP server that forwards to the remote one.
+"""`anona-memory mcp`: a stdio MCP server that forwards to the remote one.
 
 Any MCP client can launch a stdio server, including the ones with no OAuth
 support, so this is what makes login work everywhere. The proxy holds the
@@ -9,8 +9,8 @@ complete JSON response and there is no session. So this is a forwarder, not a
 transport implementation, and the remote's tool list (including tools added
 later) appears here with no schema maintained on this side.
 
-Which credential it presents, highest first: the command-line login (`anona
-login`; the gateway accepts it on /mcp), then an MCP-only login (`anona login
+Which credential it presents, highest first: the command-line login (`anona-memory
+login`; the gateway accepts it on /mcp), then an MCP-only login (`anona-memory login
 --mcp`), then an unclaimed temporary profile. The command-line login is used
 only for the deployment it was issued by.
 
@@ -80,7 +80,7 @@ def _cli_login(base_url: str) -> store.Credentials | None:
 def _bearer(client: httpx.Client, base_url: str) -> tuple[str, str]:
     """(token, kind), kind being "cli", "mcp" or "temp". A login always wins.
 
-    Re-read on every message, so an `anona login` made while a client is
+    Re-read on every message, so an `anona-memory login` made while a client is
     running takes effect on its next call. The temp token is the fallback only
     when there is no login: once someone has logged in, their session is the
     credential and a leftover temp token must not be sent. It lives here rather
@@ -97,8 +97,8 @@ def _bearer(client: httpx.Client, base_url: str) -> tuple[str, str]:
         return temp, "temp"
     if c is not None and c.temp_token:
         raise tokens.NotLoggedIn(
-            "The temporary profile has expired. Run `anona start` for a new one, "
-            "or `anona login`."
+            "The temporary profile has expired. Run `anona-memory start` for a new one, "
+            "or `anona-memory login`."
         )
     return tokens.access_token(client), "mcp"  # raises NotLoggedIn
 
@@ -112,7 +112,7 @@ def _forward(client: httpx.Client, base_url: str, msg: dict | list) -> str | Non
         # Opaque and fixed: there is nothing to refresh, only expired or claimed.
         raise _Failure(
             "The server rejected the temporary profile (expired, or already claimed). "
-            "Run `anona login`."
+            "Run `anona-memory login`."
         )
     if resp.status_code == 401:
         token = tokens.access_token(
@@ -123,7 +123,7 @@ def _forward(client: httpx.Client, base_url: str, msg: dict | list) -> str | Non
         )
         resp = _post(client, url, token, msg)
         if resp.status_code == 401:
-            raise _Failure("The server rejected the stored login. Run `anona login` again.")
+            raise _Failure("The server rejected the stored login. Run `anona-memory login` again.")
     if resp.status_code >= 400:
         raise _Failure(f"The Anona server answered HTTP {resp.status_code}.")
     if not resp.content.strip():
@@ -181,7 +181,7 @@ def run_proxy(base_url: str, stdin, stdout, stderr) -> int:
     # stdout is the transport and carries nothing but JSON-RPC; stderr is
     # where this proxy already puts diagnostics (see `_handle`). An unclaimed
     # profile has no email address, so there is no other channel to warn on
-    # at all -- `anona status` is the only other place the deadline appears.
+    # at all -- `anona-memory status` is the only other place the deadline appears.
     c = store.load()
     if (
         _cli_login(base_url) is None
@@ -195,7 +195,7 @@ def run_proxy(base_url: str, stdin, stdout, stderr) -> int:
             print(
                 f"anona mcp: this temporary profile "
                 f"{describe_deadline(c.temp_expires_at)}. "
-                "Run `anona login` to claim it and keep what it holds.",
+                "Run `anona-memory login` to claim it and keep what it holds.",
                 file=stderr,
                 flush=True,
             )

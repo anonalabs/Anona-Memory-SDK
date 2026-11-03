@@ -1,6 +1,6 @@
 """Google ADK agent with Anona as its memory service.
 
-    pip install 'anona[adk]'
+    pip install 'anona-memory[adk]'
     export ANONA_API_KEY=anona_live_... GOOGLE_API_KEY=...
     python examples/google_adk_agent.py
 

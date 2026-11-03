@@ -128,7 +128,7 @@ imports or needs. Every name this module touches (``ContextProvider``,
 against that distribution's file manifest — so declaring the lean package
 here (see ``pyproject.toml``) avoids forcing a multi-hundred-megabyte,
 mostly-unrelated dependency tree onto every caller of
-``pip install 'anona[msagent]'``. A project that already depends on the
+``pip install 'anona-memory[msagent]'``. A project that already depends on the
 ``agent-framework`` meta package (as any real user of this adapter will,
 to get an actual chat-client implementation) already satisfies this either
 way, since the meta package requires the core package as a strict subset.

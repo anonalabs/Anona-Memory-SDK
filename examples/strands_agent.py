@@ -1,6 +1,6 @@
 """AWS Strands agent with Anona memory as two tools.
 
-    pip install 'anona[strands]'
+    pip install 'anona-memory[strands]'
     export ANONA_API_KEY=anona_live_... AWS_PROFILE=...
     python examples/strands_agent.py
 

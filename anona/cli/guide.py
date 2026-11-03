@@ -1,4 +1,4 @@
-"""`anona guide` (also `anona help --llm`): the CLI described for an agent.
+"""`anona-memory guide` (also `anona-memory help --llm`): the CLI described for an agent.
 
 Compact, stable plain text -- or, with --json, a machine-readable command
 tree. Everything structural (commands, positionals, flags, their help, the
@@ -18,7 +18,7 @@ from . import exits
 from .introspect import Command, as_dict, tree, usage
 
 PURPOSE = (
-    "anona is the command line for Anona Memory, a hosted memory layer for AI agents. "
+    "anona-memory is the command line for Anona Memory, a hosted memory layer for AI agents. "
     "It records facts into a space, retrieves them by meaning, reasons over them, and "
     "manages spaces, memories, documents, jobs and per-space settings. MCP is the "
     "primary surface for an agent; this CLI is for scripts, terminals and harnesses "
@@ -27,10 +27,10 @@ PURPOSE = (
     "`anona: <code>: <message> (request_id <id>)`."
 )
 
-# What bare `anona` prints: where to start, for a person or an agent that has
+# What bare `anona-memory` prints: where to start, for a person or an agent that has
 # just found the command. Static on purpose -- no network and no credential
 # read -- so it answers instantly and identically everywhere. The full
-# reference is `anona guide`; this only points at it.
+# reference is `anona-memory guide`; this only points at it.
 ORIENTATION = """\
 anona: the command line for Anona Memory, a hosted memory layer for AI agents.
 
@@ -55,8 +55,8 @@ Docs: https://docs.anonalabs.com/cli/overview
 """
 
 EPILOG = (
-    "New here, or an agent? Run `anona guide` for every command, flag, exit code "
-    "and recipe, or `anona` alone for where to start."
+    "New here, or an agent? Run `anona-memory guide` for every command, flag, exit code "
+    "and recipe, or `anona-memory` alone for where to start."
 )
 
 
@@ -64,59 +64,59 @@ CREDENTIALS = (
     "--api-key KEY on the command line (visible in the process list; prefer the variable)",
     "ANONA_API_KEY in the environment",
     "ANONA_API_KEY in ~/.anona/config.env (or the active profile's config.env)",
-    "the command-line login from `anona login` (refreshed automatically)",
-    "a temporary profile from `anona start` (no account; its one space is `default`)",
+    "the command-line login from `anona-memory login` (refreshed automatically)",
+    "a temporary profile from `anona-memory start` (no account; its one space is `default`)",
 )
 
 CREDENTIAL_NOTES = (
     "An API key or the command-line login reaches an account, which can hold many spaces: "
     "name one with --space or ANONA_SPACE_ID.",
-    "`anona mcp` uses the command-line login too. A separate MCP-only login (`anona login --mcp`) is for `anona mcp` only; the REST API refuses it.",
+    "`anona-memory mcp` uses the command-line login too. A separate MCP-only login (`anona-memory login --mcp`) is for `anona-memory mcp` only; the REST API refuses it.",
     "An API key from the environment or config.env is only sent to api.anonalabs.com or "
     "memory.anonalabs.com unless ANONA_BASE_URL is set in the same place.",
     "--profile NAME (or ANONA_PROFILE) switches to a separate set of credentials and "
     "config.env under ~/.anona/profiles/NAME.",
-    "`anona doctor` says which credential wins and why, without printing it.",
+    "`anona-memory doctor` says which credential wins and why, without printing it.",
 )
 
 COMMON_ERRORS = (
-    ("exit 4, `no credential`", "a data command found nothing to send; run `anona login --cli`, set ANONA_API_KEY, or `anona start`"),
-    ("exit 2, `an API key needs a space`", "pass --space NAME or set ANONA_SPACE_ID; `anona spaces list` shows them"),
-    ("exit 4, `the stored `anona login` credential is for MCP`", "run `anona login --cli` to sign the command line in"),
+    ("exit 4, `no credential`", "a data command found nothing to send; run `anona-memory login --cli`, set ANONA_API_KEY, or `anona-memory start`"),
+    ("exit 2, `an API key needs a space`", "pass --space NAME or set ANONA_SPACE_ID; `anona-memory spaces list` shows them"),
+    ("exit 4, `the stored `anona-memory login` credential is for MCP`", "run `anona-memory login --cli` to sign the command line in"),
     ("exit 4, `refusing to send the API key ... to <host>`", "pass --api-key and --base-url together, or unset ANONA_BASE_URL"),
     ("exit 3 from record", "nothing was extracted; re-record with a sentence of context"),
-    ("exit 5, `space_not_found`", "check the id with `anona spaces list` (a shared space may need owner:name; a temporary profile has only `default`)"),
+    ("exit 5, `space_not_found`", "check the id with `anona-memory spaces list` (a shared space may need owner:name; a temporary profile has only `default`)"),
     ("exit 5, `job_not_found`", "jobs get / --wait: that id is not a job in this space; check --space"),
     (
         "exit 4, `temp_profile_single_space`",
         "a temporary profile has only the `default` space: it cannot create spaces or write elsewhere; "
-        "sign in with `anona login` for more",
+        "sign in with `anona-memory login` for more",
     ),
     ("exit 4, `space_owner_only` / `space_read_only`", "the space is shared with you without that right; ask its owner"),
     ("exit 6, `rate_limited`", "wait; the CLI already retried the 429"),
     (
         "exit 6, `credits_exhausted`",
         "the balance is spent: reads (retrieve, reason, memories list, documents list, profile) spend credits "
-        "too and are refused at zero; check `anona usage`",
+        "too and are refused at zero; check `anona-memory usage`",
     ),
-    ("exit 7, `could not reach`", "check the network and `anona doctor`; a write that timed out may still have been stored"),
-    ("exit 8 from --wait", "the job is still running; check later with `anona jobs get JOB_ID`"),
+    ("exit 7, `could not reach`", "check the network and `anona-memory doctor`; a write that timed out may still have been stored"),
+    ("exit 8 from --wait", "the job is still running; check later with `anona-memory jobs get JOB_ID`"),
     ("exit 1, `unsupported_file_type` / `file_too_large`", "documents upload: the server's message names the supported types and limits"),
-    ("exit 1 from `anona status`, `Not logged in`", "nothing is stored; status only reports that. Run `anona start` or `anona login`"),
-    ("exit 1 from a second `anona start`", "a temporary profile already exists here; keep using it (`anona status` shows its deadline)"),
-    ("exit 1 from `anona logout`", "it will not discard an unclaimed temporary profile; claim it with `anona login` first"),
+    ("exit 1 from `anona-memory status`, `Not logged in`", "nothing is stored; status only reports that. Run `anona-memory start` or `anona-memory login`"),
+    ("exit 1 from a second `anona-memory start`", "a temporary profile already exists here; keep using it (`anona-memory status` shows its deadline)"),
+    ("exit 1 from `anona-memory logout`", "it will not discard an unclaimed temporary profile; claim it with `anona-memory login` first"),
     ("exit 1, `memory_not_editable`", "only facts and experiences can be edited; a note is rebuilt from them, so edit a fact it came from"),
-    ("exit 1, `job_not_cancellable`", "the job has already finished; `anona jobs get JOB_ID` shows how it ended"),
-    ("exit 1, `unsupported_model`", "that model id is not offered; `anona llm-models` lists the ones that are"),
+    ("exit 1, `job_not_cancellable`", "the job has already finished; `anona-memory jobs get JOB_ID` shows how it ended"),
+    ("exit 1, `unsupported_model`", "that model id is not offered; `anona-memory llm-models` lists the ones that are"),
     (
         "exit 4, `session_required`",
         "org, orgs, projects, keys list, members, spaces members list, invitations, billing, exports and "
-        "usage --history/--breakdown need `anona login --cli`; an API key or a temporary profile cannot use them",
+        "usage --history/--breakdown need `anona-memory login --cli`; an API key or a temporary profile cannot use them",
     ),
     (
-        "exit 4, `session_required` after `anona login --cli`",
+        "exit 4, `session_required` after `anona-memory login --cli`",
         "an API key is set and outranks the login (--api-key, ANONA_API_KEY or ~/.anona/config.env): "
-        "unset it, or run the command without it, to use `anona login --cli`",
+        "unset it, or run the command without it, to use `anona-memory login --cli`",
     ),
     (
         "exit 4, `dashboard_only`: `anona: <what> is done in the dashboard: <URL>`",
@@ -128,93 +128,93 @@ COMMON_ERRORS = (
 # One example per command. Each must parse (a test runs every one through
 # the real parser).
 EXAMPLES: dict[str, str] = {
-    "start": "anona start",
-    "record": 'anona record "The team ships on Tuesdays." --space notes',
-    "retrieve": 'anona retrieve "when do we ship" --space notes --json',
-    "reason": 'anona reason "What is our release process?" --space notes --depth thorough',
-    "spaces list": "anona spaces list --json",
-    "spaces create": 'anona spaces create notes --description "Team notes"',
-    "spaces get": "anona spaces get notes",
-    "spaces delete": "anona spaces delete old-notes --yes",
-    "memories list": "anona memories list --space notes --member-id me",
-    "memories edit": 'anona memories edit MEMORY_ID --text "The team ships on Wednesdays." --space notes',
-    "memories delete": "anona memories delete MEMORY_ID --yes --space notes",
-    "memories history": "anona memories history MEMORY_ID --space notes",
-    "documents upload": "anona documents upload report.pdf notes.md --space notes --wait",
-    "documents list": "anona documents list --space notes --source file",
-    "documents get": "anona documents get DOCUMENT_ID --space notes",
-    "documents delete": "anona documents delete DOCUMENT_ID --yes --space notes",
-    "jobs get": "anona jobs get JOB_ID --space notes",
-    "jobs cancel": "anona jobs cancel JOB_ID --yes --space notes",
-    "profile": "anona profile --space notes",
-    "model": "anona model MODEL_ID --space notes",
-    "user-profile": "anona user-profile alice --space notes",
-    "usage": "anona usage",
-    "llm-models": "anona llm-models --json",
-    "chat-settings get": "anona chat-settings get --space notes",
-    "chat-settings set": "anona chat-settings set --memory-limit 5 --space notes",
-    "chat-settings reset": "anona chat-settings reset --yes --space notes",
-    "reason-settings get": "anona reason-settings get --space notes",
-    "reason-settings set": "anona reason-settings set --depth thorough --space notes",
-    "reason-settings reset": "anona reason-settings reset --yes --space notes",
-    "extraction-settings get": "anona extraction-settings get --space notes",
-    "extraction-settings set": "anona extraction-settings set --mode verbose --space notes",
-    "extraction-settings reset": "anona extraction-settings reset --yes --space notes",
-    "login": "anona login --cli",
-    "logout": "anona logout --cli",
-    "status": "anona status",
-    "mcp": "anona mcp",
-    "doctor": "anona doctor --space notes",
-    "guide": "anona guide --json",
-    "help": "anona help spaces delete",
-    "completion": "anona completion bash",
-    "models list": "anona models list --space notes",
-    "models create": 'anona models create "Build habits" --query "How does this team build?" --space notes',
-    "models get": "anona models get MODEL_ID --space notes",
-    "models edit": 'anona models edit MODEL_ID --query "How does the team ship?" --space notes',
-    "models delete": "anona models delete MODEL_ID --yes --space notes",
-    "models refresh": "anona models refresh MODEL_ID --space notes",
-    "models clear": "anona models clear MODEL_ID --yes --space notes",
-    "models history": "anona models history MODEL_ID --space notes",
-    "rules list": "anona rules list --space notes",
-    "rules add": 'anona rules add "Never state revenue as committed without a signed document." --space notes',
-    "rules edit": "anona rules edit RULE_ID --no-active --space notes",
-    "rules delete": "anona rules delete RULE_ID --yes --space notes",
-    "webhooks list": "anona webhooks list --space notes",
-    "webhooks create": "anona webhooks create https://example.com/hooks/anona --events memory.created,memory.consolidated --space notes",
-    "webhooks edit": "anona webhooks edit WEBHOOK_ID --no-enabled --space notes",
-    "webhooks delete": "anona webhooks delete WEBHOOK_ID --yes --space notes",
-    "webhooks deliveries": "anona webhooks deliveries WEBHOOK_ID --limit 20 --space notes",
-    "graph": "anona graph --limit 20 --space notes",
-    "entities list": "anona entities list --limit 20 --space notes",
-    "entities get": "anona entities get ENTITY_ID --space notes",
-    "receipts get": "anona receipts get REQUEST_ID --explain --memory-id MEMORY_ID",
-    "ask-user": 'anona ask-user alice "What does she prefer?" --space notes',
-    "space-types": "anona space-types",
-    "chat": 'anona chat "What did we decide about releases?" --space notes --no-memory',
-    "org": "anona org",
-    "orgs list": "anona orgs list",
-    "projects list": "anona projects list",
-    "keys list": "anona keys list",
-    "keys create": "anona keys create ci",
-    "keys revoke": "anona keys revoke KEY_ID",
-    "members list": "anona members list",
-    "members me": "anona members me",
-    "members invitations": "anona members invitations",
-    "members invite": "anona members invite dev@example.com",
-    "members remove": "anona members remove MEMBER_ID",
-    "invitations pending": "anona invitations pending",
-    "invitations accept": "anona invitations accept TOKEN",
-    "invitations decline": "anona invitations decline TOKEN",
-    "billing": "anona billing",
-    "exports list": "anona exports list --space notes",
-    "exports create": "anona exports create --space notes",
-    "exports download": "anona exports download JOB_ID --out notes.zip --space notes",
-    "spaces members list": "anona spaces members list notes",
-    "spaces members remove": "anona spaces members remove notes MEMBER_ID",
-    "routing-settings get": "anona routing-settings get --space notes",
-    "routing-settings set": 'anona routing-settings set --charter "Billing questions" --topics billing,invoices --space notes',
-    "routing-settings reset": "anona routing-settings reset --yes --space notes",
+    "start": "anona-memory start",
+    "record": 'anona-memory record "The team ships on Tuesdays." --space notes',
+    "retrieve": 'anona-memory retrieve "when do we ship" --space notes --json',
+    "reason": 'anona-memory reason "What is our release process?" --space notes --depth thorough',
+    "spaces list": "anona-memory spaces list --json",
+    "spaces create": 'anona-memory spaces create notes --description "Team notes"',
+    "spaces get": "anona-memory spaces get notes",
+    "spaces delete": "anona-memory spaces delete old-notes --yes",
+    "memories list": "anona-memory memories list --space notes --member-id me",
+    "memories edit": 'anona-memory memories edit MEMORY_ID --text "The team ships on Wednesdays." --space notes',
+    "memories delete": "anona-memory memories delete MEMORY_ID --yes --space notes",
+    "memories history": "anona-memory memories history MEMORY_ID --space notes",
+    "documents upload": "anona-memory documents upload report.pdf notes.md --space notes --wait",
+    "documents list": "anona-memory documents list --space notes --source file",
+    "documents get": "anona-memory documents get DOCUMENT_ID --space notes",
+    "documents delete": "anona-memory documents delete DOCUMENT_ID --yes --space notes",
+    "jobs get": "anona-memory jobs get JOB_ID --space notes",
+    "jobs cancel": "anona-memory jobs cancel JOB_ID --yes --space notes",
+    "profile": "anona-memory profile --space notes",
+    "model": "anona-memory model MODEL_ID --space notes",
+    "user-profile": "anona-memory user-profile alice --space notes",
+    "usage": "anona-memory usage",
+    "llm-models": "anona-memory llm-models --json",
+    "chat-settings get": "anona-memory chat-settings get --space notes",
+    "chat-settings set": "anona-memory chat-settings set --memory-limit 5 --space notes",
+    "chat-settings reset": "anona-memory chat-settings reset --yes --space notes",
+    "reason-settings get": "anona-memory reason-settings get --space notes",
+    "reason-settings set": "anona-memory reason-settings set --depth thorough --space notes",
+    "reason-settings reset": "anona-memory reason-settings reset --yes --space notes",
+    "extraction-settings get": "anona-memory extraction-settings get --space notes",
+    "extraction-settings set": "anona-memory extraction-settings set --mode verbose --space notes",
+    "extraction-settings reset": "anona-memory extraction-settings reset --yes --space notes",
+    "login": "anona-memory login --cli",
+    "logout": "anona-memory logout --cli",
+    "status": "anona-memory status",
+    "mcp": "anona-memory mcp",
+    "doctor": "anona-memory doctor --space notes",
+    "guide": "anona-memory guide --json",
+    "help": "anona-memory help spaces delete",
+    "completion": "anona-memory completion bash",
+    "models list": "anona-memory models list --space notes",
+    "models create": 'anona-memory models create "Build habits" --query "How does this team build?" --space notes',
+    "models get": "anona-memory models get MODEL_ID --space notes",
+    "models edit": 'anona-memory models edit MODEL_ID --query "How does the team ship?" --space notes',
+    "models delete": "anona-memory models delete MODEL_ID --yes --space notes",
+    "models refresh": "anona-memory models refresh MODEL_ID --space notes",
+    "models clear": "anona-memory models clear MODEL_ID --yes --space notes",
+    "models history": "anona-memory models history MODEL_ID --space notes",
+    "rules list": "anona-memory rules list --space notes",
+    "rules add": 'anona-memory rules add "Never state revenue as committed without a signed document." --space notes',
+    "rules edit": "anona-memory rules edit RULE_ID --no-active --space notes",
+    "rules delete": "anona-memory rules delete RULE_ID --yes --space notes",
+    "webhooks list": "anona-memory webhooks list --space notes",
+    "webhooks create": "anona-memory webhooks create https://example.com/hooks/anona --events memory.created,memory.consolidated --space notes",
+    "webhooks edit": "anona-memory webhooks edit WEBHOOK_ID --no-enabled --space notes",
+    "webhooks delete": "anona-memory webhooks delete WEBHOOK_ID --yes --space notes",
+    "webhooks deliveries": "anona-memory webhooks deliveries WEBHOOK_ID --limit 20 --space notes",
+    "graph": "anona-memory graph --limit 20 --space notes",
+    "entities list": "anona-memory entities list --limit 20 --space notes",
+    "entities get": "anona-memory entities get ENTITY_ID --space notes",
+    "receipts get": "anona-memory receipts get REQUEST_ID --explain --memory-id MEMORY_ID",
+    "ask-user": 'anona-memory ask-user alice "What does she prefer?" --space notes',
+    "space-types": "anona-memory space-types",
+    "chat": 'anona-memory chat "What did we decide about releases?" --space notes --no-memory',
+    "org": "anona-memory org",
+    "orgs list": "anona-memory orgs list",
+    "projects list": "anona-memory projects list",
+    "keys list": "anona-memory keys list",
+    "keys create": "anona-memory keys create ci",
+    "keys revoke": "anona-memory keys revoke KEY_ID",
+    "members list": "anona-memory members list",
+    "members me": "anona-memory members me",
+    "members invitations": "anona-memory members invitations",
+    "members invite": "anona-memory members invite dev@example.com",
+    "members remove": "anona-memory members remove MEMBER_ID",
+    "invitations pending": "anona-memory invitations pending",
+    "invitations accept": "anona-memory invitations accept TOKEN",
+    "invitations decline": "anona-memory invitations decline TOKEN",
+    "billing": "anona-memory billing",
+    "exports list": "anona-memory exports list --space notes",
+    "exports create": "anona-memory exports create --space notes",
+    "exports download": "anona-memory exports download JOB_ID --out notes.zip --space notes",
+    "spaces members list": "anona-memory spaces members list notes",
+    "spaces members remove": "anona-memory spaces members remove notes MEMBER_ID",
+    "routing-settings get": "anona-memory routing-settings get --space notes",
+    "routing-settings set": 'anona-memory routing-settings set --charter "Billing questions" --topics billing,invoices --space notes',
+    "routing-settings reset": "anona-memory routing-settings reset --yes --space notes",
 }
 
 # What --json prints, per command (the API's response unless noted).
@@ -346,7 +346,7 @@ def text(parser: argparse.ArgumentParser) -> str:
         out.append(f"    --json: {JSON_SHAPES.get(cmd.name, '-')}")
     out += ["", "EXIT CODES"]
     out += [f"  {code}  {name}: {meaning}" for code, name, meaning in exits.EXIT_CODES]
-    out += ["  141  the reader closed the pipe (e.g. `anona guide | head`); output stops quietly"]
+    out += ["  141  the reader closed the pipe (e.g. `anona-memory guide | head`); output stops quietly"]
     out += ["", "COMMON ERRORS"]
     out += [f"  {err}: {fix}" for err, fix in COMMON_ERRORS]
     return "\n".join(out)

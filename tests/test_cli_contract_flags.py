@@ -186,7 +186,7 @@ def test_record_json_on_success_nothing_stored_and_failure(tmp_path):
         MODE["status"] = 500
         rc, out, err = run_main(["record", "x", "--json"] + AUTH)
         assert rc == 7 and out == "", (rc, out, err)
-        assert err.strip() == "anona: internal_error: Something broke. (request_id req_1)", err
+        assert err.strip() == "anona-memory: internal_error: Something broke. (request_id req_1)", err
         MODE["status"] = 401
         rc, out, err = run_main(["record", "x", "--json"] + AUTH)
         assert rc == 4 and out == "", (rc, out, err)

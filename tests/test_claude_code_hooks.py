@@ -1,7 +1,7 @@
 """The Claude Code plugin's sync hooks (`anona-sdk/hooks/anona_sync.py`).
 
 Loaded by path: the hooks ship as a script in the plugin, not as part of the
-`anona` package.
+`anona-memory` package.
 """
 
 import importlib.util
@@ -29,7 +29,7 @@ def sync(monkeypatch, tmp_path):
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    # Never reach a real `anona` on this machine; tests that want the bridge
+    # Never reach a real `anona-memory` on this machine; tests that want the bridge
     # point at a fake one.
     monkeypatch.setattr(module, "_anona_binary", lambda: None)
     monkeypatch.setattr(module, "SPACES_CACHE_TTL", 0)

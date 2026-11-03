@@ -42,7 +42,7 @@ const seg = encodeURIComponent;
 
 export const DASHBOARD = "https://memory.anonalabs.com";
 
-/** Verb -> [what, dashboard path]. `what` completes "anona: <what> is done in the dashboard: <URL>". */
+/** Verb -> [what, dashboard path]. `what` completes "anona-memory: <what> is done in the dashboard: <URL>". */
 export const DASHBOARD_ONLY: Record<string, readonly [string, string]> = {
   "keys create": ["creating an API key", "/dashboard/keys"],
   "keys revoke": ["revoking an API key", "/dashboard/keys"],
@@ -100,7 +100,7 @@ export function refuseDashboard(io: DataIO, verb: Verb, args: Values = {}): numb
   const words = Array.isArray(args.ignored) ? (args.ignored as string[]) : [];
   // The space's own page, where its members are managed.
   const path = key(verb) === "spaces members remove" && words.length ? `${base}/${pySeg(words[0] as string)}` : base;
-  io.stderr.write(`anona: ${what} is done in the dashboard: ${DASHBOARD}${path}\n`);
+  io.stderr.write(`anona-memory: ${what} is done in the dashboard: ${DASHBOARD}${path}\n`);
   return exits.AUTH;
 }
 
@@ -255,7 +255,7 @@ export function addCommands(h: Helpers): CommandSpec[] {
       ...h.creds("read"),
       { flags: ["--limit"], dest: "limit", kind: "value", ...LIMIT(1, 2000), help: "At most this many entities (1-2000, default 500)" },
       { flags: ["--min-count"], dest: "min_count", kind: "value", ...LIMIT(1, 1_000_000), help: "Only entities mentioned at least this many times" },
-      { flags: ["--model"], dest: "model", kind: "value", help: "With draw: the LLM that draws it (see `anona llm-models`)" },
+      { flags: ["--model"], dest: "model", kind: "value", help: "With draw: the LLM that draws it (see `anona-memory llm-models`)" },
     ],
   };
 
@@ -287,7 +287,7 @@ export function addCommands(h: Helpers): CommandSpec[] {
       { dest: "question", metavar: "QUESTION", help: "The question" },
     ],
     options: [
-      { flags: ["--model"], dest: "model", kind: "value", help: "The LLM that answers (see `anona llm-models`; default: the space's)" },
+      { flags: ["--model"], dest: "model", kind: "value", help: "The LLM that answers (see `anona-memory llm-models`; default: the space's)" },
       { flags: ["--depth"], dest: "depth", kind: "value", choices: ["fast", "thorough"], help: "How deep it reads" },
     ],
   });
@@ -297,7 +297,7 @@ export function addCommands(h: Helpers): CommandSpec[] {
   const chat = leaf("chat", "Send one message through the memory-backed chat proxy and print the reply", "chat in", {
     positionals: [{ dest: "message", metavar: "MESSAGE", help: "What to say" }],
     options: [
-      { flags: ["--model"], dest: "model", kind: "value", help: "The LLM to use (see `anona llm-models`; default: the space's)" },
+      { flags: ["--model"], dest: "model", kind: "value", help: "The LLM to use (see `anona-memory llm-models`; default: the space's)" },
       { flags: ["--no-memory"], dest: "no_memory", kind: "store_true", help: "Neither recall memories into this turn nor record it" },
     ],
   });
@@ -381,8 +381,8 @@ export function profileActions(h: Helpers): { positionals: PositionalSpec[]; opt
 
 export function usageFlags(h: Helpers): OptionSpec[] {
   return [
-    { flags: ["--history"], dest: "history", kind: "store_true", help: "Daily operation counts instead of the credit balance (needs `anona login`)" },
-    { flags: ["--breakdown"], dest: "breakdown", kind: "store_true", help: "Operation counts per space instead of the credit balance (needs `anona login`)" },
+    { flags: ["--history"], dest: "history", kind: "store_true", help: "Daily operation counts instead of the credit balance (needs `anona-memory login`)" },
+    { flags: ["--breakdown"], dest: "breakdown", kind: "store_true", help: "Operation counts per space instead of the credit balance (needs `anona-memory login`)" },
     {
       flags: ["--days"],
       dest: "days",
@@ -420,7 +420,7 @@ export function spaceMembers(h: Helpers): CommandSpec {
 // --- usage checks, before any credential is looked up ---------------------------
 
 const no = (io: DataIO, message: string): number => {
-  io.stderr.write(`anona: ${message} Nothing was sent.\n`);
+  io.stderr.write(`anona-memory: ${message} Nothing was sent.\n`);
   return exits.USAGE;
 };
 const blank = (io: DataIO, what: string, value: unknown): number | null =>
@@ -443,14 +443,14 @@ export function precheck(io: DataIO, verb: Verb, args: Values): number | null {
   const k = key(verb);
   if (k === "models create") return blank(io, "model name", args.name) ?? blank(io, "question", args.query);
   if (k === "models edit" && !Object.keys(modelBody(args, false)).length) {
-    return no(io, "name at least one field to change (see `anona models edit --help`).");
+    return no(io, "name at least one field to change (see `anona-memory models edit --help`).");
   }
   if (k === "rules add") return blank(io, "rule text", args.text);
   if (k === "rules edit" && !Object.keys(ruleEditBody(args)).length) {
-    return no(io, "name at least one field to change (see `anona rules edit --help`).");
+    return no(io, "name at least one field to change (see `anona-memory rules edit --help`).");
   }
   if (k === "webhooks edit" && !Object.keys(given({ url: args.url, event_types: args.events, enabled: args.enabled })).length) {
-    return no(io, "name at least one field to change (see `anona webhooks edit --help`).");
+    return no(io, "name at least one field to change (see `anona-memory webhooks edit --help`).");
   }
   if (cmd === "profile") {
     const flags = (
@@ -464,7 +464,7 @@ export function precheck(io: DataIO, verb: Verb, args: Values): number | null {
       .filter(([, v]) => v !== undefined)
       .map(([f]) => f);
     if (act !== "set" && flags.length) return no(io, `${flags.join(", ")} needs \`profile set\`.`);
-    if (act === "set" && !flags.length) return no(io, "name at least one field to change (see `anona profile --help`).");
+    if (act === "set" && !flags.length) return no(io, "name at least one field to change (see `anona-memory profile --help`).");
   }
   if (cmd === "graph") {
     if (act === "draw") {
@@ -486,7 +486,7 @@ export function precheck(io: DataIO, verb: Verb, args: Values): number | null {
   if (k === "exports download") {
     const target = outPath(args);
     if (lexists(target) && !args.yes) {
-      io.stderr.write(`anona: ${p(target)} already exists. Pass --yes to overwrite it. Nothing was sent.\n`);
+      io.stderr.write(`anona-memory: ${p(target)} already exists. Pass --yes to overwrite it. Nothing was sent.\n`);
       return exits.USAGE;
     }
   }

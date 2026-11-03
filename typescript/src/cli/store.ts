@@ -2,9 +2,9 @@
  * Where the OAuth credential lives on disk.
  *
  * Separate from `~/.anona/config.env`, which holds an API key for the skill and
- * for `anona-mcp`. The two are different credentials with different reach: a key
+ * for `anona-memory-mcp`. The two are different credentials with different reach: a key
  * works against REST, this does not. Keeping them in separate files means
- * `anona logout` cannot silently destroy a key the user minted by hand.
+ * `anona-memory logout` cannot silently destroy a key the user minted by hand.
  *
  * The file is shared with the Python CLI on purpose: same path, same keys, same
  * mode. Log in with one, run the other, and you are already signed in.
@@ -40,7 +40,7 @@ export interface Credentials {
   clientId: string;
   baseUrl: string;
   /**
-   * An unclaimed profile made by `anona start`. A temp-only file has empty
+   * An unclaimed profile made by `anona-memory start`. A temp-only file has empty
    * OAuth fields (see `isSignedIn`). Never printed, never in a repr: the file
    * is its only copy.
    */
@@ -121,7 +121,7 @@ export function cliCredentialsPath(): string {
  * The stored credential, or null when there is none that can be read.
  *
  * A corrupt or unreadable file reads as "logged out" rather than throwing. This
- * runs at the start of every `anona mcp` process, and a stack trace there is an
+ * runs at the start of every `anona-memory mcp` process, and a stack trace there is an
  * MCP client that fails to start with an error naming a JSON parser.
  */
 export function loadCredentials(file: string = credentialsPath()): Credentials | null {

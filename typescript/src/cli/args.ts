@@ -1,11 +1,11 @@
 /**
- * The `anona` grammar, as data.
+ * The `anona-memory` grammar, as data.
  *
  * Every command is declared once in `COMMANDS`, and the parser, the help, the
- * command tree (`tree`), `anona guide` and `anona completion` all come from
+ * command tree (`tree`), `anona-memory guide` and `anona-memory completion` all come from
  * that one table. It mirrors the pip package's argparse definitions flag for
  * flag -- the same names, help, validation and exit 2 for a usage error -- so
- * a command line that works with one `anona` works with the other, and the two
+ * a command line that works with one `anona-memory` works with the other, and the two
  * `guide --json` trees are the same document.
  *
  * The parser follows argparse where a script could tell the difference:
@@ -432,7 +432,7 @@ export const TAGS_MATCH = ["any", "all", "any_strict", "all_strict", "exact"] as
 // many spaces and the server implies none, so both need one named. A temporary
 // profile has exactly one space. The MCP login is refused outright.
 const spaceHelp = (verb: string) =>
-  `Space to ${verb}. Required with an API key or \`anona login\` unless ANONA_SPACE_ID is set; ` +
+  `Space to ${verb}. Required with an API key or \`anona-memory login\` unless ANONA_SPACE_ID is set; ` +
   "a temporary profile uses `default`";
 const API_KEY_HELP =
   "API key for this command (else $ANONA_API_KEY, else ~/.anona/config.env). " +
@@ -450,7 +450,7 @@ export const COMMON_OPTIONS: OptionSpec[] = [
       `${DEFAULT_BASE_URL_TEXT} for login and start. A stored login or ` +
       "temporary profile always uses the server that issued it",
   },
-  { flags: ["--no-browser"], dest: "no_browser", kind: "store_true", help: "Used by `anona login` only: print the approval URL instead of opening a browser" },
+  { flags: ["--no-browser"], dest: "no_browser", kind: "store_true", help: "Used by `anona-memory login` only: print the approval URL instead of opening a browser" },
   {
     flags: ["--profile"],
     dest: "profile",
@@ -491,7 +491,7 @@ const VERSION_OPTION: OptionSpec = { flags: ["--version"], dest: "__version", ki
 
 // Printed under the top-level --help, as argparse prints the parser's epilog.
 export const ROOT_EPILOG =
-  "New here, or an agent? Run `anona guide` for every command, flag, exit code and recipe, or `anona` alone for where to start.";
+  "New here, or an agent? Run `anona-memory guide` for every command, flag, exit code and recipe, or `anona-memory` alone for where to start.";
 
 export const ROOT_DESCRIPTION =
   "Anona Memory: sign in, connect MCP clients, record, retrieve or reason over memories, and manage spaces, memories and jobs.";
@@ -574,7 +574,7 @@ const SETTINGS_BLURBS: Record<string, string> = {
 function settingsFieldOptions(kind: string): OptionSpec[] {
   if (kind === "reason-settings") {
     return [
-      { flags: ["--model"], dest: "model", kind: "value", help: "A model id or tier name from `anona llm-models`" },
+      { flags: ["--model"], dest: "model", kind: "value", help: "A model id or tier name from `anona-memory llm-models`" },
       { flags: ["--depth"], dest: "depth", kind: "value", choices: ["fast", "thorough"], help: "How deep `reason` reads" },
     ];
   }
@@ -591,7 +591,7 @@ function settingsFieldOptions(kind: string): OptionSpec[] {
       },
       { flags: ["--auto-record"], dest: "auto_record", kind: "bool_optional", help: "Record each proxied turn" },
       { flags: ["--memory"], dest: "memory", kind: "bool_optional", help: "Inject memories into proxied calls" },
-      { flags: ["--chat-model"], dest: "chat_model", kind: "value", help: "The LLM proxied calls use (see `anona llm-models`)" },
+      { flags: ["--chat-model"], dest: "chat_model", kind: "value", help: "The LLM proxied calls use (see `anona-memory llm-models`)" },
     ];
   }
   if (kind === "routing-settings") {
@@ -878,7 +878,7 @@ const RESOURCE_COMMANDS: CommandSpec[] = [
   ...addCommands(HELPERS),
 ];
 
-/** `--cli` / `--mcp`. Neither: login asks for the one command-line approval, which `anona mcp` uses too; logout removes both. */
+/** `--cli` / `--mcp`. Neither: login asks for the one command-line approval, which `anona-memory mcp` uses too; logout removes both. */
 const which = (verb: string): OptionSpec[] => [
   {
     flags: ["--cli"],
@@ -887,7 +887,7 @@ const which = (verb: string): OptionSpec[] => [
     exclusive: "which",
     help:
       verb === "approve"
-        ? "approve the command-line credential only, with no fallback to MCP (record, retrieve, reason, the other data commands and `anona mcp`)"
+        ? "approve the command-line credential only, with no fallback to MCP (record, retrieve, reason, the other data commands and `anona-memory mcp`)"
         : `only ${verb} the command-line credential (record, retrieve, reason and the other data commands)`,
   },
   {
@@ -895,7 +895,7 @@ const which = (verb: string): OptionSpec[] => [
     dest: "mcp",
     kind: "store_true",
     exclusive: "which",
-    help: verb === "approve" ? "approve a separate MCP-only credential for `anona mcp` instead" : `only ${verb} the MCP credential (\`anona mcp\`)`,
+    help: verb === "approve" ? "approve a separate MCP-only credential for `anona-memory mcp` instead" : `only ${verb} the MCP credential (\`anona-memory mcp\`)`,
   },
 ];
 
@@ -1025,8 +1025,8 @@ export const COMMANDS: CommandSpec[] = [
     // Claiming has no command of its own -- it is what `login` does when a
     // temporary profile is stored -- so `login --help` is where it must be said.
     description:
-      "Approve access in a browser, once: the command line and `anona mcp` both use the login. " +
-      "With a temporary profile stored (from `anona start`), approving also claims it: " +
+      "Approve access in a browser, once: the command line and `anona-memory mcp` both use the login. " +
+      "With a temporary profile stored (from `anona-memory start`), approving also claims it: " +
       "the account you sign in with, which needs an email not yet used for Anona, " +
       "takes over the profile and everything in it.",
     options: which("approve"),
@@ -1071,7 +1071,7 @@ export const COMMANDS: CommandSpec[] = [
     help: "Show help for anona or one command (`help spaces delete`); `help --llm` prints the agent reference",
     positionals: [{ dest: "topic", nargs: "*", metavar: "COMMAND", help: "The command to describe, e.g. `record` or `spaces delete`" }],
     options: [
-      { flags: ["--llm"], dest: "llm", kind: "store_true", help: "Print `anona guide` instead" },
+      { flags: ["--llm"], dest: "llm", kind: "store_true", help: "Print `anona-memory guide` instead" },
       { flags: ["--json"], dest: "json", kind: "store_true", help: "With --llm, the command tree as JSON" },
     ],
   },
@@ -1083,13 +1083,13 @@ export const COMMANDS: CommandSpec[] = [
 ];
 
 /**
- * `anona help spaces delete`: the spec and prog those words name, or the
+ * `anona-memory help spaces delete`: the spec and prog those words name, or the
  * choices at the first word that names nothing.
  */
 export function findCommand(words: string[]): { spec: CommandSpec; prog: string } | { unknown: string[] } {
   let choices: CommandSpec[] | undefined = COMMANDS;
   let spec: CommandSpec | null = null;
-  let prog = "anona";
+  let prog = "anona-memory";
   for (const word of words) {
     const next: CommandSpec | undefined = choices?.find((c) => c.name === word);
     if (!next) return { unknown: (choices ?? []).map((c) => c.name) };
@@ -1164,7 +1164,7 @@ export function tree(): TreeCommand {
     children: (c.actions ?? []).map((a) => build(a, [...path, a.name])),
   });
   return {
-    path: ["anona"],
+    path: ["anona-memory"],
     help: collapse(ROOT_DESCRIPTION),
     options: [...COMMON_OPTIONS, VERSION_OPTION].map(treeOption),
     positionals: [],
@@ -1264,7 +1264,7 @@ export function commandHelp(prog: string, spec: CommandSpec): string {
 }
 
 export function topHelp(): string {
-  let out = usageLine("anona", null);
+  let out = usageLine("anona-memory", null);
   out += "\n" + wrap(ROOT_DESCRIPTION, 79).join("\n") + "\n";
   out += "\npositional arguments:\n";
   out += `  {${COMMANDS.map((c) => c.name).join(",")}}\n`;
@@ -1435,7 +1435,7 @@ function parseOrThrow(argv: string[], io: Out, version: string): Parsed {
     const tok = argv[i] as string;
     if (tok === "--") continue;
     if (looksLikeOption(tok)) {
-      const lk = findOption(topOptions, tok, "anona", null);
+      const lk = findOption(topOptions, tok, "anona-memory", null);
       if (lk === null) {
         extras.push(tok);
         continue;
@@ -1445,16 +1445,16 @@ function parseOrThrow(argv: string[], io: Out, version: string): Parsed {
         throw new Exit(0);
       }
       if (lk.spec === VERSION_OPTION) {
-        io.stdout.write(`anona ${version}\n`);
+        io.stdout.write(`anona-memory ${version}\n`);
         throw new Exit(0);
       }
-      apply(lk.spec, lk, "anona", null);
+      apply(lk.spec, lk, "anona-memory", null);
       continue;
     }
     command = COMMANDS.find((c) => c.name === tok);
     if (command === undefined) {
       throw new UsageError(
-        "anona",
+        "anona-memory",
         null,
         `argument command: invalid choice: '${tok}' (choose from ${COMMANDS.map((c) => `'${c.name}'`).join(", ")})` +
           // The usual cause is a copy older than the docs that named the
@@ -1466,10 +1466,10 @@ function parseOrThrow(argv: string[], io: Out, version: string): Parsed {
     i++;
     break;
   }
-  if (command === undefined) throw new UsageError("anona", null, "the following arguments are required: command");
+  if (command === undefined) throw new UsageError("anona-memory", null, "the following arguments are required: command");
 
   let spec: CommandSpec = command;
-  let prog = `anona ${command.name}`;
+  let prog = `anona-memory ${command.name}`;
   let action: string | null = null;
   let positionalIndex = 0;
   let onlyPositionals = false;
@@ -1546,7 +1546,7 @@ function parseOrThrow(argv: string[], io: Out, version: string): Parsed {
     ...(spec.options ?? []).filter((o) => o.required && values[o.dest] === undefined).map((o) => optionName(o)),
   ];
   if (missing.length) throw new UsageError(prog, spec, `the following arguments are required: ${missing.join(", ")}`);
-  if (extras.length) throw new UsageError("anona", null, `unrecognized arguments: ${extras.join(" ")}`);
+  if (extras.length) throw new UsageError("anona-memory", null, `unrecognized arguments: ${extras.join(" ")}`);
   for (const p of spec.positionals ?? []) if (p.nargs === "*" && values[p.dest] === undefined) values[p.dest] = [];
   for (const o of spec.options ?? []) {
     if (values[o.dest] !== undefined) continue;

@@ -1,4 +1,4 @@
-"""`python -m anona.cli`: the same command as `anona`."""
+"""`python -m anona.cli`: the same command as `anona-memory`."""
 
 import sys
 

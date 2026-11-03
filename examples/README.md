@@ -19,7 +19,7 @@ the id and drop the `delete_space` call at the bottom.
 
 ## Scenarios (SDK only)
 
-The product, story by story. `pip install anona` is all these need.
+The product, story by story. `pip install anona-memory` is all these need.
 
 | Script | The story |
 | --- | --- |
@@ -48,12 +48,12 @@ environment is safe here and is not in the scenario scripts above.
 
 | Script | Install | Also needs |
 | --- | --- | --- |
-| [`langchain_agent.py`](langchain_agent.py) | `pip install 'anona[langchain]' langchain-openai` | `OPENAI_API_KEY` |
-| [`crewai_crew.py`](crewai_crew.py) | `pip install 'anona[crewai]'` | `OPENAI_API_KEY` |
-| [`llamaindex_agent.py`](llamaindex_agent.py) | `pip install 'anona[llamaindex]' llama-index-llms-openai aiosqlite` | `OPENAI_API_KEY` |
-| [`google_adk_agent.py`](google_adk_agent.py) | `pip install 'anona[adk]'` | `GOOGLE_API_KEY` |
-| [`ms_agent_framework.py`](ms_agent_framework.py) | `pip install 'anona[msagent]' agent-framework-openai` | `OPENAI_API_KEY` |
-| [`strands_agent.py`](strands_agent.py) | `pip install 'anona[strands]'` | AWS credentials |
+| [`langchain_agent.py`](langchain_agent.py) | `pip install 'anona-memory[langchain]' langchain-openai` | `OPENAI_API_KEY` |
+| [`crewai_crew.py`](crewai_crew.py) | `pip install 'anona-memory[crewai]'` | `OPENAI_API_KEY` |
+| [`llamaindex_agent.py`](llamaindex_agent.py) | `pip install 'anona-memory[llamaindex]' llama-index-llms-openai aiosqlite` | `OPENAI_API_KEY` |
+| [`google_adk_agent.py`](google_adk_agent.py) | `pip install 'anona-memory[adk]'` | `GOOGLE_API_KEY` |
+| [`ms_agent_framework.py`](ms_agent_framework.py) | `pip install 'anona-memory[msagent]' agent-framework-openai` | `OPENAI_API_KEY` |
+| [`strands_agent.py`](strands_agent.py) | `pip install 'anona-memory[strands]'` | AWS credentials |
 
 The model and provider in each script are only there to make it run — swap in
 whatever your app uses. Nothing about the memory wiring depends on them.

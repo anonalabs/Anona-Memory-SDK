@@ -2,7 +2,7 @@
 
 Highest first: `--api-key`, then ANONA_API_KEY in the environment, then
 ANONA_API_KEY in ~/.anona/config.env. With none of them the verbs fall back to
-the command-line login (`anona login --cli`), then to the stored
+the command-line login (`anona-memory login --cli`), then to the stored
 temporary-profile token; memory._token_and_space owns that half.
 
 The MCP login is never one of these. It is MCP-scoped (`typ=mcp_access`) and
@@ -10,7 +10,7 @@ the REST API refuses it by design; MCP and the CLI's data verbs hold separate
 credentials on purpose.
 
 The source travels with the key because it decides where the key may be sent
-(target.for_api_key) and is what `anona status` names. The key itself is
+(target.for_api_key) and is what `anona-memory status` names. The key itself is
 never printed: `display()` is the only form that reaches output.
 """
 
@@ -69,7 +69,7 @@ def find_space(flag: str | None, config: dict[str, str]) -> str | None:
 
 # Anything shaped like an Anona credential, wherever it turns up in text we
 # did not write -- argparse echoes unrecognised arguments verbatim, so
-# `anona start --api-key <key>` would otherwise print the key back.
+# `anona-memory start --api-key <key>` would otherwise print the key back.
 _CREDENTIAL = re.compile(r"\b(anona_(?:live|test|tmp)_)[A-Za-z0-9_\-]+")
 
 

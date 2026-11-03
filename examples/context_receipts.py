@@ -1,6 +1,6 @@
 """Why a search did not return the memory you expected.
 
-    pip install anona
+    pip install anona-memory
     export ANONA_API_KEY=anona_live_...
     python examples/context_receipts.py
 

@@ -2,7 +2,7 @@
 import { BROKEN_PIPE_EXIT } from "./exits.js";
 import { main } from "./index.js";
 
-// A reader that goes away (`anona guide`, piped into `head`) ends the command
+// A reader that goes away (`anona-memory guide`, piped into `head`) ends the command
 // quietly: exit 141, as a process killed by SIGPIPE reports, and nothing on
 // stderr -- the same as the pip package. Node otherwise turns the EPIPE into
 // an unhandled 'error' event and a stack trace.
@@ -19,7 +19,7 @@ main(process.argv.slice(2), { stdin: process.stdin, stdout: process.stdout, stde
   },
   (err: unknown) => {
     // Message only: a stack can carry request details.
-    process.stderr.write(`anona: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(`anona-memory: ${err instanceof Error ? err.message : String(err)}\n`);
     process.exitCode = 1;
   },
 );

@@ -1,6 +1,6 @@
 /**
  * Which credential a data command uses, where it may be sent, and what
- * `anona status` says about it. Precedence is `--api-key` > ANONA_API_KEY >
+ * `anona-memory status` says about it. Precedence is `--api-key` > ANONA_API_KEY >
  * ~/.anona/config.env > the command-line login > a temporary profile; the MCP
  * login is never a data credential. Every case asserts on what reached a real
  * local server -- which bearer, which space, or that nothing arrived.
@@ -110,7 +110,7 @@ describe("data command credentials", () => {
     for (const v of ["record", "retrieve", "reason"]) {
       const r = await run([v, "x"]);
       expect(r.rc).toBe(4);
-      for (const needle of ["ANONA_API_KEY", "--api-key", "config.env", "anona start", "anona mcp", "anona login --cli"]) {
+      for (const needle of ["ANONA_API_KEY", "--api-key", "config.env", "anona-memory start", "anona-memory mcp", "anona-memory login --cli"]) {
         expect(r.err).toContain(needle);
       }
     }
@@ -265,7 +265,7 @@ describe("data command credentials", () => {
     expect(r.rc).toBe(4);
   });
 
-  it("status with a key introduces the stored profile as anona mcp's", async () => {
+  it("status with a key introduces the stored profile as anona-memory mcp's", async () => {
     // Printed bare after the key, the profile's "claim it" line read as the
     // credential the data commands were using.
     writeMcpFile({ base: srv.base, tempHours: 1 });
@@ -273,7 +273,7 @@ describe("data command credentials", () => {
     const r = await run(["status", "--api-key", key]);
     expect(r.rc).toBe(0);
     const lines = r.out.split("\n");
-    const intro = "Also stored, for `anona mcp` (the data commands use the API key above):";
+    const intro = "Also stored, for `anona-memory mcp` (the data commands use the API key above):";
     expect(lines).toContain(intro);
     const profile = lines.findIndex((l) => l.startsWith("Temporary profile for"));
     expect(profile).toBeGreaterThan(lines.indexOf(intro));
@@ -281,7 +281,7 @@ describe("data command credentials", () => {
 
   it("status without a key is unchanged", async () => {
     let r = await run(["status"]);
-    expect([r.rc, r.out.trim()]).toEqual([1, "Not logged in. Run `anona login`."]);
+    expect([r.rc, r.out.trim()]).toEqual([1, "Not logged in. Run `anona-memory login`."]);
     writeMcpFile({ base: srv.base, tempHours: 1 });
     r = await run(["status"]);
     expect(r.rc).toBe(0);
@@ -295,9 +295,9 @@ describe("data command credentials", () => {
     const r = await run(["status"]);
     expect(r.rc).toBe(0);
     expect(r.out).toContain(
-      `Command-line login for ${srv.base} (used by \`anona mcp\`; not by the data commands while an API key is set).`,
+      `Command-line login for ${srv.base} (used by \`anona-memory mcp\`; not by the data commands while an API key is set).`,
     );
-    expect(r.out).not.toContain("No `anona login` credential is stored for MCP");
+    expect(r.out).not.toContain("No `anona-memory login` credential is stored for MCP");
   });
 
   // --- the command-line login ---------------------------------------------------
@@ -373,7 +373,7 @@ describe("data command credentials", () => {
     };
     const r = await run(["exports", "download", "j1", "--space", "s", "--out", join(process.env.HOME as string, "x.zip")]);
     expect(r.rc).toBe(7);
-    expect(r.err).toBe("anona: download link expired or refused (HTTP 401); run download again.\n");
+    expect(r.err).toBe("anona-memory: download link expired or refused (HTTP 401); run download again.\n");
     expect(auths()).toEqual(["Bearer cli_OLD"]);
     expect(srv.seen.filter((s) => s.path === "/oauth/token").length).toBe(0);
   });
@@ -383,7 +383,7 @@ describe("data command credentials", () => {
     srv.respond = (s) => (s.path.startsWith("/v1/") ? { status: 401, body: { error: { code: "invalid_token", message: "no" } } } : respond(s));
     const r = await run(["record", "x", "--space", "s"]);
     expect(r.rc).toBe(4);
-    expect(r.err).toContain("anona login --cli");
+    expect(r.err).toContain("anona-memory login --cli");
     expect(auths()).toEqual(["Bearer cli_OLD"]);
   });
 

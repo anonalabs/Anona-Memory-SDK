@@ -74,7 +74,7 @@ def test_data_verbs_refuse_a_base_url_the_credential_was_not_issued_for(tmp_path
             rc, out, err = run_main(argv + ["--base-url", BASE])
             assert rc == 4, (argv, rc, out, err)  # an auth failure exits 4
             assert "the stored credential is for https://memory.anonalabs.com, not " + BASE in err, err
-            assert "anona login --base-url " + BASE in err, err
+            assert "anona-memory login --base-url " + BASE in err, err
         assert SEEN == [], SEEN
         print("OK")
     """, tmp_path))

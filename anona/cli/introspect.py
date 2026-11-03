@@ -1,6 +1,6 @@
 """The command tree, read off the argparse parser itself.
 
-`anona guide` and `anona completion` are both generated from this, so neither
+`anona-memory guide` and `anona-memory completion` are both generated from this, so neither
 can list a flag that does not exist or miss one that does. argparse has no
 public API for walking a parser; `_actions` and `_SubParsersAction` have been
 stable since Python 3.2 and are what every completion generator reads.
@@ -117,7 +117,7 @@ def tree(parser: argparse.ArgumentParser) -> Command:
     """The whole command tree. Global flags appear on the root only."""
     skip = global_flags(parser)
     root_options, _ = _options(parser, set())
-    root = Command(path=["anona"], help=_help(parser.description), options=root_options)
+    root = Command(path=["anona-memory"], help=_help(parser.description), options=root_options)
 
     def build(p: argparse.ArgumentParser, path: list[str], help_text: str) -> Command:
         options, positionals = _options(p, skip)
@@ -138,7 +138,7 @@ def tree(parser: argparse.ArgumentParser) -> Command:
 
 
 def usage(cmd: Command) -> str:
-    parts = ["anona", *cmd.path]
+    parts = ["anona-memory", *cmd.path]
     for pos in cmd.positionals:
         token = pos.name + ("..." if pos.many else "")
         parts.append(f"[{token}]" if pos.optional else token)

@@ -1,6 +1,6 @@
-"""`anona doctor`: what this install would do, and whether it would work.
+"""`anona-memory doctor`: what this install would do, and whether it would work.
 
-Answers, in order: which Python and which `anona` are running, which profile
+Answers, in order: which Python and which `anona-memory` are running, which profile
 and directory, which credential a data command would use and why the others
 lost, which server it talks to, whether that server's /health answers, and
 whether the space a data command would use is reachable with that credential,
@@ -36,11 +36,11 @@ def _cred(args: argparse.Namespace, base_url_flag: str | None, requested: str | 
     held = store.load()
     others: list[str] = []
     if cli is not None and cli.signed_in:
-        others.append("command-line login (`anona login --cli`)")
+        others.append("command-line login (`anona-memory login --cli`)")
     if held is not None and held.live_temp_token():
-        others.append("temporary profile (`anona start`)")
+        others.append("temporary profile (`anona-memory start`)")
     if held is not None and held.signed_in:
-        others.append("MCP login (used only by `anona mcp`)")
+        others.append("MCP login (used only by `anona-memory mcp`)")
     if key is not None:
         url, url_source = credential.find_base_url(base_url_flag, config)
         info = {
@@ -101,7 +101,7 @@ def _cred(args: argparse.Namespace, base_url_flag: str | None, requested: str | 
         "source": None,
         "why": why,
         "base_url": None,
-        "error": "no credential: run `anona login --cli`, set ANONA_API_KEY, or `anona start`",
+        "error": "no credential: run `anona-memory login --cli`, set ANONA_API_KEY, or `anona-memory start`",
         "shadowed": others,
     }
 
@@ -164,7 +164,7 @@ def _space(cred: dict, args: argparse.Namespace, config: dict, api_key: str | No
 
 
 def _credits(base_url: str, token: str) -> dict:
-    """The credit balance `anona usage` reports, read the same way.
+    """The credit balance `anona-memory usage` reports, read the same way.
 
     Never fails doctor: a usage call that does not answer is reported as an
     unknown balance, which says nothing either way about the other checks.
@@ -231,7 +231,7 @@ def run(args: argparse.Namespace, base_url_flag: str | None, requested: str | No
         _emit_json(report)
         return rc
     p = _printable
-    print(f"anona {p(version)} on Python {p(report['python'])} ({p(report['executable'])})")
+    print(f"anona-memory {p(version)} on Python {p(report['python'])} ({p(report['executable'])})")
     print(f"Profile: {p(report['profile'])} ({p(report['profile_dir'])})")
     if cred["kind"] is None:
         print(f"Credential: none -- {p(cred['why'])}.")
@@ -273,5 +273,5 @@ def run(args: argparse.Namespace, base_url_flag: str | None, requested: str | No
             )
         else:
             print(f"Credits: {p(credits['remaining'])} remaining of {limit}.")
-    print("All good." if rc == exits.OK else f"Problems found (exit {rc}; see `anona guide` for exit codes).")
+    print("All good." if rc == exits.OK else f"Problems found (exit {rc}; see `anona-memory guide` for exit codes).")
     return rc

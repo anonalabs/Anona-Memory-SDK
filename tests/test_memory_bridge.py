@@ -248,7 +248,7 @@ def test_require_raises_with_install_hint():
         try:
             require('definitely_not_installed_xyz', 'langchain')
         except ImportError as e:
-            assert "pip install 'anona[langchain]'" in str(e), str(e)
+            assert "pip install 'anona-memory[langchain]'" in str(e), str(e)
             print('OK')
     """))
 

@@ -1,4 +1,4 @@
-"""Shared harness for the `anona` CLI tests.
+"""Shared harness for the `anona-memory` CLI tests.
 
 Each case runs in a subprocess, so a test that leaves process state behind --
 a loaded module, a patched `webbrowser`, a stray credential file -- cannot

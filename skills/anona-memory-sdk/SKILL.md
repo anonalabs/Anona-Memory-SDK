@@ -7,7 +7,7 @@ license: MIT
 # Building on Anona Memory
 
 Anona is a managed memory layer reached over one HTTP API. Two official SDKs
-wrap it: `anona` on PyPI and `@anona-labs/memory` on npm. This skill is the
+wrap it: `anona-memory` on PyPI and `@anona-labs/memory` on npm. This skill is the
 shape of that surface, so code compiles the first time instead of being guessed.
 
 Do not invent endpoints or arguments. If something is not in this skill or its
@@ -27,7 +27,7 @@ references, check `https://docs.anonalabs.com` before writing it.
 ## Install
 
 ```bash
-pip install -U anona                   # Python
+pip install -U anona-memory                   # Python
 npm install @anona-labs/memory@latest  # TypeScript
 ```
 
@@ -37,7 +37,7 @@ fails at runtime rather than at install. If pip answers
 `externally-managed-environment` it is refusing a system Python — install into
 a virtualenv, which is what a project should be doing anyway.
 
-Framework adapters are extras: `pip install 'anona[langchain]'` and the same for
+Framework adapters are extras: `pip install 'anona-memory[langchain]'` and the same for
 `crewai`, `llamaindex`, `adk`, `msagent`, `strands`, `litellm`, `mcp`.
 
 ## Credentials: code needs an API key
@@ -46,24 +46,24 @@ Application code authenticates with an API key (`anona_live_...`), minted in
 the dashboard under **API keys** and read from `ANONA_API_KEY`. Never hardcode
 one.
 
-The `anona` command line has credentials of its own, and **they are not for
+The `anona-memory` command line has credentials of its own, and **they are not for
 code**:
 
-- `anona login` stores two, each approved in a browser: a command-line one
-  (`~/.anona/cli-credentials.json`, used by `anona record` and the other data
-  commands) and an MCP one (`~/.anona/credentials.json`, used by `anona mcp`).
+- `anona-memory login` stores two, each approved in a browser: a command-line one
+  (`~/.anona/cli-credentials.json`, used by `anona-memory record` and the other data
+  commands) and an MCP one (`~/.anona/credentials.json`, used by `anona-memory mcp`).
   Neither works in `AnonaClient` / `Anona`: the MCP one is refused by the REST
-  API, and the command-line one is for the `anona` commands on that machine.
+  API, and the command-line one is for the `anona-memory` commands on that machine.
   Do not read those files from code.
-- `anona start` creates a temporary profile whose `anona_tmp_` token does work
+- `anona-memory start` creates a temporary profile whose `anona_tmp_` token does work
   on the REST API, with one space (`default`), until it is claimed or expires
   after 72 hours. Fine for a throwaway script, never for anything deployed.
 
 For scripting from a shell instead of code, the pip CLI wraps the API with
 `--json` output and stable exit codes (0 ok, 1 failed, 2 usage, 3 nothing
 stored, 4 auth, 5 not found, 6 rate limited, 7 unavailable, 8 still running):
-`anona record`, `retrieve`, `reason`, `spaces`, `memories`, `documents`,
-`jobs`, the settings commands, and more. `anona guide --json` lists every
+`anona-memory record`, `retrieve`, `reason`, `spaces`, `memories`, `documents`,
+`jobs`, the settings commands, and more. `anona-memory guide --json` lists every
 command and flag the installed copy has; the `anona-cli` skill covers it. It
 takes `--api-key`, then `ANONA_API_KEY`, then `~/.anona/config.env`, then the
 command-line login, then a temporary profile, and needs `--space` (or
@@ -146,12 +146,12 @@ bridge = MemoryBridge(api_key="anona_live_...", space_id="my-space", user_id="cu
 
 | Framework | Extra | Import |
 | --- | --- | --- |
-| LangChain / LangGraph | `anona[langchain]` | `anona.integrations.langchain` |
-| CrewAI | `anona[crewai]` | `anona.integrations.crewai` |
-| LlamaIndex | `anona[llamaindex]` | `anona.integrations.llamaindex` |
-| Google ADK | `anona[adk]` | `anona.integrations.google_adk` |
-| Microsoft Agent Framework | `anona[msagent]` | `anona.integrations.ms_agent` |
-| AWS Strands | `anona[strands]` | `anona.integrations.strands` |
+| LangChain / LangGraph | `anona-memory[langchain]` | `anona.integrations.langchain` |
+| CrewAI | `anona-memory[crewai]` | `anona.integrations.crewai` |
+| LlamaIndex | `anona-memory[llamaindex]` | `anona.integrations.llamaindex` |
+| Google ADK | `anona-memory[adk]` | `anona.integrations.google_adk` |
+| Microsoft Agent Framework | `anona-memory[msagent]` | `anona.integrations.ms_agent` |
+| AWS Strands | `anona-memory[strands]` | `anona.integrations.strands` |
 
 TypeScript ships adapters for the Vercel AI SDK
 (`@anona-labs/memory/vercel`) and OpenAI Agents

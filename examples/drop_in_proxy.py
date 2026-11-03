@@ -1,6 +1,6 @@
 """The drop-in proxy: your OpenAI code, plus memory across conversations.
 
-    pip install anona openai
+    pip install anona-memory openai
     export ANONA_API_KEY=anona_live_...
     python examples/drop_in_proxy.py
 

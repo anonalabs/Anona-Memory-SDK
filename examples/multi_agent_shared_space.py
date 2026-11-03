@@ -1,6 +1,6 @@
 """Two agents, one space: shared knowledge with per-agent working sets.
 
-    pip install anona
+    pip install anona-memory
     export ANONA_API_KEY=anona_live_...
     python examples/multi_agent_shared_space.py
 

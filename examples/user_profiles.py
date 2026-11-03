@@ -1,6 +1,6 @@
 """Everything the space knows about one end user, and questions about them.
 
-    pip install anona
+    pip install anona-memory
     export ANONA_API_KEY=anona_live_...
     python examples/user_profiles.py
 

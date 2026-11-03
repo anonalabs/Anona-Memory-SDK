@@ -402,7 +402,7 @@ def test_import_error_names_the_extra():
             from anona.integrations.langchain import AnonaRetriever
             AnonaRetriever(bridge=b)
         except ImportError as e:
-            assert "pip install 'anona[langchain]'" in str(e), str(e)
+            assert "pip install 'anona-memory[langchain]'" in str(e), str(e)
             print('OK')
     """))
 

@@ -1,5 +1,5 @@
 /**
- * A reader that closes the pipe early -- `anona guide` piped into `head` --
+ * A reader that closes the pipe early -- `anona-memory guide` piped into `head` --
  * ends the command quietly: exit 141 (what SIGPIPE reports), nothing on
  * stderr, as the pip package does. Run against the bundled bin in a child
  * process, because only a real closed pipe produces the EPIPE.
@@ -46,7 +46,7 @@ function runClosingStdout(args: string[]): Promise<{ code: number | null; err: s
 
 describe("a closed stdout", () => {
   for (const args of [["guide"], ["guide", "--json"], ["--help"], ["record", "--help"], ["help", "spaces", "delete"], ["completion", "fish"]]) {
-    it(`anona ${args.join(" ")}: exit 141, nothing on stderr`, async () => {
+    it(`anona-memory ${args.join(" ")}: exit 141, nothing on stderr`, async () => {
       const r = await runClosingStdout(args);
       expect(r.err).toBe("");
       expect(r.code).toBe(141);

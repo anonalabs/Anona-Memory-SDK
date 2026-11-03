@@ -76,7 +76,7 @@ def test_record_with_no_credential_says_what_to_do(tmp_path):
     ok(_run("""
         rc, out, err = run_main(["record", "the user prefers pnpm"])
         assert rc == 4, rc  # an auth failure exits 4
-        assert "anona start" in err, err
+        assert "anona-memory start" in err, err
         assert SEEN == [], SEEN
         print("OK")
     """, tmp_path))
@@ -279,10 +279,10 @@ def test_temp_profile_retrieve_prints_results(tmp_path):
 
 
 def test_a_signed_in_account_is_refused_before_the_request(tmp_path):
-    # `anona login` mints an MCP-scoped OAuth token and the data plane rejects
+    # `anona-memory login` mints an MCP-scoped OAuth token and the data plane rejects
     # any token carrying a `typ`, so these verbs can only ever get
     # `401 invalid_token` on an account -- a message that reads as a broken
-    # login and sends someone back to `anona login` for the same token again.
+    # login and sends someone back to `anona-memory login` for the same token again.
     # The point of this test is `SEEN == []`: the refusal must come BEFORE the
     # request, because the server's own answer is the misleading one.
     ok(_run("""
@@ -294,7 +294,7 @@ def test_a_signed_in_account_is_refused_before_the_request(tmp_path):
             assert "temporary profile" in err, (argv, err)
             # It must name both ways an account DOES reach memory, or the
             # message is a refusal with nowhere to go.
-            assert "anona mcp" in err and "API key" in err, (argv, err)
+            assert "anona-memory mcp" in err and "API key" in err, (argv, err)
         assert SEEN == [], "nothing may be sent on an account credential: %r" % SEEN
         print("OK")
     """, tmp_path))
@@ -432,7 +432,7 @@ def test_reason_keeps_paragraph_breaks_in_the_answer(tmp_path):
 
 
 def test_reason_answer_goes_to_stdout_and_the_progress_note_to_stderr(tmp_path):
-    # `anona reason q > answer.md` must capture the answer and nothing else.
+    # `anona-memory reason q > answer.md` must capture the answer and nothing else.
     ok(_run("""
         creds(temp_hours=60)
         rc, out, err = run_main(["reason", "q"])
@@ -555,7 +555,7 @@ def test_an_api_error_reports_its_code_not_a_python_dict(tmp_path):
         H.do_POST = do_POST
         rc, out, err = run_main(["record", "x"])
         assert rc == 1, rc
-        assert err.startswith("anona: validation_error:"), err
+        assert err.startswith("anona-memory: validation_error:"), err
         assert "content: String should have at least 1 character" in err, err
         assert "request_id req_abc123" in err, err
         # No Python repr: the giveaway is the dict's own punctuation.

@@ -1,5 +1,5 @@
 /**
- * `anona mcp`: a stdio MCP server that forwards to the remote one.
+ * `anona-memory mcp`: a stdio MCP server that forwards to the remote one.
  *
  * Any MCP client can launch a stdio server, including the ones with no OAuth
  * support, so this is what makes login work everywhere. The proxy holds the
@@ -10,8 +10,8 @@
  * transport implementation, and the remote's tool list appears here with no
  * schema maintained on this side.
  *
- * Which credential it presents, highest first: the command-line login (`anona
- * login`; the gateway accepts it on /mcp), then an MCP-only login (`anona login
+ * Which credential it presents, highest first: the command-line login (`anona-memory
+ * login`; the gateway accepts it on /mcp), then an MCP-only login (`anona-memory login
  * --mcp`), then an unclaimed temporary profile. The command-line login is used
  * only for the deployment it was issued by.
  *
@@ -75,7 +75,7 @@ function hasCliLogin(baseUrl: string): boolean {
 /**
  * The bearer to present, and which credential it is. A login always wins: once
  * someone has logged in their session is the credential, and a leftover temp
- * token must not be sent. Re-read on every message, so an `anona login` made
+ * token must not be sent. Re-read on every message, so an `anona-memory login` made
  * while a client is running takes effect on its next call.
  *
  * The temp token is chosen here rather than in `accessToken` because that
@@ -89,7 +89,7 @@ async function bearer(baseUrl: string): Promise<{ token: string; kind: Kind }> {
   const temp = c !== null ? liveTempToken(c) : null;
   if (temp !== null) return { token: temp, kind: "temp" };
   if (c !== null && c.tempToken) {
-    throw new NotLoggedIn("The temporary profile has expired. Run `anona start` for a new one, or `anona login`.");
+    throw new NotLoggedIn("The temporary profile has expired. Run `anona-memory start` for a new one, or `anona-memory login`.");
   }
   return { token: await accessToken(), kind: "mcp" }; // throws NotLoggedIn
 }
@@ -102,7 +102,7 @@ async function forward(baseUrl: string, msg: Json): Promise<string | null> {
   let resp = await post(url, token, msg);
   if (resp.status === 401 && first.kind === "temp") {
     // Opaque and fixed: there is nothing to refresh, only expired or claimed.
-    throw new Failure("The server rejected the temporary profile (expired, or already claimed). Run `anona login`.");
+    throw new Failure("The server rejected the temporary profile (expired, or already claimed). Run `anona-memory login`.");
   }
   if (resp.status === 401) {
     token = await accessToken({
@@ -111,7 +111,7 @@ async function forward(baseUrl: string, msg: Json): Promise<string | null> {
       file: first.kind === "cli" ? cliCredentialsPath() : undefined,
     });
     resp = await post(url, token, msg);
-    if (resp.status === 401) throw new Failure("The server rejected the stored login. Run `anona login` again.");
+    if (resp.status === 401) throw new Failure("The server rejected the stored login. Run `anona-memory login` again.");
   }
   if (resp.status >= 400) throw new Failure(`The Anona server answered HTTP ${resp.status}.`);
   const text = await resp.text();
@@ -161,7 +161,7 @@ async function handle(baseUrl: string, line: string, stderr: { write(s: string):
   } catch (e) {
     const known = e instanceof NotLoggedIn || e instanceof Failure;
     const text = known ? (e as Error).message : `Request failed: ${(e as Error).name}: ${(e as Error).message}`;
-    stderr.write(`anona mcp: ${text}\n`);
+    stderr.write(`anona-memory mcp: ${text}\n`);
     // An error with a null id would be an unsolicited response.
     if (owed.length === 0) return null;
     const code = e instanceof Failure ? e.code : SERVER_ERROR;

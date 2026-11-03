@@ -1,7 +1,7 @@
 /**
- * Temporary profiles (`anona start`), parity with the Python CLI.
+ * Temporary profiles (`anona-memory start`), parity with the Python CLI.
  *
- * The file is shared, so the Node CLI has to read what `anona start` wrote.
+ * The file is shared, so the Node CLI has to read what `anona-memory start` wrote.
  * Every guard here has one test that only it fails; the test names say which
  * guard. The token is a sentinel so a leak anywhere is a string match.
  */
@@ -89,7 +89,7 @@ describe("describeDeadline", () => {
   });
 });
 
-describe("anona start", () => {
+describe("anona-memory start", () => {
   useTempHome();
   let as: FakeAs;
   const created = (expiresAt: string | unknown = iso(now() + 71.5 * HOUR), extra: object = {}) =>
@@ -106,7 +106,7 @@ describe("anona start", () => {
       /^Temporary profile created\. It expires \d{4}-\d\d-\d\d \d\d:\d\d UTC \(in 71 hours\), after which its memories are deleted\.\n/,
     );
     expect(t.o()).toContain(
-      "The only reminder comes in the last 24 hours: run `anona status` to check, and\n`anona login` to claim it and keep what it holds.\nIts space, `default`, is normally created now; if a retrieve reports no space, the first memory you write creates it.\n",
+      "The only reminder comes in the last 24 hours: run `anona-memory status` to check, and\n`anona-memory login` to claim it and keep what it holds.\nIts space, `default`, is normally created now; if a retrieve reports no space, the first memory you write creates it.\n",
     );
     expect(rawFile()).toMatchObject({ access_token: "", refresh_token: "", client_id: "", base_url: as.base, temp_token: TEMP });
     expect(all(t)).not.toContain(TEMP);
@@ -236,7 +236,7 @@ function rmFile() {
   writeFileSync(credentialsPath(), "{}");
 }
 
-describe("anona status with a temp profile", () => {
+describe("anona-memory status with a temp profile", () => {
   useTempHome();
   it("a temp-only file is described as a temp profile, with its deadline, and claims no OAuth credential", async () => {
     seedTemp("https://t.test");
@@ -244,7 +244,7 @@ describe("anona status with a temp profile", () => {
     expect(await main(["status"], t)).toBe(0);
     expect(t.o()).toContain("Temporary profile for https://t.test: expires ");
     expect(t.o()).toContain("(in 71 hours)");
-    expect(t.o()).toContain("Run `anona login` to claim it before then.");
+    expect(t.o()).toContain("Run `anona-memory login` to claim it before then.");
     expect(t.o()).not.toMatch(/Credential found|access token|refresh/);
     expect(all(t)).not.toContain(TEMP);
   });
@@ -253,7 +253,7 @@ describe("anona status with a temp profile", () => {
     seedTemp("https://t.test", { tempExpiresAt: now() - 2 * HOUR });
     const t = io();
     // Non-zero: the profile and everything in it are gone, so reporting
-    // success is how a scripted `anona status && ...` walks into a command
+    // success is how a scripted `anona-memory status && ...` walks into a command
     // with no credential behind it.
     expect(await main(["status"], t)).toBe(1);
     expect(t.o()).toContain("expired ");
@@ -285,7 +285,7 @@ describe("anona status with a temp profile", () => {
   });
 });
 
-describe("anona logout with a temp profile", () => {
+describe("anona-memory logout with a temp profile", () => {
   useTempHome();
   it("refuses a live profile without --force, names the deadline, keeps the file, prints no token", async () => {
     seedTemp("https://t.test");
@@ -339,7 +339,7 @@ describe("anona logout with a temp profile", () => {
     const t = io();
     expect(await main(["status", "--force"], t)).toBe(2);
     // As the pip package's argparse says it.
-    expect(t.e()).toContain("anona: error: unrecognized arguments: --force");
+    expect(t.e()).toContain("anona-memory: error: unrecognized arguments: --force");
   });
 });
 
@@ -362,7 +362,7 @@ describe("proxy bearer selection", () => {
     expect(out).toEqual([{ jsonrpc: "2.0", id: 1, result: {} }]);
     expect(auths()).toEqual([`Bearer ${TEMP}`]);
     expect(oauthHits()).toBe(0);
-    expect(err).not.toContain("anona login");
+    expect(err).not.toContain("anona-memory login");
   });
 
   it("an OAuth access token wins over a stored temp token", async () => {
@@ -391,11 +391,11 @@ describe("proxy bearer selection", () => {
     expect(loadCredentials()!.tempToken).toBe(TEMP); // file untouched
   });
 
-  it("an expired temp-only profile sends nothing and points at `anona start`, not at a login", async () => {
+  it("an expired temp-only profile sends nothing and points at `anona-memory start`, not at a login", async () => {
     seedTemp(as.base, { tempExpiresAt: now() - HOUR });
     const { out, err } = await drive(as.base, [call(1)]);
     expect(as.count("/mcp")).toBe(0);
-    expect(out[0].error.message).toContain("anona start");
+    expect(out[0].error.message).toContain("anona-memory start");
     expect(out[0].error.message).not.toContain("login again");
     expect(JSON.stringify(out) + err).not.toContain(TEMP);
   });
@@ -589,7 +589,7 @@ describe("login and the temp token", () => {
   it("server text is made printable: newlines cannot forge extra lines", async () => {
     as.on("/oauth/register", (_q, r) => json(r, 403, { error_description: "line one\nanona login: forged" }));
     const { err } = await login();
-    expect(err.text()).toBe("anona login: Client registration failed with 403: line one anona login: forged\n");
+    expect(err.text()).toBe("anona-memory login: Client registration failed with 403: line one anona login: forged\n");
   });
 
   it("login --mcp names the abandoned profile when the stored one is for another deployment", async () => {
@@ -597,7 +597,7 @@ describe("login and the temp token", () => {
     const t = io();
     await main(["login", "--mcp", "--no-browser", "--base-url", "http://127.0.0.1:1"], t);
     expect(t.o()).toContain("that includes an unclaimed temporary profile");
-    expect(t.o()).toContain("anona login --base-url https://other.test");
+    expect(t.o()).toContain("anona-memory login --base-url https://other.test");
     expect(all(t)).not.toContain(TEMP);
   });
 
@@ -608,7 +608,7 @@ describe("login and the temp token", () => {
     expect(t.o()).toContain("unclaimed temporary profile for https://other.test");
     expect(t.o()).toContain("is kept");
     expect(t.o()).not.toContain("abandoned");
-    expect(t.o()).toContain("anona login --base-url https://other.test");
+    expect(t.o()).toContain("anona-memory login --base-url https://other.test");
     expect(all(t)).not.toContain(TEMP);
   });
 

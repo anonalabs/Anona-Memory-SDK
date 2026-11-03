@@ -1,13 +1,13 @@
 # Anona Memory SDK
 
-[![PyPI](https://img.shields.io/pypi/v/anona)](https://pypi.org/project/anona/)
-[![Python](https://img.shields.io/pypi/pyversions/anona)](https://pypi.org/project/anona/)
+[![PyPI](https://img.shields.io/pypi/v/anona-memory)](https://pypi.org/project/anona-memory/)
+[![Python](https://img.shields.io/pypi/pyversions/anona-memory)](https://pypi.org/project/anona-memory/)
 [![npm](https://img.shields.io/npm/v/@anona-labs/memory)](https://www.npmjs.com/package/@anona-labs/memory)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Official SDKs for [Anona Memory](https://memory.anonalabs.com), managed memory
 for AI agents. Record, retrieve and reason over memories scoped per user, agent
-and space: from a client, a framework adapter, an MCP server, or the `anona`
+and space: from a client, a framework adapter, an MCP server, or the `anona-memory`
 command.
 
 **Documentation** — [Python SDK](https://docs.anonalabs.com/sdk/python) ·
@@ -19,7 +19,7 @@ command.
 
 | SDK | Package | Location |
 | --- | --- | --- |
-| Python | [`anona`](https://pypi.org/project/anona/) on PyPI | this repository root, documented below |
+| Python | [`anona-memory`](https://pypi.org/project/anona/) on PyPI | this repository root, documented below |
 | TypeScript | [`@anona-labs/memory`](https://www.npmjs.com/package/@anona-labs/memory) on npm | [`typescript/`](typescript/) |
 
 ## Contents
@@ -32,7 +32,7 @@ command.
   [Extraction settings](#extraction-settings) ·
   [Rules](#rules-a-space-must-follow)
 - **Integrations** — [Framework adapters](#framework-adapters) ·
-  [LiteLLM](#litellm-integration) · [The `anona` command](#the-anona-command) ·
+  [LiteLLM](#litellm-integration) · [The `anona-memory` command](#the-anona-command) ·
   [MCP server](#mcp-server) · [Agent Skills](#agent-skills)
 - **Reference** — [API](#api-reference) ·
   [Errors, retries and rate limits](#errors-retries-and-rate-limits) ·
@@ -42,13 +42,13 @@ command.
 ## Install
 
 ```bash
-pip install anona
+pip install anona-memory
 ```
 
 With the LiteLLM integration (or `mcp` for the MCP server):
 
 ```bash
-pip install "anona[litellm]"
+pip install "anona-memory[litellm]"
 ```
 
 ## Quickstart
@@ -529,12 +529,12 @@ adapter handles recall and storage for you, and scopes memories per end user.
 
 | Framework | Install | Import |
 | --- | --- | --- |
-| LangChain / LangGraph | `pip install 'anona[langchain]'` | `anona.integrations.langchain` |
-| CrewAI | `pip install 'anona[crewai]'` | `anona.integrations.crewai` |
-| LlamaIndex | `pip install 'anona[llamaindex]'` | `anona.integrations.llamaindex` |
-| Google ADK | `pip install 'anona[adk]'` | `anona.integrations.google_adk` |
-| Microsoft Agent Framework | `pip install 'anona[msagent]'` | `anona.integrations.ms_agent` |
-| AWS Strands | `pip install 'anona[strands]'` | `anona.integrations.strands` |
+| LangChain / LangGraph | `pip install 'anona-memory[langchain]'` | `anona.integrations.langchain` |
+| CrewAI | `pip install 'anona-memory[crewai]'` | `anona.integrations.crewai` |
+| LlamaIndex | `pip install 'anona-memory[llamaindex]'` | `anona.integrations.llamaindex` |
+| Google ADK | `pip install 'anona-memory[adk]'` | `anona.integrations.google_adk` |
+| Microsoft Agent Framework | `pip install 'anona-memory[msagent]'` | `anona.integrations.ms_agent` |
+| AWS Strands | `pip install 'anona-memory[strands]'` | `anona.integrations.strands` |
 
 All six are built on one `MemoryBridge`, which owns scope resolution and the
 failure contract:
@@ -582,36 +582,36 @@ import litellm
 litellm.completion(model="gpt-4o", messages=[{"role": "user", "content": "..."}])
 ```
 
-## The `anona` command
+## The `anona-memory` command
 
 Installing the package also installs a CLI. It exists so an agent can have
 memory without an API key in a config file, and so a person can use memory from
 a terminal.
 
 ```bash
-anona start                                   # a temporary profile, no account
-anona record   "The user prefers pnpm."       # store a memory
-anona retrieve "package manager preference"   # search them
-anona reason   "how does this team build?"    # answer from across them
-anona login                                   # approve once in a browser: CLI and MCP
-anona status                                  # what is stored, and until when
+anona-memory start                                   # a temporary profile, no account
+anona-memory record   "The user prefers pnpm."       # store a memory
+anona-memory retrieve "package manager preference"   # search them
+anona-memory reason   "how does this team build?"    # answer from across them
+anona-memory login                                   # approve once in a browser: CLI and MCP
+anona-memory status                                  # what is stored, and until when
 ```
 
-`anona start` needs no signup: it creates a profile that holds memories for 72
-hours, and `anona login` claims it into a real account with everything it holds.
+`anona-memory start` needs no signup: it creates a profile that holds memories for 72
+hours, and `anona-memory login` claims it into a real account with everything it holds.
 
 `record`, `retrieve` and `reason` take an **API key** — from `--api-key`,
 `ANONA_API_KEY` or `~/.anona/config.env`, in that order — or, with none of
-those, the command-line login from `anona login`, or the temporary profile.
+those, the command-line login from `anona-memory login`, or the temporary profile.
 With a key or the login, name the space with `--space` or `ANONA_SPACE_ID`. A
 key from the environment or `config.env` is sent only to `api.anonalabs.com` or
 `memory.anonalabs.com` unless the server is named in the same place
 (`--base-url` beside `--api-key`, or `ANONA_BASE_URL` beside the key).
-`anona login` asks for one approval and stores one credential
-(`~/.anona/cli-credentials.json`), which these commands and `anona mcp` both
-use. `anona login --mcp` instead stores a separate MCP-only credential
+`anona-memory login` asks for one approval and stores one credential
+(`~/.anona/cli-credentials.json`), which these commands and `anona-memory mcp` both
+use. `anona-memory login --mcp` instead stores a separate MCP-only credential
 (`~/.anona/credentials.json`, which the REST API rejects on purpose);
-`anona mcp` uses it only when there is no command-line login. `anona logout`
+`anona-memory mcp` uses it only when there is no command-line login. `anona-memory logout`
 removes both; `--cli` or `--mcp` removes one.
 
 For scripts, all three take `--json` (the API response as one JSON document on
@@ -621,9 +621,9 @@ takes `--tags`, `--tags-match` and the time filters; `reason` takes `--depth`.
 An unset flag is omitted from the request, never sent as a default.
 
 The same credential reaches the rest of the API through thin wrappers over the
-client: `anona spaces list|create|get`, `anona memories list|edit|delete|history`,
-`anona jobs get|cancel`, `anona profile`, `anona model ID`,
-`anona user-profile USER_ID` and `anona usage`. Each takes `--json` too, and
+client: `anona-memory spaces list|create|get`, `anona-memory memories list|edit|delete|history`,
+`anona-memory jobs get|cancel`, `anona-memory profile`, `anona-memory model ID`,
+`anona-memory user-profile USER_ID` and `anona-memory usage`. Each takes `--json` too, and
 prints full ids in plain mode so the next command can use them. The two that
 destroy something, `memories delete` and `jobs cancel`, do nothing without
 `--yes`: they exit 2, say what would have gone, and never prompt.
@@ -631,13 +631,13 @@ destroy something, `memories delete` and `jobs cancel`, do nothing without
 `retrieve` lists the memories that match. `reason` reads across them and answers
 in prose — ask it when no single memory holds the answer. It is an agent loop
 rather than a lookup, so it takes tens of seconds and says so on stderr while it
-works, leaving `anona reason "..." > answer.md` to capture only the answer.
+works, leaving `anona-memory reason "..." > answer.md` to capture only the answer.
 
-`anona mcp` is a stdio MCP server for a client to launch, so the client needs no
+`anona-memory mcp` is a stdio MCP server for a client to launch, so the client needs no
 OAuth and no key of its own:
 
 ```json
-{ "mcpServers": { "anona": { "command": "anona", "args": ["mcp"] } } }
+{ "mcpServers": { "anona-memory": { "command": "anona-memory", "args": ["mcp"] } } }
 ```
 
 Full reference: [docs.anonalabs.com/agents/cli](https://docs.anonalabs.com/agents/cli).
@@ -651,7 +651,7 @@ tools: `record`, `retrieve`, `list_spaces`, and `reason`.
 Install the extra:
 
 ```bash
-pip install "anona[mcp]"
+pip install "anona-memory[mcp]"
 ```
 
 **Claude Desktop / Cursor** — add to `claude_desktop_config.json` (or
@@ -660,12 +660,12 @@ pip install "anona[mcp]"
 ```json
 {
   "mcpServers": {
-    "anona": {
+    "anona-memory": {
       "command": "uvx",
       "args": [
         "--from",
-        "anona[mcp]",
-        "anona-mcp"
+        "anona-memory[mcp]",
+        "anona-memory-mcp"
       ],
       "env": {
         "ANONA_API_KEY": "anona_live_...",
@@ -682,7 +682,7 @@ pip install "anona[mcp]"
 claude mcp add anona \
   --env ANONA_API_KEY=anona_live_... \
   --env ANONA_SPACE_ID=space_123 \
-  -- uvx --from "anona[mcp]" anona-mcp
+  -- uvx --from "anona-memory[mcp]" anona-memory-mcp
 ```
 
 `ANONA_SPACE_ID` sets the default space so you can just say "remember this"

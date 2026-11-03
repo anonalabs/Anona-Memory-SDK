@@ -1,7 +1,7 @@
 """Where the OAuth credentials live on disk.
 
 Separate from `~/.anona/config.env`, which holds an API key for the skill and
-for `anona-mcp`. Keeping them in separate files means `anona logout` cannot
+for `anona-memory-mcp`. Keeping them in separate files means `anona-memory logout` cannot
 silently destroy a key the user minted by hand.
 
 Two OAuth credentials, one file each. `credentials.json` is the MCP
@@ -36,7 +36,7 @@ class Credentials:
     expires_at: float
     client_id: str
     base_url: str = DEFAULT_BASE_URL
-    # An unclaimed profile made by `anona start`. A temp-only file has empty
+    # An unclaimed profile made by `anona-memory start`. A temp-only file has empty
     # OAuth fields (see `signed_in`). repr=False for the same reason as above.
     temp_token: str | None = field(default=None, repr=False)
     temp_expires_at: float | None = None
@@ -115,7 +115,7 @@ def load(p: Path | None = None) -> Credentials | None:
     """The stored credential, or None when there is none that can be read.
 
     A corrupt or unreadable file reads as "logged out" rather than raising.
-    This runs at the start of every `anona mcp` process, and a traceback there
+    This runs at the start of every `anona-memory mcp` process, and a traceback there
     is an MCP client that fails to start with an error naming a JSON decoder.
     """
     p = p or path()

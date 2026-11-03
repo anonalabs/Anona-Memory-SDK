@@ -1,6 +1,6 @@
 /**
  * The grammar: the registry is the one source for parsing, help, the command
- * tree, `anona guide` and `anona completion`, and the parser keeps argparse's
+ * tree, `anona-memory guide` and `anona-memory completion`, and the parser keeps argparse's
  * conveniences a script may rely on.
  */
 import { describe, expect, it } from "vitest";
@@ -64,43 +64,43 @@ describe("command grammar", () => {
   it("an ambiguous prefix names its candidates, globals first as argparse orders them", async () => {
     const r = await run(["record", "x", "--t", "a"]);
     expect(r.rc).toBe(2);
-    expect(r.err).toContain("anona record: error: ambiguous option: --t could match --timeout, --tags, --timestamp");
+    expect(r.err).toContain("anona-memory record: error: ambiguous option: --t could match --timeout, --tags, --timestamp");
   });
 
   it("--version and --help before a command answer for the binary", async () => {
     let r = await run(["--version", "record", "x"]);
     expect([r.rc, r.err]).toEqual([0, ""]);
-    expect(r.out).toMatch(/^anona \S+\n$/);
+    expect(r.out).toMatch(/^anona-memory \S+\n$/);
     r = await run(["--help", "record"]);
     expect(r.rc).toBe(0);
-    expect(r.out).toContain("usage: anona [-h]");
+    expect(r.out).toContain("usage: anona-memory [-h]");
     r = await run(["record", "x", "--version"]);
     expect(r.rc).toBe(2);
-    expect(r.err).toContain("anona: error: unrecognized arguments: --version");
+    expect(r.err).toContain("anona-memory: error: unrecognized arguments: --version");
   });
 
   it("login and logout take --cli or --mcp, never both", async () => {
     for (const verb of ["login", "logout"]) {
       const r = await run([verb, "--cli", "--mcp"]);
       expect(r.rc).toBe(2);
-      expect(r.err).toContain(`anona ${verb}: error: argument --mcp: not allowed with argument --cli`);
+      expect(r.err).toContain(`anona-memory ${verb}: error: argument --mcp: not allowed with argument --cli`);
     }
   });
 
   it("help: plain help, --llm for the guide, --json only with --llm", async () => {
     let r = await run(["help"]);
-    expect([r.rc, r.out.startsWith("usage: anona")]).toEqual([0, true]);
+    expect([r.rc, r.out.startsWith("usage: anona-memory")]).toEqual([0, true]);
     r = await run(["help", "--llm"]);
     expect(r.out.startsWith("ANONA CLI REFERENCE (for agents)")).toBe(true);
     r = await run(["help", "--json"]);
-    expect([r.rc, r.out, r.err]).toEqual([2, "", "anona: --json needs --llm. Nothing was printed.\n"]);
+    expect([r.rc, r.out, r.err]).toEqual([2, "", "anona-memory: --json needs --llm. Nothing was printed.\n"]);
     r = await run(["completion", "tcsh"]);
     expect(r.rc).toBe(2);
     expect(r.err).toContain("argument shell: invalid choice: 'tcsh' (choose from 'bash', 'zsh', 'fish')");
   });
 
   it("an unknown command says the copy may be older than the docs", async () => {
-    // `anona guide` on a copy that predated it printed only the list, and
+    // `anona-memory guide` on a copy that predated it printed only the list, and
     // nothing pointed at the version as the cause.
     const r = await run(["nosuchcommand"]);
     expect(r.rc).toBe(2);

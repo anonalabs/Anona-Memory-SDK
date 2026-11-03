@@ -2,7 +2,7 @@
 
 ## `--json` documents
 
-One document on stdout; nothing on stdout on failure. `anona guide --json`
+One document on stdout; nothing on stdout on failure. `anona-memory guide --json`
 carries each command's shape in `json_output`.
 
 | Command | Document |
@@ -72,7 +72,7 @@ with `--batch` (put them on each line); `--user-id` / `--agent-id` /
 
 ```bash
 split -l 100 big.jsonl part-
-for f in part-*; do anona record --batch "$f" --space S --wait --json || break; done
+for f in part-*; do anona-memory record --batch "$f" --space S --wait --json || break; done
 ```
 
 ## Retries and timeouts
@@ -106,4 +106,4 @@ landed**: read back before retrying. `reason_timeout` means ask something
 narrower, or retry with `--depth fast`.
 
 `session_required` (exit `4`): the command reads the control plane and an API
-key or temporary profile cannot. Run `anona login --cli`.
+key or temporary profile cannot. Run `anona-memory login --cli`.

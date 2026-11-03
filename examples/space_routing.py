@@ -1,6 +1,6 @@
 """Let Anona pick the space: `route="auto"` on a write, and on a read.
 
-    pip install anona
+    pip install anona-memory
     export ANONA_API_KEY=anona_live_...
     python examples/space_routing.py
 

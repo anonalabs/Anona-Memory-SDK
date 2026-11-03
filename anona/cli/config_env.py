@@ -1,7 +1,7 @@
 """`~/.anona/config.env`, read as data.
 
 The skill installer (`skills/install.sh`) writes this file for the agent skill
-and for `anona-mcp`: `NAME='value'` lines, single-quoted, with a quote inside a
+and for `anona-memory-mcp`: `NAME='value'` lines, single-quoted, with a quote inside a
 value written as '\\''. It is meant to be sourceable by a shell, which is
 exactly why it must never be sourced or executed here: a value is whatever the
 installer was given, and a hand-edited line can hold `$(...)` or backticks.
@@ -9,7 +9,7 @@ So it is parsed the way the installer's own `read_config` parses it -- the
 three names below and nothing else, quoted or unquoted, never expanded.
 
 Separate from `credentials.json` (store.py): this holds an API key, which the
-REST API accepts, and `anona logout` never touches it.
+REST API accepts, and `anona-memory logout` never touches it.
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def load() -> dict[str, str]:
         return {}
     if mode & (stat.S_IRWXG | stat.S_IRWXO):
         print(
-            f"anona: warning: {p} is readable by other users; "
+            f"anona-memory: warning: {p} is readable by other users; "
             f"run `chmod 600 {p}`.",
             file=sys.stderr,
         )

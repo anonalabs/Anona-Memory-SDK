@@ -4,7 +4,7 @@ import { json, drive, seed, startAs, tokenOk, useTempHome, type FakeAs } from ".
 const call = (id: number | string, method = "tools/list") => JSON.stringify({ jsonrpc: "2.0", id, method });
 const reply = (id: unknown, result: unknown = {}) => ({ jsonrpc: "2.0", id, result });
 
-describe("anona mcp proxy", () => {
+describe("anona-memory mcp proxy", () => {
   useTempHome();
   let as: FakeAs;
   beforeEach(async () => {
@@ -72,17 +72,17 @@ describe("anona mcp proxy", () => {
     const { out, err } = await drive(as.base, [call(1), call(2)]);
     expect(as.count("/mcp")).toBe(4); // 2 messages x (try + one retry)
     expect(out.map((o) => [o.id, o.error.message])).toEqual([
-      [1, expect.stringContaining("anona login")],
-      [2, expect.stringContaining("anona login")],
+      [1, expect.stringContaining("anona-memory login")],
+      [2, expect.stringContaining("anona-memory login")],
     ]);
-    expect(err).toContain("anona login");
+    expect(err).toContain("anona-memory login");
   });
 
   it("a token endpoint that rejects the refresh ends the call with a login hint, not a retry", async () => {
     seed(as.base, { offset: -10 });
     as.on("/oauth/token", (_q, r) => json(r, 400, {}));
     const { out } = await drive(as.base, [call(1)]);
-    expect(out[0]).toMatchObject({ id: 1, error: { message: expect.stringContaining("anona login") } });
+    expect(out[0]).toMatchObject({ id: 1, error: { message: expect.stringContaining("anona-memory login") } });
     expect(as.count("/mcp")).toBe(0);
   });
 

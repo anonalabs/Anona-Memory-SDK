@@ -13,7 +13,7 @@ npm i @anona-labs/memory
 [API reference](https://docs.anonalabs.com/api-reference/overview) ·
 [MCP server](https://docs.anonalabs.com/mcp-integration)
 
-Looking for Python? `pip install anona` — see
+Looking for Python? `pip install anona-memory` — see
 [docs.anonalabs.com/sdk/python](https://docs.anonalabs.com/sdk/python).
 
 ## Agent Skills
@@ -44,19 +44,19 @@ const memories = await anona.retrieve({ spaceId: "support", query: "how should I
 console.log(memories[0]?.content);
 ```
 
-## `anona` command
+## `anona-memory` command
 
-Installing the package also installs an `anona` binary: `anona login` signs in
-through the browser with one approval, which the data commands and `anona mcp`
-both use (`--mcp` asks for a separate MCP-only credential instead), `anona
-status` and `anona logout` manage the stored credentials, and `anona mcp` is a
+Installing the package also installs an `anona-memory` binary: `anona-memory login` signs in
+through the browser with one approval, which the data commands and `anona-memory mcp`
+both use (`--mcp` asks for a separate MCP-only credential instead), `anona-memory
+status` and `anona-memory logout` manage the stored credentials, and `anona-memory mcp` is a
 stdio MCP server that forwards to Anona with that credential, so an MCP client
 needs no API key. It reads and writes the same `~/.anona/cli-credentials.json`
-and `~/.anona/credentials.json` as the Python package's `anona` command.
+and `~/.anona/credentials.json` as the Python package's `anona-memory` command.
 
-`anona start` makes a temporary profile with no account. It is deleted after 72
-hours unless you claim it with `anona login`; `anona status` shows the deadline,
-and `anona logout` refuses to discard an unclaimed profile without `--force`.
+`anona-memory start` makes a temporary profile with no account. It is deleted after 72
+hours unless you claim it with `anona-memory login`; `anona-memory status` shows the deadline,
+and `anona-memory logout` refuses to discard an unclaimed profile without `--force`.
 
 ```bash
 npx @anona-labs/memory login

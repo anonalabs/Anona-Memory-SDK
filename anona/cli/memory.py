@@ -1,4 +1,4 @@
-"""`anona record`, `anona retrieve` and `anona reason`: the non-MCP path.
+"""`anona-memory record`, `anona-memory retrieve` and `anona-memory reason`: the non-MCP path.
 
 MCP is the primary surface for an agent. These exist for a script, a quick
 check from a terminal, somebody who will not enable MCP, and the session
@@ -7,7 +7,7 @@ before a client restart has loaded the MCP tools.
 Three credentials work here, highest first. An API key -- from
 `--api-key`, ANONA_API_KEY or ~/.anona/config.env, resolved in credential.py
 and bound to a host in target.for_api_key. Then the command-line login
-(`anona login --cli`, ~/.anona/cli-credentials.json, `typ=cli_access`),
+(`anona-memory login --cli`, ~/.anona/cli-credentials.json, `typ=cli_access`),
 refreshed when due and once more after a 401. Both reach an account, which can
 hold many spaces with none implied, so both need a space named. Last, the
 stored temporary-profile token, where `--space` defaults to the profile's one
@@ -106,9 +106,9 @@ _KEY_ROUTE = (
 
 
 _NO_CREDENTIAL = (
-    "anona: no credential. Run `anona login --cli` to sign in, or use "
+    "anona-memory: no credential. Run `anona-memory login --cli` to sign in, or use "
     f"{_KEY_ROUTE};\n"
-    "or run `anona start` for a temporary profile with no account."
+    "or run `anona-memory start` for a temporary profile with no account."
 )
 
 
@@ -140,13 +140,13 @@ def _renew_cli(rejected: str) -> str | int:
             )
         except NotLoggedIn:
             print(
-                "anona: the server refused the command-line login and it could not "
-                "be renewed. Run `anona login --cli` to sign in again.",
+                "anona-memory: the server refused the command-line login and it could not "
+                "be renewed. Run `anona-memory login --cli` to sign in again.",
                 file=sys.stderr,
             )
             return AUTH_EXIT
         except (httpx.HTTPError, OAuthError) as exc:
-            print(f"anona: could not renew the command-line login ({type(exc).__name__}).", file=sys.stderr)
+            print(f"anona-memory: could not renew the command-line login ({type(exc).__name__}).", file=sys.stderr)
             return exits.UNAVAILABLE if isinstance(exc, httpx.TransportError) else exits.FAILED
 
 
@@ -165,14 +165,14 @@ def _cli_bearer(space: str | None) -> Bearer | int | None:
             token = tokens.access_token(hc, p=store.cli_path(), relogin=tokens.CLI_RELOGIN)
         except NotLoggedIn as exc:
             print(
-                f"anona: the command-line login could not be renewed. {exc}",
+                f"anona-memory: the command-line login could not be renewed. {exc}",
                 file=sys.stderr,
             )
             return AUTH_EXIT
         except (httpx.HTTPError, OAuthError) as exc:
             # A raw httpx.Client, outside the SDK's transport-error
             # translation, so this one can really fire.
-            print(f"anona: could not refresh the command-line login ({type(exc).__name__}).", file=sys.stderr)
+            print(f"anona-memory: could not refresh the command-line login ({type(exc).__name__}).", file=sys.stderr)
             return exits.UNAVAILABLE if isinstance(exc, httpx.TransportError) else exits.FAILED
     return Bearer(token, space, _renew_cli)
 
@@ -196,15 +196,15 @@ def _token_and_space(space: str | None) -> Bearer | int:
     if c.signed_in:
         # Signed in for MCP only. Refused here rather than sent: the server
         # would answer `401 invalid_token`, and this says what to do instead,
-        # including `anona start`, which the server cannot know about. No
+        # including `anona-memory start`, which the server cannot know about. No
         # refresh first -- rotating a token only to refuse it is wasted work
         # on the credential MCP clients depend on.
         print(
-            "anona: the stored `anona login` credential is for MCP (`anona mcp`) only; "
+            "anona-memory: the stored `anona-memory login` credential is for MCP (`anona-memory mcp`) only; "
             "the REST API refuses it.\n"
-            "Run `anona login --cli` to sign the command line in too, or use "
+            "Run `anona-memory login --cli` to sign the command line in too, or use "
             f"{_KEY_ROUTE};\n"
-            "or a temporary profile (`anona start`).",
+            "or a temporary profile (`anona-memory start`).",
             file=sys.stderr,
         )
         return AUTH_EXIT
@@ -212,8 +212,8 @@ def _token_and_space(space: str | None) -> Bearer | int:
     if temp is None:
         if c.temp_token:
             print(
-                "anona: The temporary profile has expired. Run `anona start` for a new one, "
-                "or `anona login`.",
+                "anona-memory: The temporary profile has expired. Run `anona-memory start` for a new one, "
+                "or `anona-memory login`.",
                 file=sys.stderr,
             )
         else:
@@ -256,7 +256,7 @@ def _invoke(base_url: str, bearer: Bearer, fn: Callable[[AnonaClient], object]) 
     except AnonaError as exc:
         rc = _fail(exc, base_url)
         if exc.status_code == 401:
-            print("anona: run `anona login --cli` to sign the command line in again.", file=sys.stderr)
+            print("anona-memory: run `anona-memory login --cli` to sign the command line in again.", file=sys.stderr)
         return False, rc
 
 
@@ -272,7 +272,7 @@ def _reject_empty(what: str, value: str) -> int | None:
     if value.strip():
         return None
     print(
-        f"anona: the {what} is empty. Nothing was sent -- the server rejects "
+        f"anona-memory: the {what} is empty. Nothing was sent -- the server rejects "
         f"an empty {what}, and the request would still be billed.",
         file=sys.stderr,
     )
@@ -287,7 +287,7 @@ def read_content(positional: str | None, path: str | None) -> str | int:
     left to run_record's own check, so all three sources share one message.
     """
     if positional is not None and path is not None:
-        print("anona: give the content or --file, not both. Nothing was sent.", file=sys.stderr)
+        print("anona-memory: give the content or --file, not both. Nothing was sent.", file=sys.stderr)
         return EMPTY_INPUT_EXIT
     if path is not None:
         try:
@@ -297,14 +297,14 @@ def read_content(positional: str | None, path: str | None) -> str | int:
             print(
                 # Redacted as well as sanitized: a key pasted into the wrong
                 # flag would otherwise be echoed straight back.
-                f"anona: could not read {_printable(redact(path))}: {type(exc).__name__}. "
+                f"anona-memory: could not read {_printable(redact(path))}: {type(exc).__name__}. "
                 "Nothing was sent.",
                 file=sys.stderr,
             )
             return EMPTY_INPUT_EXIT
     if positional is None:
         print(
-            "anona: nothing to record. Pass the content, `-` to read it from stdin, "
+            "anona-memory: nothing to record. Pass the content, `-` to read it from stdin, "
             "or --file PATH. Nothing was sent.",
             file=sys.stderr,
         )
@@ -345,7 +345,7 @@ def _retry_notice(attempt: int, delay: float, status: int, total: int) -> None:
     stdout still carries only the result.
     """
     reason = "rate limited" if status == 429 else f"server error {status}"
-    notice(f"anona: {reason}, retrying in {delay:.0f} s ({attempt}/{total})")
+    notice(f"anona-memory: {reason}, retrying in {delay:.0f} s ({attempt}/{total})")
 
 
 LINK_REFUSED = "download_link_refused"
@@ -375,7 +375,7 @@ def _fail(exc: AnonaError, base_url: str) -> int:
         # The presigned link, not the API, refused: it expired or was never
         # good. A fresh `download` asks the API for a new one.
         print(
-            f"anona: download link expired or refused (HTTP {exc.status_code}); run download again.",
+            f"anona-memory: download link expired or refused (HTTP {exc.status_code}); run download again.",
             file=sys.stderr,
         )
         return exits.UNAVAILABLE
@@ -389,7 +389,7 @@ def _fail(exc: AnonaError, base_url: str) -> int:
         # target.py exists for, an agent following a URL out of a page it
         # read -- and _printable costs nothing.
         print(
-            f"anona: could not reach {_printable(_host_of(base_url))}: "
+            f"anona-memory: could not reach {_printable(_host_of(base_url))}: "
             f"{_printable(_transport_reason(exc))}",
             file=sys.stderr,
         )
@@ -400,7 +400,7 @@ def _fail(exc: AnonaError, base_url: str) -> int:
         # message and the ids, so it goes through the same sanitizer. It is
         # read straight off `error.code` in the response body, and nothing
         # between there and here constrains it to the documented vocabulary.
-        line = f"anona: {_printable(exc.code)}: {_printable(_message_of(exc))}"
+        line = f"anona-memory: {_printable(exc.code)}: {_printable(_message_of(exc))}"
         request_id = exc.request_id or _request_id_of(exc)
         if request_id:
             line += f" (request_id {_printable(request_id)})"
@@ -410,7 +410,7 @@ def _fail(exc: AnonaError, base_url: str) -> int:
     # body that did not parse. The status is all there is, and saying so is
     # honest.
     print(
-        f"anona: the server answered HTTP {exc.status_code}: {_printable(_message_of(exc))}",
+        f"anona-memory: the server answered HTTP {exc.status_code}: {_printable(_message_of(exc))}",
         file=sys.stderr,
     )
     return rc
@@ -494,7 +494,7 @@ def _with_field_errors(message: str, error: dict) -> str:
 
 # A write that stored nothing is not an error -- the server did what it was
 # asked -- so it cannot share `_fail`'s exit code, and it must not share
-# success's either. Its own code is what lets `anona record ... || handle` in a
+# success's either. Its own code is what lets `anona-memory record ... || handle` in a
 # shell script tell the two apart.
 NOTHING_EXTRACTED_EXIT = exits.NOTHING_STORED
 
@@ -566,7 +566,7 @@ def run_record(
         # starts queueing a write on its own must not read as empty.
         print(f"Queued in space '{_printable(space)}'. Extraction runs in the background.")
         return 0
-    # The ids, because they are what `anona` cannot otherwise tell you and
+    # The ids, because they are what `anona-memory` cannot otherwise tell you and
     # what every other surface needs to edit or delete the memory. One item
     # usually extracts to more than one memory, so the count is not noise.
     noun = "memory" if len(ids) == 1 else "memories"
@@ -616,7 +616,7 @@ def _after_queued(
             _emit_json(result)
         elif job_ids:
             print(f"Queued in space '{_printable(space)}'. Job: {', '.join(_printable(j) for j in job_ids)}")
-            print(f"Check it with `anona jobs get {_printable(job_ids[0])} --space {_printable(space)}`.")
+            print(f"Check it with `anona-memory jobs get {_printable(job_ids[0])} --space {_printable(space)}`.")
         else:
             print(f"Queued in space '{_printable(space)}'.")
         return 0
@@ -634,15 +634,15 @@ def _after_queued(
             jobs.render(doc, jid)
     if rc == exits.STILL_RUNNING:
         print(
-            "anona: still running when --wait-timeout ran out; "
-            f"check later with `anona jobs get {_printable(job_ids[0])} --space {_printable(space)}`.",
+            "anona-memory: still running when --wait-timeout ran out; "
+            f"check later with `anona-memory jobs get {_printable(job_ids[0])} --space {_printable(space)}`.",
             file=sys.stderr,
         )
     elif rc == exits.NOT_FOUND:
         print(jobs.NOT_FOUND_LINE, file=sys.stderr)
     elif rc == NOTHING_EXTRACTED_EXIT:
         print(
-            f"anona: nothing was stored in space '{_printable(space)}': no facts could be extracted.",
+            f"anona-memory: nothing was stored in space '{_printable(space)}': no facts could be extracted.",
             file=sys.stderr,
         )
     return rc
@@ -673,7 +673,7 @@ def read_batch(path: str) -> list[dict] | int:
                 text = fh.read()
     except (OSError, UnicodeDecodeError) as exc:
         print(
-            f"anona: could not read {_printable(redact(path))}: {type(exc).__name__}. Nothing was sent.",
+            f"anona-memory: could not read {_printable(redact(path))}: {type(exc).__name__}. Nothing was sent.",
             file=sys.stderr,
         )
         return EMPTY_INPUT_EXIT
@@ -701,16 +701,16 @@ def read_batch(path: str) -> list[dict] | int:
             elif not isinstance(content, str) or not content.strip():
                 why = "`content` must be a non-empty string"
         if why is not None:
-            print(f"anona: --batch line {n}: {why}. Nothing was sent.", file=sys.stderr)
+            print(f"anona-memory: --batch line {n}: {why}. Nothing was sent.", file=sys.stderr)
             return EMPTY_INPUT_EXIT
         assert isinstance(item, dict)
         items.append(item)
     if not items:
-        print("anona: --batch holds no items. Nothing was sent.", file=sys.stderr)
+        print("anona-memory: --batch holds no items. Nothing was sent.", file=sys.stderr)
         return EMPTY_INPUT_EXIT
     if len(items) > BATCH_MAX_ITEMS:
         print(
-            f"anona: --batch holds {len(items)} items; the API takes at most {BATCH_MAX_ITEMS} "
+            f"anona-memory: --batch holds {len(items)} items; the API takes at most {BATCH_MAX_ITEMS} "
             "per call. Split the file. Nothing was sent.",
             file=sys.stderr,
         )
@@ -885,7 +885,7 @@ def run_reason(
     # A synthesis is an agent loop over the space, not a lookup: it runs tens
     # of seconds and sometimes past a minute. Without this the command looks
     # hung, and the obvious reaction -- Ctrl-C and retry -- costs a second run
-    # of the same work. stderr, so `anona reason ... > answer.md` still gets
+    # of the same work. stderr, so `anona-memory reason ... > answer.md` still gets
     # only the answer.
     notice(f"Reasoning over space '{_printable(space)}'. This usually takes under a minute.")
     kwargs = _given(depth=depth, user_id=user_id, agent_id=agent_id, session_id=session_id)
