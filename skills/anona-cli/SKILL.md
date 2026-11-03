@@ -47,7 +47,7 @@ An older copy answers a bare `anona-memory` with a usage error (exit `2`) and
 ## Rule 2: always `--json`, branch on the exit code
 
 With `--json`, stdout is exactly one JSON document, and empty on failure; the
-error is one line on stderr, `anona: <error_code>: <message>`. Never parse the
+error is one line on stderr, `anona-memory: <error_code>: <message>`. Never parse the
 plain-text output.
 
 | Exit | Means | Do |

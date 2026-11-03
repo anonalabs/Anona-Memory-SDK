@@ -1068,7 +1068,7 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "help",
-    help: "Show help for anona or one command (`help spaces delete`); `help --llm` prints the agent reference",
+    help: "Show help for anona-memory or one command (`help spaces delete`); `help --llm` prints the agent reference",
     positionals: [{ dest: "topic", nargs: "*", metavar: "COMMAND", help: "The command to describe, e.g. `record` or `spaces delete`" }],
     options: [
       { flags: ["--llm"], dest: "llm", kind: "store_true", help: "Print `anona-memory guide` instead" },
@@ -1459,7 +1459,7 @@ function parseOrThrow(argv: string[], io: Out, version: string): Parsed {
         `argument command: invalid choice: '${tok}' (choose from ${COMMANDS.map((c) => `'${c.name}'`).join(", ")})` +
           // The usual cause is a copy older than the docs that named the
           // command, and the list alone never says so.
-          `. If the docs name \`${tok}\`, this copy (anona ${version}) is older than they are: ` +
+          `. If the docs name \`${tok}\`, this copy (anona-memory ${version}) is older than they are: ` +
           "npm install -g @anona-labs/memory",
       );
     }

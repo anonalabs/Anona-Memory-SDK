@@ -105,7 +105,7 @@ describe("command grammar", () => {
     const r = await run(["nosuchcommand"]);
     expect(r.rc).toBe(2);
     expect(r.err).toContain("invalid choice: 'nosuchcommand'");
-    expect(r.err).toMatch(/this copy \(anona [^)]+\) is older than they are: npm install -g @anona-labs\/memory/);
+    expect(r.err).toMatch(/this copy \(anona-memory [^)]+\) is older than they are: npm install -g @anona-labs\/memory/);
   });
 
   it("login --help says approving claims a temporary profile", async () => {

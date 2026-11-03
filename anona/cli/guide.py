@@ -24,7 +24,7 @@ PURPOSE = (
     "primary surface for an agent; this CLI is for scripts, terminals and harnesses "
     "without MCP. Every data command takes --json (one JSON document on stdout; "
     "nothing on stdout when it fails) and writes errors to stderr as "
-    "`anona: <code>: <message> (request_id <id>)`."
+    "`anona-memory: <code>: <message> (request_id <id>)`."
 )
 
 # What bare `anona-memory` prints: where to start, for a person or an agent that has
@@ -32,24 +32,24 @@ PURPOSE = (
 # read -- so it answers instantly and identically everywhere. The full
 # reference is `anona-memory guide`; this only points at it.
 ORIENTATION = """\
-anona: the command line for Anona Memory, a hosted memory layer for AI agents.
+anona-memory: the command line for Anona Memory, a hosted memory layer for AI agents.
 
 Start here
-  anona start               use memory now: a temporary profile, no account
-  anona login               sign in (also claims a temporary profile)
-  anona status              what this machine is signed in as
+  anona-memory start               use memory now: a temporary profile, no account
+  anona-memory login               sign in (also claims a temporary profile)
+  anona-memory status              what this machine is signed in as
 
 Use memory (a temporary profile needs no --space)
-  anona record "TEXT" --space SPACE
-  anona retrieve "QUERY" --space SPACE
-  anona reason "QUESTION" --space SPACE
-  anona spaces list
+  anona-memory record "TEXT" --space SPACE
+  anona-memory retrieve "QUERY" --space SPACE
+  anona-memory reason "QUESTION" --space SPACE
+  anona-memory spaces list
 
 Learn the rest
-  anona guide               every command, flag, exit code and recipe
+  anona-memory guide               every command, flag, exit code and recipe
                             (an agent should read this first; --json for a tree)
-  anona help COMMAND        help for one command
-  anona doctor              check the install, credentials and connection
+  anona-memory help COMMAND        help for one command
+  anona-memory doctor              check the install, credentials and connection
 
 Docs: https://docs.anonalabs.com/cli/overview
 """
@@ -119,7 +119,7 @@ COMMON_ERRORS = (
         "unset it, or run the command without it, to use `anona-memory login --cli`",
     ),
     (
-        "exit 4, `dashboard_only`: `anona: <what> is done in the dashboard: <URL>`",
+        "exit 4, `dashboard_only`: `anona-memory: <what> is done in the dashboard: <URL>`",
         "creating or revoking a key, every billing change, and organization, member and space member "
         "management are not available here; nothing was sent, open the URL",
     ),

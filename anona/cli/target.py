@@ -24,7 +24,7 @@ _LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
 class TargetError(Exception):
-    """Printed as `anona: <message>`; the command exits without a request
+    """Printed as `anona-memory: <message>`; the command exits without a request
     (1, or 4 from record/retrieve/reason, where a refused host is an auth
     failure)."""
 

@@ -168,7 +168,7 @@ def _handle(client: httpx.Client, base_url: str, line: str, stderr) -> str | Non
             text = str(exc)
         else:
             text = f"Request failed: {type(exc).__name__}: {exc}"
-        print(f"anona mcp: {text}", file=stderr, flush=True)
+        print(f"anona-memory mcp: {text}", file=stderr, flush=True)
         if not owed:
             # An error with a null id would be an unsolicited response.
             return None
@@ -193,7 +193,7 @@ def run_proxy(base_url: str, stdin, stdout, stderr) -> int:
         remaining = c.temp_expires_at - time.time()
         if 0 < remaining <= 24 * 3600:
             print(
-                f"anona mcp: this temporary profile "
+                f"anona-memory mcp: this temporary profile "
                 f"{describe_deadline(c.temp_expires_at)}. "
                 "Run `anona-memory login` to claim it and keep what it holds.",
                 file=stderr,

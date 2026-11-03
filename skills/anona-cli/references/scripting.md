@@ -88,13 +88,13 @@ they go before or after the command.
 
 ## Errors
 
-stderr: `anona: <error_code>: <message> (request_id <id>)`. Match on the code,
+stderr: `anona-memory: <error_code>: <message> (request_id <id>)`. Match on the code,
 which is lowercase snake_case: `space_not_found`, `space_ambiguous`,
 `space_owner_only`, `space_read_only`, `temp_profile_single_space`, `job_not_found`,
 `validation_error`, `reserved_tag`, `invalid_scope`, `rate_limited`,
 `credits_exhausted`, `reason_timeout`, `write_status_unknown`,
 `unsupported_file_type`, `file_too_large`, `session_required`. A failure to connect is
-`anona: could not reach <host>: ...`, never an HTTP status.
+`anona-memory: could not reach <host>: ...`, never an HTTP status.
 
 `temp_profile_single_space` (exit `4`): a temporary profile has only the
 `default` space; it cannot create spaces or write elsewhere. `credits_exhausted`

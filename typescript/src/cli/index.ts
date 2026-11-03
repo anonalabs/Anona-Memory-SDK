@@ -265,7 +265,7 @@ async function logout(io: IO, which: { cli: boolean; mcp: boolean; force: boolea
   }
   if (unrevoked > 0) {
     io.stderr.write(
-      "anona logout: removed locally, but the server could not be told to revoke it; it expires after " +
+      "anona-memory logout: removed locally, but the server could not be told to revoke it; it expires after " +
         "30 days unused, or revoke it now under Integrations -> MCP -> Connected apps in the dashboard.\n",
     );
   }

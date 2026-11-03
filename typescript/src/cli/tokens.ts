@@ -88,7 +88,7 @@ async function withLock<T>(lockPath: string, fn: () => Promise<T>): Promise<T> {
       continue; // released between our open and our stat: just retry
     }
     if (Date.now() - started > lockTuning.acquireTimeoutMs) {
-      throw new OAuthError("Timed out waiting for another anona process to finish refreshing.");
+      throw new OAuthError("Timed out waiting for another anona-memory process to finish refreshing.");
     }
     await sleep(lockTuning.pollMs);
   }

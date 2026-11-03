@@ -378,14 +378,14 @@ def _approve(
                 else:
                     store.save(creds)
         except OSError as exc:
-            again = "anona login --cli" if cli else "anona login"
+            again = "anona-memory login --cli" if cli else "anona-memory login"
             raise Abort(
                 f"Approval succeeded, but the credential could not be saved to "
                 f"{where}: {exc.strerror or type(exc).__name__}. "
                 f"Fix that and run `{again}` again."
             ) from exc
     except (Abort, oauth.OAuthError) as exc:
-        print(f"anona login: {exc}", file=sys.stderr)
+        print(f"anona-memory login: {exc}", file=sys.stderr)
         return _REFUSED if fallback and isinstance(exc, ScopeRefused) else 1
     finally:
         if server is not None:

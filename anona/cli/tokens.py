@@ -84,7 +84,7 @@ def _node_lock(file_path):
             except FileNotFoundError:
                 continue  # released between our open and our stat: retry
             if time.monotonic() - started > NODELOCK_TIMEOUT_SECONDS:
-                raise oauth.OAuthError("Timed out waiting for another anona process to finish refreshing.")
+                raise oauth.OAuthError("Timed out waiting for another anona-memory process to finish refreshing.")
             time.sleep(NODELOCK_POLL_SECONDS)
             continue
         try:

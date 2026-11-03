@@ -110,10 +110,10 @@ def run_start(base_url: str) -> int:
             )
         )
     except StartError as exc:
-        print(f"anona start: {exc}", file=sys.stderr)
+        print(f"anona-memory start: {exc}", file=sys.stderr)
         return 1
     except OSError as exc:
-        print(f"anona start: could not save the profile to {store.path()}: {exc.strerror}.", file=sys.stderr)
+        print(f"anona-memory start: could not save the profile to {store.path()}: {exc.strerror}.", file=sys.stderr)
         return 1
     print(f"Temporary profile created. It {describe_deadline(deadline)}.")
     print("The only reminder comes in the last 24 hours: run `anona-memory status` to check, and")

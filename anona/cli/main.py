@@ -148,7 +148,7 @@ class _Parser(argparse.ArgumentParser):
                 from anona import __version__
 
                 message += (
-                    f". If the docs name `{value}`, this copy (anona {__version__}) is "
+                    f". If the docs name `{value}`, this copy (anona-memory {__version__}) is "
                     "older than they are: pip install -U anona-memory"
                 )
             raise argparse.ArgumentError(action, message)
@@ -718,7 +718,7 @@ def _logout(*, cli: bool, mcp: bool, force: bool) -> int:
                 # the server deletes it too. Checked before anything is
                 # deleted, so a refused logout removes nothing at all.
                 print(
-                    f"anona logout: this would abandon an unclaimed temporary profile "
+                    f"anona-memory logout: this would abandon an unclaimed temporary profile "
                     f"(it {temp.describe_deadline(held.temp_expires_at)}). "
                     "Run `anona-memory login` to claim it, or `anona-memory logout --force` to "
                     "discard it. `anona-memory logout --cli` removes only the "
@@ -743,7 +743,7 @@ def _logout(*, cli: bool, mcp: bool, force: bool) -> int:
     unrevoked = [c.base_url for c in revoke if not _revoke(c)]
     if unrevoked:
         print(
-            "anona logout: removed locally, but the server could not be told to "
+            "anona-memory logout: removed locally, but the server could not be told to "
             "revoke it; it expires after 30 days unused, or revoke it now under "
             "Integrations -> MCP -> Connected apps in the dashboard.",
             file=sys.stderr,

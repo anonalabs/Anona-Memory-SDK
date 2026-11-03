@@ -108,8 +108,8 @@ function normalise(err: string): string {
   return kept
     .join("\n")
     .replace(
-      /this copy \(anona [^)]*\) is older than they are: (?:pip install -U anona-memory|npm install -g @anona-labs\/memory)/g,
-      "this copy (anona V) is older than they are: UPGRADE",
+      /this copy \(anona-memory [^)]*\) is older than they are: (?:pip install -U anona-memory|npm install -g @anona-labs\/memory)/g,
+      "this copy (anona-memory V) is older than they are: UPGRADE",
     );
 }
 
