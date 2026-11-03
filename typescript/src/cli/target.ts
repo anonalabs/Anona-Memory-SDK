@@ -8,7 +8,7 @@
  * temp token has full data-plane access and cannot be rotated.
  *
  * So: naming a different deployment than the stored credential's is refused
- * rather than obeyed (`anona login --base-url` is how you switch), and a
+ * rather than obeyed (`anona-memory login --base-url` is how you switch), and a
  * request carrying or receiving a credential must be https://, except to
  * loopback. The login path already pins the issuer to the host it asked
  * (oauth discover); this is the same rule for everything else. Mirrors
@@ -19,7 +19,7 @@ import { DEFAULT_BASE_URL } from "./store.js";
 // Hostnames as WHATWG URL reports them: lowercased, IPv6 in brackets.
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-/** Printed as `anona: <message>`; the command exits 1 without a request. */
+/** Printed as `anona-memory: <message>`; the command exits 1 without a request. */
 export class TargetError extends Error {}
 
 function same(a: string, b: string): boolean {
@@ -56,7 +56,7 @@ export function resolveTarget(requested: string | undefined, storedBaseUrl: stri
     if (requested && !same(requested, storedBaseUrl)) {
       throw new TargetError(
         `the stored credential is for ${storedBaseUrl}, not ${requested}. ` +
-          `Run \`anona login --base-url ${requested}\` to switch.`,
+          `Run \`anona-memory login --base-url ${requested}\` to switch.`,
       );
     }
     base = storedBaseUrl;
@@ -72,7 +72,7 @@ export function resolveTarget(requested: string | undefined, storedBaseUrl: stri
 // A key is not tied to a deployment the way a stored login is -- nothing in it
 // says which server minted it -- so the rule above cannot apply. The risk is
 // the same one, though: a key sitting in the environment or in config.env is
-// picked up by every `anona` invocation, so a `--base-url` that an agent was
+// picked up by every `anona-memory` invocation, so a `--base-url` that an agent was
 // talked into typing would carry it to whoever runs that host. So a key only
 // goes to the Anona hosts, unless the server was named in the SAME place the
 // key came from: both on the command line, both in the environment, or both in

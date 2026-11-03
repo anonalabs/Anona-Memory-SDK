@@ -1,5 +1,5 @@
-"""How `anona` is started and how it ends: `python -m anona.cli`, a closed
-pipe, `anona help COMMAND`, the --base-url help, and two usage rules found
+"""How `anona-memory` is started and how it ends: `python -m anona.cli`, a closed
+pipe, `anona-memory help COMMAND`, the --base-url help, and two usage rules found
 while documenting the CLI (record --async --batch; job cancel's route).
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ def _env(tmp_path) -> dict:
 
 def _module(args, tmp_path, **kw) -> subprocess.CompletedProcess:
     # cwd is the SDK root, which `-m` puts first on sys.path: the public
-    # `anona`, not anona-extensions (see _cli.py).
+    # `anona-memory`, not anona-extensions (see _cli.py).
     return subprocess.run(
         [sys.executable, "-m", "anona.cli", *args],
         cwd=str(SDK_ROOT), env=_env(tmp_path), text=True, timeout=60, **kw,
@@ -29,9 +29,9 @@ def _module(args, tmp_path, **kw) -> subprocess.CompletedProcess:
 
 def test_python_dash_m_runs_the_cli(tmp_path):
     r = _module(["--version"], tmp_path, capture_output=True)
-    assert r.returncode == 0 and r.stdout.startswith("anona "), (r.returncode, r.stdout, r.stderr)
+    assert r.returncode == 0 and r.stdout.startswith("anona-memory "), (r.returncode, r.stdout, r.stderr)
     r = _module(["help"], tmp_path, capture_output=True)
-    assert r.returncode == 0 and "usage: anona" in r.stdout, r.stderr
+    assert r.returncode == 0 and "usage: anona-memory" in r.stdout, r.stderr
 
 
 def _into_a_closed_pipe(args, tmp_path) -> subprocess.CompletedProcess:
@@ -67,7 +67,7 @@ def test_help_command_prints_that_commands_help(tmp_path):
         refused(["help", "record", "--json"])
         # Bare `help` and `help --llm` are unchanged.
         rc, out, _ = run_main(["help"])
-        assert rc == 0 and out.startswith("usage: anona"), out[:100]
+        assert rc == 0 and out.startswith("usage: anona-memory"), out[:100]
         rc, out, _ = run_main(["help", "--llm"])
         assert rc == 0 and out.startswith("ANONA CLI REFERENCE"), out[:100]
         print("OK")
@@ -102,6 +102,6 @@ def test_job_cancel_is_a_delete_of_the_job(tmp_path):
         route("DELETE", "/v1/spaces/s/jobs/job-1", lambda r: envelope(409, "job_not_cancellable", "Already running."))
         reqs, out, err = sent(["jobs", "cancel", "job-1", "--yes"] + AUTH, want_rc=1)
         assert (reqs[0]["method"], reqs[0]["path"]) == ("DELETE", "/v1/spaces/s/jobs/job-1"), reqs
-        assert err.strip() == "anona: job_not_cancellable: Already running. (request_id req_1)", err
+        assert err.strip() == "anona-memory: job_not_cancellable: Already running. (request_id req_1)", err
         print("OK")
     """, tmp_path))

@@ -89,12 +89,12 @@ export function precheck(io: DataIO, verb: Verb, args: Values): number | null {
   if (k === "documents upload") {
     for (const path of args.paths as string[]) {
       if (!isFile(path)) {
-        io.stderr.write(`anona: ${p(path)} is not a readable file. Nothing was sent.\n`);
+        io.stderr.write(`anona-memory: ${p(path)} is not a readable file. Nothing was sent.\n`);
         return USAGE_EXIT;
       }
     }
     if (args.wait_timeout !== undefined && !args.wait) {
-      io.stderr.write("anona: --wait-timeout needs --wait. Nothing was sent.\n");
+      io.stderr.write("anona-memory: --wait-timeout needs --wait. Nothing was sent.\n");
       return USAGE_EXIT;
     }
     return null;
@@ -103,7 +103,7 @@ export function precheck(io: DataIO, verb: Verb, args: Values): number | null {
     const changes = settingsChanges(io, verb[0], args);
     if (typeof changes === "number") return changes;
     if (!Object.keys(changes).length) {
-      io.stderr.write(`anona: name at least one field to change (see \`anona ${verb[0]} set --help\`). Nothing was sent.\n`);
+      io.stderr.write(`anona-memory: name at least one field to change (see \`anona-memory ${verb[0]} set --help\`). Nothing was sent.\n`);
       return USAGE_EXIT;
     }
   }
@@ -119,7 +119,7 @@ function settingsChanges(io: DataIO, kind: string, args: Values): Record<string,
   }
   for (const field of (args.clear as string[] | undefined) ?? []) {
     if (field in changes) {
-      io.stderr.write(`anona: ${field} is both set and cleared. Nothing was sent.\n`);
+      io.stderr.write(`anona-memory: ${field} is both set and cleared. Nothing was sent.\n`);
       return USAGE_EXIT;
     }
     changes[field] = null;
@@ -129,7 +129,7 @@ function settingsChanges(io: DataIO, kind: string, args: Values): Record<string,
 
 function rejectBlank(io: DataIO, what: string, value: string): number | null {
   if (value.trim()) return null;
-  io.stderr.write(`anona: the ${what} is empty. Nothing was sent.\n`);
+  io.stderr.write(`anona-memory: the ${what} is empty. Nothing was sent.\n`);
   return USAGE_EXIT;
 }
 
@@ -143,7 +143,7 @@ export async function runVerb(
 ): Promise<number> {
   const what = destroyMessage(verb, args, space);
   if (what !== null && !args.yes) {
-    io.stderr.write(`anona: this would ${what}. Pass --yes to do it. Nothing was sent.\n`);
+    io.stderr.write(`anona-memory: this would ${what}. Pass --yes to do it. Nothing was sent.\n`);
     return USAGE_EXIT;
   }
   let bearer: Bearer;
@@ -196,7 +196,7 @@ async function runUpload(io: DataIO, args: Values, baseUrl: string, bearer: Bear
     try {
       content = readFileSync(path);
     } catch (e) {
-      io.stderr.write(`anona: could not read a file (${readErrorName(e)}). Nothing was sent.\n`);
+      io.stderr.write(`anona-memory: could not read a file (${readErrorName(e)}). Nothing was sent.\n`);
       return exits.USAGE;
     }
     const name = basename(path);
@@ -204,7 +204,7 @@ async function runUpload(io: DataIO, args: Values, baseUrl: string, bearer: Bear
     if (content.byteLength > cap) {
       const mb = 1024 * 1024;
       const detail = `'${name}' is ${Math.floor(content.byteLength / mb)} MB, over the ${Math.floor(cap / mb)} MB per-file limit.`;
-      io.stderr.write(`anona: ${p(detail)} Nothing was sent.\n`);
+      io.stderr.write(`anona-memory: ${p(detail)} Nothing was sent.\n`);
       return exits.USAGE;
     }
     files.push([name, content]);

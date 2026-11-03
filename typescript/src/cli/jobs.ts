@@ -22,7 +22,7 @@ const RUNNING = new Set(["pending", "processing", "running", "queued"]);
  * hold. The API answers that with HTTP 200 and `"status": "not_found"`, so
  * nothing throws and the CLI turns it into the not-found outcome itself.
  */
-export const NOT_FOUND_LINE = "anona: job_not_found: No job with that id in this space.";
+export const NOT_FOUND_LINE = "anona-memory: job_not_found: No job with that id in this space.";
 
 /** The server answered, and the answer is that it holds no such job. */
 export function isNotFound(doc: unknown): boolean {
@@ -92,7 +92,7 @@ export async function wait(
   return { done: true, value: ids.map((id) => docs.get(id) as Doc) };
 }
 
-/** One job, as `anona jobs get` prints it. */
+/** One job, as `anona-memory jobs get` prints it. */
 export function render(io: DataIO, doc: Doc, jobId?: string): void {
   let line = `Job ${p(truthy(doc.job_id) ? doc.job_id : jobId)}: ${p(doc.status)}`;
   if (doc.memory_count !== null && doc.memory_count !== undefined) line += `, ${p(doc.memory_count)} memories`;

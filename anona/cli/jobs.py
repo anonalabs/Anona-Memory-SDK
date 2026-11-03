@@ -24,7 +24,7 @@ _RUNNING = frozenset({"pending", "processing", "running", "queued"})
 # hold. The API answers that with HTTP 200 and `"status": "not_found"` (an id
 # from another space, or one that never existed), so the SDK raises nothing
 # and the CLI has to turn it into the not-found outcome itself.
-NOT_FOUND_LINE = "anona: job_not_found: No job with that id in this space."
+NOT_FOUND_LINE = "anona-memory: job_not_found: No job with that id in this space."
 
 
 def is_not_found(doc: object) -> bool:
@@ -93,7 +93,7 @@ def wait(base_url: str, bearer: Bearer, space: str | None, job_ids: list[str], t
 
 
 def render(doc: dict, job_id: str | None = None) -> None:
-    """One job, as `anona jobs get` prints it."""
+    """One job, as `anona-memory jobs get` prints it."""
     line = f"Job {_p(doc.get('job_id') or job_id)}: {_p(doc.get('status'))}"
     if doc.get("memory_count") is not None:
         line += f", {_p(doc['memory_count'])} memories"

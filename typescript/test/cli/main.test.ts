@@ -34,7 +34,7 @@ describe("anona command", () => {
     for (const flag of ["--help", "-h"]) {
       const t = io();
       expect(await main([flag], t)).toBe(0);
-      expect(t.o()).toContain("usage: anona");
+      expect(t.o()).toContain("usage: anona-memory");
       expect(t.e()).toBe("");
     }
   });
@@ -42,7 +42,7 @@ describe("anona command", () => {
   it("--version prints a version on stdout and exits 0", async () => {
     const t = io();
     expect(await main(["--version"], t)).toBe(0);
-    expect(t.o()).toMatch(/^anona \S+\n$/);
+    expect(t.o()).toMatch(/^anona-memory \S+\n$/);
     expect(t.e()).toBe("");
   });
 
@@ -50,7 +50,7 @@ describe("anona command", () => {
     // The fix must not turn every mistake into a success.
     const t = io();
     expect(await main(["wat"], t)).toBe(2);
-    expect(t.e()).toContain("usage: anona");
+    expect(t.e()).toContain("usage: anona-memory");
     expect(t.o()).toBe("");
   });
 
@@ -65,14 +65,14 @@ describe("anona command", () => {
     expect(await main(["status"], t)).toBe(0);
     expect(t.o()).toContain(as.base);
     expect(t.o()).toMatch(/Credential found for .*\n.*Its access token expires in \d+ minutes and is renewed automatically/);
-    expect(t.o()).toMatch(/only if `anona mcp` reports an authorization failure/);
+    expect(t.o()).toMatch(/only if `anona-memory mcp` reports an authorization failure/);
     expect(t.o() + t.e()).not.toMatch(/SECRET|cid-1/);
   });
   it("status explains an expired access token as normal", async () => {
     seed(as.base, { offset: -100 });
     const t = io();
     expect(await main(["status"], t)).toBe(0);
-    expect(t.o()).toMatch(/Its access token has expired; `anona mcp` renews it/);
+    expect(t.o()).toMatch(/Its access token has expired; `anona-memory mcp` renews it/);
     expect(t.o()).not.toMatch(/Logged in/);
   });
   it("logout deletes the credential", async () => {
@@ -104,11 +104,11 @@ describe("anona command", () => {
       expect(t.e()).not.toMatch(/usage:/);
     }
   });
-  it("orients a bare `anona` on stdout and exits 0, touching nothing", async () => {
+  it("orients a bare `anona-memory` on stdout and exits 0, touching nothing", async () => {
     const t = io();
     expect(await main([], t)).toBe(0);
-    expect(t.o()).toContain("anona guide");
-    expect(t.o()).toContain("anona start");
+    expect(t.o()).toContain("anona-memory guide");
+    expect(t.o()).toContain("anona-memory start");
     expect(t.e()).toBe("");
   });
   it("prints usage and exits 2 for a missing command, an unknown one, or extras", async () => {
@@ -130,7 +130,7 @@ describe("anona command", () => {
       const t = io(line);
       expect(await main(argv, t), argv.join(" ")).toBe(1);
       expect(t.e()).toContain(`the stored credential is for https://memory.anonalabs.com, not ${as.base}`);
-      expect(t.e()).toContain(`anona login --base-url ${as.base}`);
+      expect(t.e()).toContain(`anona-memory login --base-url ${as.base}`);
       expect(t.o()).toBe("");
     }
     // The point: the token never reached the named host.

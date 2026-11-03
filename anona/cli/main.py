@@ -1,4 +1,4 @@
-"""The `anona` command: start, login, logout, status, mcp, record, retrieve,
+"""The `anona-memory` command: start, login, logout, status, mcp, record, retrieve,
 reason, doctor, guide, completion, and the resource verbs in verbs.py (spaces,
 memories, documents, jobs, profile, model, user-profile, usage, llm-models and
 the space settings)."""
@@ -118,7 +118,7 @@ def _flat(lists: list[list[str]] | None) -> list[str] | None:
 # profile has exactly one space. The MCP login is refused by these verbs
 # outright (memory._token_and_space).
 _SPACE_HELP = (
-    "Space to {verb}. Required with an API key or `anona login` unless "
+    "Space to {verb}. Required with an API key or `anona-memory login` unless "
     "ANONA_SPACE_ID is set; a temporary profile uses `default`"
 )
 _API_KEY_HELP = (
@@ -129,7 +129,7 @@ _API_KEY_HELP = (
 
 class _Parser(argparse.ArgumentParser):
     """argparse echoes an unrecognised argument verbatim, which for
-    `anona start --api-key <key>` is the key. Errors are redacted first."""
+    `anona-memory start --api-key <key>` is the key. Errors are redacted first."""
 
     def error(self, message):  # type: ignore[override]
         super().error(credential.redact(message))
@@ -148,8 +148,8 @@ class _Parser(argparse.ArgumentParser):
                 from anona import __version__
 
                 message += (
-                    f". If the docs name `{value}`, this copy (anona {__version__}) is "
-                    "older than they are: pip install -U anona"
+                    f". If the docs name `{value}`, this copy (anona-memory {__version__}) is "
+                    "older than they are: pip install -U anona-memory"
                 )
             raise argparse.ArgumentError(action, message)
 
@@ -157,8 +157,8 @@ class _Parser(argparse.ArgumentParser):
 # Claiming has no command of its own -- it is what `login` does when a
 # temporary profile is stored -- so `login --help` is where it must be said.
 _LOGIN_DESCRIPTION = (
-    "Approve access in a browser, once: the command line and `anona mcp` both use the login. "
-    "With a temporary profile stored (from `anona start`), approving also claims it: the account you sign in with, which needs an email not yet used for Anona, takes over the profile and everything in it."
+    "Approve access in a browser, once: the command line and `anona-memory mcp` both use the login. "
+    "With a temporary profile stored (from `anona-memory start`), approving also claims it: the account you sign in with, which needs an email not yet used for Anona, takes over the profile and everything in it."
 )
 
 
@@ -184,7 +184,7 @@ def _parser() -> argparse.ArgumentParser:
         "--no-browser",
         action="store_true",
         default=argparse.SUPPRESS,
-        help="Used by `anona login` only: print the approval URL instead of opening a browser",
+        help="Used by `anona-memory login` only: print the approval URL instead of opening a browser",
     )
     common.add_argument(
         "--profile",
@@ -216,7 +216,7 @@ def _parser() -> argparse.ArgumentParser:
         help="No progress or retry notices on stderr; results and errors still print",
     )
     p = _Parser(
-        prog="anona",
+        prog="anona-memory",
         description=(
             "Anona Memory: sign in, connect MCP clients, record, retrieve or reason over "
             "memories, and manage spaces, memories and jobs."
@@ -231,7 +231,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--version",
         action="version",
-        version=f"anona {_version()}",
+        version=f"anona-memory {_version()}",
         help="print the installed version and exit",
     )
     sub = p.add_subparsers(dest="command", required=True)
@@ -399,10 +399,10 @@ def _parser() -> argparse.ArgumentParser:
     hp = sub.add_parser(
         "help",
         parents=[common],
-        help="Show help for anona or one command (`help spaces delete`); `help --llm` prints the agent reference",
+        help="Show help for anona-memory or one command (`help spaces delete`); `help --llm` prints the agent reference",
     )
     hp.add_argument("topic", nargs="*", metavar="COMMAND", help="The command to describe, e.g. `record` or `spaces delete`")
-    hp.add_argument("--llm", action="store_true", help="Print `anona guide` instead")
+    hp.add_argument("--llm", action="store_true", help="Print `anona-memory guide` instead")
     hp.add_argument("--json", action="store_true", help="With --llm, the command tree as JSON")
     cp = sub.add_parser("completion", parents=[common], help="Print a shell completion script")
     cp.add_argument("shell", choices=("bash", "zsh", "fish"), help="Which shell")
@@ -412,19 +412,19 @@ def _parser() -> argparse.ArgumentParser:
 def _which(parser: argparse.ArgumentParser, verb: str) -> None:
     """`--cli` / `--mcp` on login and logout.
 
-    Neither flag: login asks for the one command-line approval, which `anona
+    Neither flag: login asks for the one command-line approval, which `anona-memory
     mcp` uses too; logout removes both credentials.
     """
     group = parser.add_mutually_exclusive_group()
     if verb == "approve":
         cli_help = (
             "approve the command-line credential only, with no fallback to MCP "
-            "(record, retrieve, reason, the other data commands and `anona mcp`)"
+            "(record, retrieve, reason, the other data commands and `anona-memory mcp`)"
         )
-        mcp_help = "approve a separate MCP-only credential for `anona mcp` instead"
+        mcp_help = "approve a separate MCP-only credential for `anona-memory mcp` instead"
     else:
         cli_help = f"only {verb} the command-line credential (record, retrieve, reason and the other data commands)"
-        mcp_help = f"only {verb} the MCP credential (`anona mcp`)"
+        mcp_help = f"only {verb} the MCP credential (`anona-memory mcp`)"
     group.add_argument("--cli", action="store_true", help=cli_help)
     group.add_argument("--mcp", action="store_true", help=mcp_help)
 
@@ -437,7 +437,7 @@ def _version() -> str:
     question and can give a different answer: run from a source tree that is
     ahead of (or simply unrelated to) an installed copy and the metadata
     reports the installed one. Measured here during ANO-428 -- a checkout at
-    0.20.4 printed `anona 0.13.1`, which is the worst possible answer for a
+    0.20.4 printed `anona-memory 0.13.1`, which is the worst possible answer for a
     flag whose entire job is to tell someone which code they have.
     `__version__` is pinned to pyproject.toml by a test, so it cannot drift
     from the release either.
@@ -452,7 +452,7 @@ def _default_base_url() -> str:
 
 
 def _refuse(exc: target.TargetError) -> int:
-    print(f"anona: {exc}", file=sys.stderr)
+    print(f"anona-memory: {exc}", file=sys.stderr)
     return 1
 
 
@@ -472,7 +472,7 @@ def _safe(text: object) -> str:
 def _refuse_key(exc: target.TargetError) -> int:
     # The URL in the message came from a flag or a variable, which is the
     # vector this refusal exists for, so it is sanitized like server text.
-    print(f"anona: {_safe(exc)}", file=sys.stderr)
+    print(f"anona-memory: {_safe(exc)}", file=sys.stderr)
     return AUTH_EXIT
 
 
@@ -512,9 +512,9 @@ def _data_credential(
                 space = credential.find_space(space, config)
                 if space is None:
                     print(
-                        "anona: name a space. Pass --space, or set ANONA_SPACE_ID "
+                        "anona-memory: name a space. Pass --space, or set ANONA_SPACE_ID "
                         "(in the environment or ~/.anona/config.env); "
-                        "`anona spaces list` shows yours. Nothing was sent.",
+                        "`anona-memory spaces list` shows yours. Nothing was sent.",
                         file=sys.stderr,
                     )
                     return USAGE_EXIT
@@ -532,7 +532,7 @@ def _data_credential(
         space = credential.find_space(space, config)
         if space is None:
             print(
-                "anona: an API key needs a space. Pass --space, or set "
+                "anona-memory: an API key needs a space. Pass --space, or set "
                 "ANONA_SPACE_ID (in the environment or ~/.anona/config.env). "
                 "Nothing was sent.",
                 file=sys.stderr,
@@ -547,7 +547,7 @@ def _data_credential(
 
 
 # An expired profile is gone and so is everything in it. It read as success,
-# which is how a scripted `anona status && anona record ...` walked straight
+# which is how a scripted `anona-memory status && anona record ...` walked straight
 # into a write with no credential behind it.
 EXPIRED_EXIT = 1
 
@@ -568,7 +568,7 @@ def _status(
         if cli_rc != 0:
             return cli_rc
         # A working command-line login decides the exit code, and it is also
-        # what `anona mcp` presents; an MCP file beside it is only described.
+        # what `anona-memory mcp` presents; an MCP file beside it is only described.
         _shadowed_store_status()
         return 0
     # The data verbs' credential. The source and a prefix only: this output
@@ -576,7 +576,7 @@ def _status(
     print(
         f"API key for record/retrieve/reason: {key.display()} "
         f"(from {target.SOURCE_NAMES[key.source]}). Not checked here; "
-        "`anona doctor` asks the server whether it works."
+        "`anona-memory doctor` asks the server whether it works."
     )
     url, url_source = credential.find_base_url(base_url_flag, config)
     try:
@@ -590,13 +590,13 @@ def _status(
         _shadowed_store_status()
         return 0
     if store.load() is None:
-        print("No `anona login` credential is stored for MCP (that one is for `anona mcp`).")
+        print("No `anona-memory login` credential is stored for MCP (that one is for `anona-memory mcp`).")
         return 0
-    # The stored credential is still worth describing: it is what `anona mcp`
+    # The stored credential is still worth describing: it is what `anona-memory mcp`
     # uses. Its exit code does not decide this one -- the key works either way.
     # Introduced as such, or its "Temporary profile ..." line reads as the
     # credential this command just said the key had replaced.
-    print("Also stored, for `anona mcp` (the data commands use the API key above):")
+    print("Also stored, for `anona-memory mcp` (the data commands use the API key above):")
     _store_status(None)
     return 0
 
@@ -616,9 +616,9 @@ def _cli_status(requested: str | None, *, shadowed: bool) -> int | None:
         except target.TargetError as exc:
             return _refuse(exc)
     use = (
-        "used by `anona mcp`; not by the data commands while an API key is set"
+        "used by `anona-memory mcp`; not by the data commands while an API key is set"
         if shadowed
-        else "used by record, retrieve, reason, the other data commands and `anona mcp`"
+        else "used by record, retrieve, reason, the other data commands and `anona-memory mcp`"
     )
     print(f"Command-line login for {c.base_url} ({use}).")
     remaining = c.expires_at - time.time()
@@ -626,20 +626,20 @@ def _cli_status(requested: str | None, *, shadowed: bool) -> int | None:
         print(f"Its access token expires in {int(remaining // 60)} minutes and is renewed automatically.")
     else:
         print("Its access token has expired; a refresh is attempted on the next command.")
-    print("If a command reports an authorization failure, run `anona login --cli`.")
+    print("If a command reports an authorization failure, run `anona-memory login --cli`.")
     return 0
 
 
 def _shadowed_store_status() -> None:
-    """The MCP file beside a command-line login, which `anona mcp` presents
+    """The MCP file beside a command-line login, which `anona-memory mcp` presents
     ahead of it. Described so nothing stored goes unmentioned; no exit code."""
     c = store.load()
     if c is None:
         return
     if c.signed_in:
         print(
-            f"An MCP-only login for {c.base_url} is also stored; `anona mcp` uses the "
-            "command-line login instead (`anona logout --mcp` removes it)."
+            f"An MCP-only login for {c.base_url} is also stored; `anona-memory mcp` uses the "
+            "command-line login instead (`anona-memory logout --mcp` removes it)."
         )
     if c.temp_token and c.temp_expires_at is not None and c.temp_expires_at > time.time():
         print(
@@ -651,9 +651,9 @@ def _shadowed_store_status() -> None:
 def _store_status(requested: str | None = None) -> int:
     c = store.load()
     if c is None:
-        print("Not logged in. Run `anona login`.")
+        print("Not logged in. Run `anona-memory login`.")
         return 1
-    # `--base-url` was read and then ignored here, so `anona status --base-url
+    # `--base-url` was read and then ignored here, so `anona-memory status --base-url
     # https://other` described the stored deployment while naming another --
     # the one shape of wrong answer a status command must never give. Every
     # other credential-holding command already refuses a mismatch; this is the
@@ -667,14 +667,14 @@ def _store_status(requested: str | None = None) -> int:
         # The only warning an unclaimed profile gets: it has no email address.
         print(f"Temporary profile for {c.base_url}: {temp.describe_deadline(c.temp_expires_at)}.")
         if c.temp_expires_at > time.time():
-            print("Run `anona login` to claim it before then.")
+            print("Run `anona-memory login` to claim it before then.")
         elif not c.signed_in:
             # Expired, and nothing else to fall back on.
             return EXPIRED_EXIT
         if not c.signed_in:
             return 0
     elif not c.signed_in:
-        print("Not logged in. Run `anona login`.")
+        print("Not logged in. Run `anona-memory login`.")
         return 1
     # Never the tokens or the client id: this output ends up in pastes and logs.
     # And only what the file can tell us: it cannot say whether the refresh
@@ -685,12 +685,12 @@ def _store_status(requested: str | None = None) -> int:
         # The minutes alone read as a deadline to act on; the token renews itself.
         print(
             f"Its access token expires in {int(remaining // 60)} minutes and is renewed "
-            "automatically when `anona mcp` uses it."
+            "automatically when `anona-memory mcp` uses it."
         )
     else:
-        print("Its access token has expired; `anona mcp` renews it on its next call.")
+        print("Its access token has expired; `anona-memory mcp` renews it on its next call.")
     print(
-        "Run `anona login` again only if `anona mcp` reports an authorization failure "
+        "Run `anona-memory login` again only if `anona-memory mcp` reports an authorization failure "
         "(the login was revoked, or went unused for 30 days)."
     )
     return 0
@@ -718,10 +718,10 @@ def _logout(*, cli: bool, mcp: bool, force: bool) -> int:
                 # the server deletes it too. Checked before anything is
                 # deleted, so a refused logout removes nothing at all.
                 print(
-                    f"anona logout: this would abandon an unclaimed temporary profile "
+                    f"anona-memory logout: this would abandon an unclaimed temporary profile "
                     f"(it {temp.describe_deadline(held.temp_expires_at)}). "
-                    "Run `anona login` to claim it, or `anona logout --force` to "
-                    "discard it. `anona logout --cli` removes only the "
+                    "Run `anona-memory login` to claim it, or `anona-memory logout --force` to "
+                    "discard it. `anona-memory logout --cli` removes only the "
                     "command-line credential.",
                     file=sys.stderr,
                 )
@@ -743,7 +743,7 @@ def _logout(*, cli: bool, mcp: bool, force: bool) -> int:
     unrevoked = [c.base_url for c in revoke if not _revoke(c)]
     if unrevoked:
         print(
-            "anona logout: removed locally, but the server could not be told to "
+            "anona-memory logout: removed locally, but the server could not be told to "
             "revoke it; it expires after 30 days unused, or revoke it now under "
             "Integrations -> MCP -> Connected apps in the dashboard.",
             file=sys.stderr,
@@ -785,7 +785,7 @@ def _apply_globals(args: argparse.Namespace) -> int | None:
     try:
         store.profile()
     except store.BadProfile as exc:
-        print(f"anona: ANONA_PROFILE: {_safe(exc)}", file=sys.stderr)
+        print(f"anona-memory: ANONA_PROFILE: {_safe(exc)}", file=sys.stderr)
         return USAGE_EXIT
     memory.OPTIONS["timeout"] = getattr(args, "timeout", None)
     memory.OPTIONS["max_retries"] = getattr(args, "retries", None)
@@ -797,7 +797,7 @@ def _record_usage(args: argparse.Namespace) -> int | None:
     """record's flag combinations that cannot work: exit 2, nothing sent."""
 
     def no(message: str) -> int:
-        print(f"anona: {message} Nothing was sent.", file=sys.stderr)
+        print(f"anona-memory: {message} Nothing was sent.", file=sys.stderr)
         return USAGE_EXIT
 
     if args.batch is not None:
@@ -816,9 +816,9 @@ def _record_usage(args: argparse.Namespace) -> int | None:
 
 
 def _help_topic(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    """`anona help spaces delete`: that command's own --help, on stdout, exit 0."""
+    """`anona-memory help spaces delete`: that command's own --help, on stdout, exit 0."""
     if args.llm or args.json:
-        print("anona: help COMMAND takes no --llm or --json. Nothing was printed.", file=sys.stderr)
+        print("anona-memory: help COMMAND takes no --llm or --json. Nothing was printed.", file=sys.stderr)
         return USAGE_EXIT
     from .introspect import _subparsers
 
@@ -828,7 +828,7 @@ def _help_topic(parser: argparse.ArgumentParser, args: argparse.Namespace) -> in
         if sub is None or word not in sub.choices:
             known = ", ".join(sub.choices) if sub is not None else "none"
             print(
-                f"anona: no command `{_safe(' '.join(args.topic))}`. "
+                f"anona-memory: no command `{_safe(' '.join(args.topic))}`. "
                 f"Commands here: {known}.",
                 file=sys.stderr,
             )
@@ -839,13 +839,13 @@ def _help_topic(parser: argparse.ArgumentParser, args: argparse.Namespace) -> in
 
 
 # What a process killed by SIGPIPE reports (128 + 13), as `git` does. Not in
-# exits.py's table: it is what `anona guide | head` exits with, never an
+# exits.py's table: it is what `anona-memory guide | head` exits with, never an
 # outcome a script branches on.
 BROKEN_PIPE_EXIT = 141
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run one command. A reader that goes away (`anona guide | head`) ends it
+    """Run one command. A reader that goes away (`anona-memory guide | head`) ends it
     quietly: no traceback, and no "Exception ignored" at interpreter exit."""
     _tolerate_unencodable_stdout()
     try:
@@ -901,9 +901,9 @@ def _main(argv: list[str] | None = None) -> int:
         argv = sys.argv[1:]
     argv = _readable_argv(argv)
     if not argv:
-        # Bare `anona` is how a person or an agent first meets the command:
+        # Bare `anona-memory` is how a person or an agent first meets the command:
         # orient them rather than fail with argparse's "arguments are required".
-        # Only the truly empty line -- `anona --quiet` with no command is still
+        # Only the truly empty line -- `anona-memory --quiet` with no command is still
         # a usage error, since a script wrote it.
         from .guide import ORIENTATION
 
@@ -922,7 +922,7 @@ def _main(argv: list[str] | None = None) -> int:
         return guide.run(parser, as_json=args.json)
     if args.command == "help":
         if args.json:
-            print("anona: --json needs --llm. Nothing was printed.", file=sys.stderr)
+            print("anona-memory: --json needs --llm. Nothing was printed.", file=sys.stderr)
             return USAGE_EXIT
         parser.print_help()
         return 0
@@ -967,12 +967,12 @@ def _main(argv: list[str] | None = None) -> int:
                 content = got
         if args.command == "retrieve" and args.tags_match is not None and args.tags is None:
             print(
-                "anona: --tags-match needs --tags; there is nothing for it to match. Nothing was sent.",
+                "anona-memory: --tags-match needs --tags; there is nothing for it to match. Nothing was sent.",
                 file=sys.stderr,
             )
             return USAGE_EXIT
         if args.command == "retrieve" and args.max_tokens is not None and args.format != "block":
-            print("anona: --max-tokens needs --format block. Nothing was sent.", file=sys.stderr)
+            print("anona-memory: --max-tokens needs --format block. Nothing was sent.", file=sys.stderr)
             return USAGE_EXIT
         got = _data_credential(args, base_url, requested, need_space=True)
         if isinstance(got, int):
@@ -1051,7 +1051,7 @@ def _main(argv: list[str] | None = None) -> int:
             return _refuse(exc)
         print(f"Signing in to {base}")
         # Neither flag means the one approval that covers both the command line
-        # and `anona mcp`; argparse keeps the two flags exclusive.
+        # and `anona-memory mcp`; argparse keeps the two flags exclusive.
         want_cli = not args.mcp
         want_mcp = args.mcp
         held_cli = store.load(store.cli_path()) if want_cli else None
@@ -1063,19 +1063,19 @@ def _main(argv: list[str] | None = None) -> int:
         stored = store.load()
         if not want_mcp and stored and stored.base_url.rstrip("/") != base.rstrip("/"):
             # The command-line approval leaves the MCP file alone, so nothing in
-            # it is lost -- but `anona mcp` and the data commands present this
+            # it is lost -- but `anona-memory mcp` and the data commands present this
             # login ahead of it from now on, which is worth saying.
             if stored.live_temp_token():
                 print(
                     f"Note: the unclaimed temporary profile for {stored.base_url} "
                     f"(it {temp.describe_deadline(stored.temp_expires_at)}) is kept, "
                     f"but this login is used instead of it. Claim it with "
-                    f"`anona login --base-url {stored.base_url}`."
+                    f"`anona-memory login --base-url {stored.base_url}`."
                 )
             elif stored.signed_in:
                 print(
                     f"Note: the MCP-only login for {stored.base_url} is kept, but "
-                    "`anona mcp` uses this login instead."
+                    "`anona-memory mcp` uses this login instead."
                 )
         if want_mcp and stored and stored.base_url.rstrip("/") != base.rstrip("/"):
             print(f"Note: the stored credential is for {stored.base_url}; this replaces it.")
@@ -1083,14 +1083,14 @@ def _main(argv: list[str] | None = None) -> int:
             # cannot be carried onto this one — `_live_temp_token` matches on
             # base_url, and retagging it would present one host's token to
             # another. But the token is never printed, so this file is its
-            # only copy and replacing it is the same loss `anona logout`
+            # only copy and replacing it is the same loss `anona-memory logout`
             # refuses to do silently. Say so while they can still cancel.
             if stored.live_temp_token():
                 print(
                     f"Note: that includes an unclaimed temporary profile "
                     f"(it {temp.describe_deadline(stored.temp_expires_at)}), "
                     f"which will be abandoned. Claim it first with "
-                    f"`anona login --base-url {stored.base_url}`."
+                    f"`anona-memory login --base-url {stored.base_url}`."
                 )
         if stored and stored.live_temp_token() and stored.base_url.rstrip("/") == base.rstrip("/"):
             print(
@@ -1112,7 +1112,7 @@ def _main(argv: list[str] | None = None) -> int:
         return doctor.run(args, base_url, requested, version=_version())
     # mcp: a credential belongs to the deployment that issued it. Naming
     # another is refused on stderr; stdout is the client's JSON-RPC stream.
-    # The command-line login is the one `anona login` makes and the proxy
+    # The command-line login is the one `anona-memory login` makes and the proxy
     # presents first, so its deployment wins, unless the user named the MCP
     # file's deployment and not its own.
     cli_login = store.load(store.cli_path())

@@ -160,7 +160,7 @@ function respond(s: Seen): Reply {
       body: {
         error: {
           code: "session_required",
-          message: "This needs a dashboard session or `anona login --cli`; an API key or temporary profile cannot use it.",
+          message: "This needs a dashboard session or `anona-memory login --cli`; an API key or temporary profile cannot use it.",
         },
       },
     };
@@ -431,7 +431,7 @@ describe("resource commands for the rest of the API", () => {
         const label = `${cmd} ${act} ${extra.join(" ")}`;
         expect(r.rc, label).toBe(4);
         expect(r.out, label).toBe("");
-        expect(r.err, label).toBe(`anona: ${what} is done in the dashboard: https://memory.anonalabs.com${path}\n`);
+        expect(r.err, label).toBe(`anona-memory: ${what} is done in the dashboard: https://memory.anonalabs.com${path}\n`);
         expect(srv.seen.length, label).toBe(before);
       }
     }
@@ -451,7 +451,7 @@ describe("resource commands for the rest of the API", () => {
       const label = `spaces members remove ${extra.join(" ")}`;
       expect(r.rc, label).toBe(4);
       expect(r.out, label).toBe("");
-      expect(r.err, label).toBe(`anona: removing a space member is done in the dashboard: https://memory.anonalabs.com/dashboard/spaces${page}\n`);
+      expect(r.err, label).toBe(`anona-memory: removing a space member is done in the dashboard: https://memory.anonalabs.com/dashboard/spaces${page}\n`);
       expect(srv.seen.length, label).toBe(before);
     }
     // `projects create` is gone: no dashboard page makes a project.
@@ -565,7 +565,7 @@ describe("resource commands for the rest of the API", () => {
       const r = await run(["exports", "download", "j1", "--out", target, ...AUTH()]);
       expect(r.rc, r.err).toBe(7);
       expect(r.out).toBe("");
-      expect(r.err).toBe(`anona: download link expired or refused (HTTP ${status}); run download again.\n`);
+      expect(r.err).toBe(`anona-memory: download link expired or refused (HTTP ${status}); run download again.\n`);
       expect(srv.seen.slice(before).map((s) => s.path)).toEqual(["/v1/spaces/s/exports/j1/download", "/blob/j1"]);
       expect(existsSync(target)).toBe(false);
     }
@@ -603,14 +603,14 @@ describe("resource commands for the rest of the API", () => {
     const r = await run(["exports", "download", "jd", "--out", target, ...AUTH()]);
     expect(r.rc).toBe(7);
     expect(r.out).toBe("");
-    expect(r.err).toMatch(/^anona: could not reach 127\.0\.0\.1:\d+: RemoteProtocolError\n$/);
+    expect(r.err).toMatch(/^anona-memory: could not reach 127\.0\.0\.1:\d+: RemoteProtocolError\n$/);
     expect(readdirSync(dir)).toEqual([]);
   });
 
   it("an unwritable target is write_failed, not a network failure", async () => {
     const r = await run(["exports", "download", "j1", "--out", join(process.env.HOME as string, "no-such-dir", "x.zip"), ...AUTH()]);
     expect(r.rc).toBe(1);
-    expect(r.err).toContain("anona: write_failed: could not write ");
+    expect(r.err).toContain("anona-memory: write_failed: could not write ");
   });
 
   it("session_required is exit 4, with the server asked", async () => {
@@ -621,8 +621,8 @@ describe("resource commands for the rest of the API", () => {
       const label = JSON.stringify(argv);
       expect(r.rc, label).toBe(4);
       expect(r.out, label).toBe("");
-      expect(r.err.startsWith("anona: session_required: "), label).toBe(true);
-      expect(r.err, label).toContain("anona login --cli");
+      expect(r.err.startsWith("anona-memory: session_required: "), label).toBe(true);
+      expect(r.err, label).toContain("anona-memory login --cli");
       expect(r.err, label).not.toContain("Error:");
       // Not pre-refused: the server was asked, and decides.
       expect(srv.seen.length - before, label).toBe(1);

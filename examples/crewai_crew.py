@@ -1,6 +1,6 @@
 """CrewAI crew with Anona memory as two agent tools.
 
-    pip install 'anona[crewai]'
+    pip install 'anona-memory[crewai]'
     export ANONA_API_KEY=anona_live_... OPENAI_API_KEY=sk-...
     python examples/crewai_crew.py
 

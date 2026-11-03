@@ -8,7 +8,7 @@ already use.
 | --- | --- | --- |
 | `anona-memory` | The agent's own memory. | A task starts, a task ends, or the user says remember, recall, or refers to an earlier session. |
 | `anona-memory-sdk` | Writing code against Anona. | Anything touching the SDK, the REST API, scoping, or a framework adapter. |
-| `anona-cli` | Driving the `anona` command line. | No MCP tools, a script or CI job, a file upload or batch ingest, managing spaces, jobs or settings, or an `anona` exit code. |
+| `anona-cli` | Driving the `anona-memory` command line. | No MCP tools, a script or CI job, a file upload or batch ingest, managing spaces, jobs or settings, or an `anona-memory` exit code. |
 
 ## Install
 
@@ -86,15 +86,15 @@ In order of preference:
    claude mcp add --transport http anona https://memory.anonalabs.com/mcp \
      --header "Authorization: Bearer $ANONA_API_KEY"
    ```
-2. **The `anona` CLI** (pip `anona` 0.24.0+): `anona status` once, then
-   `anona retrieve` / `record` / `reason` with `--json`, branching on the exit
-   code, and `anona guide --json` before any command it has not used. It uses
-   an API key, the command-line login from `anona login`, or a temporary
+2. **The `anona-memory` CLI** (pip `anona-memory` 0.24.0+): `anona-memory status` once, then
+   `anona-memory retrieve` / `record` / `reason` with `--json`, branching on the exit
+   code, and `anona-memory guide --json` before any command it has not used. It uses
+   an API key, the command-line login from `anona-memory login`, or a temporary
    profile, never the MCP login. The `anona-cli` skill teaches the rest of the
    CLI.
 3. **`curl`** against `https://api.anonalabs.com`, reading `ANONA_API_KEY` from
    the environment or `~/.anona/config.env`.
-4. **Nothing.** The skill may run `anona start` for a temporary profile, or
+4. **Nothing.** The skill may run `anona-memory start` for a temporary profile, or
    says so once and gets on with the task. A memory layer that blocks work is
    worse than no memory layer.
 
@@ -118,8 +118,8 @@ having to remember to:
 
 `hooks/anona_sync.py` is standard-library Python 3 and needs no key of its
 own. With `ANONA_API_KEY` (environment or `~/.anona/config.env`) it calls the
-REST API; without one it speaks MCP over stdio to `anona mcp`, the CLI's bridge,
-which holds and refreshes the login from `anona login`. With neither it is a
+REST API; without one it speaks MCP over stdio to `anona-memory mcp`, the CLI's bridge,
+which holds and refreshes the login from `anona-memory login`. With neither it is a
 silent no-op. It never blocks the session: recall is an async hook, and pushes
 run in a detached child. With more than
 one space visible and no `ANONA_SPACE_ID`, the pull sends `route: "auto"` with

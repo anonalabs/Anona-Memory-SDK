@@ -1,6 +1,6 @@
 """A valid access token, refreshed and persisted when needed.
 
-Serves both stored OAuth credentials (store.py): the MCP one that `anona mcp`
+Serves both stored OAuth credentials (store.py): the MCP one that `anona-memory mcp`
 presents, and the command line's that the data commands present. Every
 function takes the credential file's path; the default is the MCP file, so an
 MCP caller reads exactly what it always did. Each file has its own lock, so
@@ -41,10 +41,10 @@ class NotLoggedIn(Exception):
     """No usable credential. The message is what the user should read."""
 
 
-_RELOGIN = "Run `anona login` again."
+_RELOGIN = "Run `anona-memory login` again."
 # What a refused command-line credential tells the user to do. Only the CLI
-# approval is needed again, and saying `anona login` would also redo MCP's.
-CLI_RELOGIN = "Run `anona login --cli` again."
+# approval is needed again, and saying `anona-memory login` would also redo MCP's.
+CLI_RELOGIN = "Run `anona-memory login --cli` again."
 
 
 def _fresh(c: store.Credentials) -> bool:
@@ -60,7 +60,7 @@ def _node_lock(file_path):
     """The Node CLI's lock: an exclusive-create file, `credentials.json.nodelock`.
 
     Node has no flock, so it serialises on this file instead, and the two
-    schemes do not interlock on their own. A Python and a Node `anona mcp`
+    schemes do not interlock on their own. A Python and a Node `anona-memory mcp`
     refreshing together could then both rotate, and the server treats the
     replayed refresh token as theft and revokes EVERY refresh token for this
     client_id, which both implementations share through one credentials.json.
@@ -84,7 +84,7 @@ def _node_lock(file_path):
             except FileNotFoundError:
                 continue  # released between our open and our stat: retry
             if time.monotonic() - started > NODELOCK_TIMEOUT_SECONDS:
-                raise oauth.OAuthError("Timed out waiting for another anona process to finish refreshing.")
+                raise oauth.OAuthError("Timed out waiting for another anona-memory process to finish refreshing.")
             time.sleep(NODELOCK_POLL_SECONDS)
             continue
         try:
@@ -114,7 +114,7 @@ def credential_lock(p=None):
     lock.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(lock.parent, 0o700)
     with _node_lock(p):
-        # Several MCP clients means several `anona mcp` processes, and they all
+        # Several MCP clients means several `anona-memory mcp` processes, and they all
         # see the same expired token at the same moment. One must rotate; the
         # rest must wait and use its result.
         with open(lock, "a") as lf:

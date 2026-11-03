@@ -1,6 +1,6 @@
 """The entity graph a space builds on its own, and how to read it.
 
-    pip install anona
+    pip install anona-memory
     export ANONA_API_KEY=anona_live_...
     python examples/knowledge_graph.py
 

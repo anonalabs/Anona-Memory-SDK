@@ -4,7 +4,7 @@
  *
  * Highest first: `--api-key`, then ANONA_API_KEY in the environment, then
  * ANONA_API_KEY in ~/.anona/config.env. With none of them the commands fall
- * back to the command-line login (`anona login --cli`), then to the stored
+ * back to the command-line login (`anona-memory login --cli`), then to the stored
  * temporary-profile token (data.ts owns that half).
  *
  * The MCP login is never one of these. It is MCP-scoped and the REST API
@@ -12,7 +12,7 @@
  * purpose.
  *
  * The source travels with the key because it decides where the key may be
- * sent (target.ts `forApiKey`) and is what `anona status` names. The key itself
+ * sent (target.ts `forApiKey`) and is what `anona-memory status` names. The key itself
  * is never printed: `displayKey` is the only form that reaches output.
  */
 import type { ConfigEnv } from "./config-env.js";

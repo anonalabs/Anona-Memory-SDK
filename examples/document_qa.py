@@ -1,6 +1,6 @@
 """A file becomes answerable memory — upload, wait, ask.
 
-    pip install anona
+    pip install anona-memory
     export ANONA_API_KEY=anona_live_...
     python examples/document_qa.py
 

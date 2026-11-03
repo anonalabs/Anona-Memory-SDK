@@ -391,7 +391,7 @@ def test_import_error_names_the_extra():
         "    anona_tools(bridge=b)\n"
         "    print('NO ERROR RAISED')\n"
         "except ImportError as e:\n"
-        "    assert \"anona[strands]\" in str(e), str(e)\n"
+        "    assert \"anona-memory[strands]\" in str(e), str(e)\n"
         "    print('OK')\n"
     )
     result = subprocess.run(
@@ -481,7 +481,7 @@ def test_save_survives_sequential_real_socket_calls_without_logging_failure():
     # code: repeated anona_save_memory calls all still reach the server on
     # loopback (a write "lost" by this bug is still billed -- production,
     # over real TLS rather than loopback, is likely worse, not better, per
-    # the review), but 4 of 8 logged "anona: failed to store turn": a
+    # the review), but 4 of 8 logged "anona-memory: failed to store turn": a
     # spurious, customer-visible failure log for writes that had actually
     # succeeded.
     _ok(_run_real("""

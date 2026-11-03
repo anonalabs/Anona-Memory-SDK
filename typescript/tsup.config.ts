@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { defineConfig } from "tsup";
 
-// `anona --version` has to answer with the version this bundle WAS BUILT AS.
+// `anona-memory --version` has to answer with the version this bundle WAS BUILT AS.
 // Reading package.json at runtime would mean resolving a path out of a
 // bundled file, which differs between the esm and cjs outputs and breaks the
 // moment anyone re-bundles us; injecting it here keeps package.json the one
@@ -11,7 +11,7 @@ const { version } = JSON.parse(readFileSync(new URL("package.json", import.meta.
 };
 
 export default defineConfig({
-  // `cli` is the `anona` bin. Its #!/usr/bin/env node line lives in the source
+  // `cli` is the `anona-memory` bin. Its #!/usr/bin/env node line lives in the source
   // and esbuild keeps a leading hashbang on an entry point.
   entry: {
     index: "src/index.ts",

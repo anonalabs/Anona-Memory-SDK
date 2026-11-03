@@ -1,5 +1,5 @@
 /**
- * The npm `anona` and the pip `anona` must behave the same. This runs both --
+ * The npm `anona-memory` and the pip `anona-memory` must behave the same. This runs both --
  * the Python CLI in a real python3, this one in-process -- against the same
  * local server, with the same credential files, and compares exit code, stdout
  * and stderr byte for byte; and compares `guide`, `guide --json` and the three
@@ -108,15 +108,15 @@ function normalise(err: string): string {
   return kept
     .join("\n")
     .replace(
-      /this copy \(anona [^)]*\) is older than they are: (?:pip install -U anona|npm install -g @anona-labs\/memory)/g,
-      "this copy (anona V) is older than they are: UPGRADE",
+      /this copy \(anona-memory [^)]*\) is older than they are: (?:pip install -U anona-memory|npm install -g @anona-labs\/memory)/g,
+      "this copy (anona-memory V) is older than they are: UPGRADE",
     );
 }
 
 /** doctor: the runtime is legitimately different; everything else is compared. */
 function normaliseDoctor(text: string): string {
   return text
-    .replace(/^anona \S+ on (Python|Node) .*$/m, "anona VERSION on RUNTIME")
+    .replace(/^anona-memory \S+ on (Python|Node) .*$/m, "anona-memory VERSION on RUNTIME")
     .replace(/HTTP 200 in [0-9.e-]+ s/g, "HTTP 200 in T s")
     .replace(/"anona_version": "[^"]*"/, '"anona_version": "V"')
     .replace(/"(python|node)": "[^"]*"/, '"runtime": "R"')
@@ -255,7 +255,7 @@ function respondResources(s: Seen, space: string, tag: (v: string) => string): R
   const { method, path } = s;
   const none = (status = 204): Reply => ({ status });
   if (s.auth?.includes("ERRSESSION") && RESOURCE_PATH.some((re) => re.test(path))) {
-    return envelope(401, "session_required", "This needs a dashboard session or `anona login --cli`; an API key or temporary profile cannot use it.");
+    return envelope(401, "session_required", "This needs a dashboard session or `anona-memory login --cli`; an API key or temporary profile cannot use it.");
   }
   const model = { id: tag("mm-1"), space_id: space, name: tag("Build habits"), query: tag("How does this team build?"), content: tag("Uses pnpm.\n\nShips."), tags: [] };
   const job = { model_id: "mm-1", job_id: "job-9", status: "processing" };
@@ -1093,7 +1093,7 @@ describe.skipIf(!pythonOk)("npm and pip CLIs: same exit code, stdout and stderr"
       const viaFlag = await run([...w, "--help"]);
       expect([viaHelp.rc, viaHelp.err], w.join(" ")).toEqual([0, ""]);
       expect(viaHelp.out, w.join(" ")).toBe(viaFlag.out);
-      expect(viaHelp.out.startsWith(`usage: anona ${w.join(" ")} `)).toBe(true);
+      expect(viaHelp.out.startsWith(`usage: anona-memory ${w.join(" ")} `)).toBe(true);
     }
   });
 

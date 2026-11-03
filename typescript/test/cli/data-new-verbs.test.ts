@@ -62,7 +62,7 @@ describe("new verbs and global flags", () => {
     route("POST", "/v1/record", ok(BODIES.record_async, 202));
     let [reqs, out] = await sent(["record", "The team ships on Tuesdays.", "--async", ...AUTH()]);
     expect(reqs[0]?.body).toMatchObject({ space_id: "s", async: true });
-    expect(out).toBe("Queued in space 's'. Job: job-rec-1\nCheck it with `anona jobs get job-rec-1 --space s`.\n");
+    expect(out).toBe("Queued in space 's'. Job: job-rec-1\nCheck it with `anona-memory jobs get job-rec-1 --space s`.\n");
     [, out] = await sent(["record", "x", "--async", "--json", ...AUTH()]);
     expect(oneJson(out)).toEqual(BODIES.record_async);
     route("POST", "/v1/record", ok({ ...BODIES.record_async, job_id: null, status: "stored", memory_id: "m1", memory_ids: ["m1"] }, 201));
@@ -132,7 +132,7 @@ describe("new verbs and global flags", () => {
   it("spaces delete: --yes, then a DELETE and a document of what went", async () => {
     route("DELETE", "/v1/spaces/old", () => ({ status: 204 }));
     expect(await refused(["spaces", "delete", "old", ...KEYED()])).toBe(
-      "anona: this would delete space 'old' and every memory in it, permanently. Pass --yes to do it. Nothing was sent.\n",
+      "anona-memory: this would delete space 'old' and every memory in it, permanently. Pass --yes to do it. Nothing was sent.\n",
     );
     const [reqs, out] = await sent(["spaces", "delete", "old", "--yes", "--json", ...KEYED()]);
     expect([reqs[0]?.method, reqs[0]?.path]).toEqual(["DELETE", "/v1/spaces/old"]);
@@ -170,14 +170,14 @@ describe("new verbs and global flags", () => {
     }));
     // A 409 is not retried: DELETE is idempotent, but only a 5xx or 429 is re-sent.
     const [, out, err] = await sent(["jobs", "cancel", "j1", "--yes", ...AUTH()], { rc: 1 });
-    expect([out, err]).toEqual(["", "anona: job_not_cancellable: The job has finished. (request_id req_1)\n"]);
+    expect([out, err]).toEqual(["", "anona-memory: job_not_cancellable: The job has finished. (request_id req_1)\n"]);
   });
 
   it("record --batch --async is refused: a batch is always queued", async () => {
     const f = join(home.dir(), "one.jsonl");
     writeFileSync(f, '"one"\n');
     expect(await refused(["record", "--batch", f, "--async", ...AUTH()])).toBe(
-      "anona: --batch is always queued; drop --async. Nothing was sent.\n",
+      "anona-memory: --batch is always queued; drop --async. Nothing was sent.\n",
     );
   });
 
@@ -185,7 +185,7 @@ describe("new verbs and global flags", () => {
     const big = join(home.dir(), "big.txt");
     writeFileSync(big, Buffer.alloc(25 * 1024 * 1024 + 1));
     const err = await refused(["documents", "upload", big, ...AUTH()]);
-    expect(err).toBe("anona: 'big.txt' is 25 MB, over the 25 MB per-file limit. Nothing was sent.\n");
+    expect(err).toBe("anona-memory: 'big.txt' is 25 MB, over the 25 MB per-file limit. Nothing was sent.\n");
   });
 
   it("settings set reads, changes only the named fields, and writes the whole record back", async () => {
@@ -228,10 +228,10 @@ describe("new verbs and global flags", () => {
   it("--retries bounds the re-sends of a 5xx read, and --quiet drops the notices but never the error", async () => {
     route("GET", "/v1/spaces/s/memories", () => ({ status: 503, body: { error: { code: "x", message: "m" } }, headers: { "retry-after": "0" } }));
     let [, , err] = await sent(["memories", "list", "--retries", "1", ...AUTH()], { rc: 7, n: 2 });
-    expect(err).toBe("anona: server error 503, retrying in 0 s (1/1)\nanona: x: m\n");
+    expect(err).toBe("anona-memory: server error 503, retrying in 0 s (1/1)\nanona-memory: x: m\n");
     [, , err] = await sent(["memories", "list", "--retries", "0", ...AUTH()], { rc: 7, n: 1 });
     [, , err] = await sent(["memories", "list", "-q", ...AUTH()], { rc: 7, n: 3 });
-    expect(err).toBe("anona: x: m\n");
+    expect(err).toBe("anona-memory: x: m\n");
     route("POST", "/v1/reason", ok({ insights: "An answer." }));
     const [, out, rerr] = await sent(["reason", "q", "--quiet", ...AUTH()]);
     expect([out, rerr]).toEqual(["An answer.\n", ""]);
@@ -269,7 +269,7 @@ describe("new verbs and global flags", () => {
     process.env.ANONA_PROFILE = "a/b";
     try {
       const r = await run(["status"]);
-      expect([r.rc, r.err]).toEqual([2, "anona: ANONA_PROFILE: profile names are letters, digits, '-' and '_' (at most 64), not 'a/b'\n"]);
+      expect([r.rc, r.err]).toEqual([2, "anona-memory: ANONA_PROFILE: profile names are letters, digits, '-' and '_' (at most 64), not 'a/b'\n"]);
     } finally {
       delete process.env.ANONA_PROFILE;
     }

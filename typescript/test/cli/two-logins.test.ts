@@ -1,11 +1,11 @@
 /**
- * `anona login`: one approval for the command line and `anona mcp`.
+ * `anona-memory login`: one approval for the command line and `anona-memory mcp`.
  *
  * One browser approval, scope `cli`, stored in `cli-credentials.json`
  * (`typ=cli_access`) with the same JSON shape the Python CLI writes. The
- * gateway accepts that token on `/mcp` too, so `anona mcp` presents it. `anona
+ * gateway accepts that token on `/mcp` too, so `anona-memory mcp` presents it. `anona-memory
  * login --mcp` still mints a separate MCP-only token in `credentials.json`,
- * which `anona mcp` uses only when there is no command-line login for its
+ * which `anona-memory mcp` uses only when there is no command-line login for its
  * deployment. A deployment that will not grant `cli` gets the MCP approval.
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -28,7 +28,7 @@ const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url")
 const jwt = (typ: string, n: number) => `${b64({ alg: "HS256" })}.${b64({ typ, n })}.sig`;
 const doc = (p: string) => JSON.parse(readFileSync(p, "utf8"));
 
-describe("anona login: one approval, and what `anona mcp` presents", () => {
+describe("anona-memory login: one approval, and what `anona-memory mcp` presents", () => {
   useTempHome();
   let as: FakeAs;
   let mode: { cliScope: "grant" | "refuse" | "old" };
@@ -101,7 +101,7 @@ describe("anona login: one approval, and what `anona mcp` presents", () => {
     expect(Object.keys(c).sort()).toEqual(["access_token", "base_url", "client_id", "expires_at", "refresh_token"]);
     expect(statSync(cliCredentialsPath()).mode & 0o777).toBe(0o600);
     expect(existsSync(credentialsPath())).toBe(false);
-    expect(t.o()).toContain("`anona mcp`");
+    expect(t.o()).toContain("`anona-memory mcp`");
     for (const secret of [c.access_token, c.refresh_token]) expect(t.o() + t.e()).not.toContain(secret);
   });
 
@@ -202,17 +202,17 @@ describe("anona login: one approval, and what `anona mcp` presents", () => {
     const t = io();
     expect(await main(["status"], t)).toBe(0);
     expect(t.o()).toContain(`Command-line login for ${as.base}`);
-    expect(t.o()).toContain("`anona mcp`");
+    expect(t.o()).toContain("`anona-memory mcp`");
     expect(t.o()).toContain(`An MCP-only login for ${as.base} is also stored`);
     expect(t.o()).not.toMatch(/RT-|cli_access|eyJ/);
     await main(["logout", "--mcp"], io());
     const u = io();
     expect(await main(["status"], u)).toBe(0);
     // One login covers MCP: nothing tells the user to sign in again for it.
-    expect(u.o()).not.toContain("anona login --mcp");
+    expect(u.o()).not.toContain("anona-memory login --mcp");
   });
 
-  // --- which credential `anona mcp` presents ---------------------------------
+  // --- which credential `anona-memory mcp` presents ---------------------------------
 
   async function mcpCall(base = as.base, tokens: string[] = [], dead = new Set<string>()) {
     as.on("/mcp", (_q, r, hit) => {
@@ -228,7 +228,7 @@ describe("anona login: one approval, and what `anona mcp` presents", () => {
     return { rc, out: o.join(""), err: e.join(""), tokens };
   }
 
-  it("anona mcp presents the command-line login", async () => {
+  it("anona-memory mcp presents the command-line login", async () => {
     saveCredentials({ accessToken: jwt("cli_access", 91), refreshToken: "RT-CLI", expiresAt: Date.now() / 1000 + 3600, clientId: "c", baseUrl: as.base }, cliCredentialsPath());
     const r = await mcpCall();
     expect(JSON.parse(r.out).result).toEqual({ tools: [] });

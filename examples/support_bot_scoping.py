@@ -1,6 +1,6 @@
 """One space, many end users — scoping keeps their memories apart.
 
-    pip install anona
+    pip install anona-memory
     export ANONA_API_KEY=anona_live_...
     python examples/support_bot_scoping.py
 

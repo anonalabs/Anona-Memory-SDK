@@ -1,5 +1,5 @@
 /**
- * A real local HTTP server for the data commands, and a way to run `anona`
+ * A real local HTTP server for the data commands, and a way to run `anona-memory`
  * against it. Every case asserts on the request that actually left the
  * process -- method, path, query, body, bearer -- or that nothing arrived.
  */
@@ -108,7 +108,7 @@ export async function startDataServer(respond: Responder): Promise<DataServer> {
 
 export const SECRET = "anona_live_SECRETSECRET";
 
-/** Run `anona` in-process. No secret may appear on either stream, whatever happened. */
+/** Run `anona-memory` in-process. No secret may appear on either stream, whatever happened. */
 export async function run(argv: string[], stdin = ""): Promise<{ rc: number; out: string; err: string }> {
   const o: string[] = [];
   const e: string[] = [];
@@ -154,7 +154,7 @@ function anonaDir(profile?: string): string {
   return d;
 }
 
-/** The MCP credential file, as `anona start` / `anona login --mcp` leave it. */
+/** The MCP credential file, as `anona-memory start` / `anona-memory login --mcp` leave it. */
 export function writeMcpFile(o: { base: string; signedIn?: boolean; tempHours?: number | null; profile?: string }): void {
   const doc: Record<string, unknown> = {
     access_token: o.signedIn ? "oauth_MCP_ONLY" : "",
@@ -170,7 +170,7 @@ export function writeMcpFile(o: { base: string; signedIn?: boolean; tempHours?: 
   writeFileSync(join(anonaDir(o.profile), "credentials.json"), JSON.stringify(doc));
 }
 
-/** The command-line login file, as `anona login --cli` leaves it. */
+/** The command-line login file, as `anona-memory login --cli` leaves it. */
 export function writeCliFile(o: { base: string; access?: string; expiresIn?: number; profile?: string }): void {
   writeFileSync(
     join(anonaDir(o.profile), "cli-credentials.json"),

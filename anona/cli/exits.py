@@ -1,4 +1,4 @@
-"""Every exit code `anona` uses, in one place.
+"""Every exit code `anona-memory` uses, in one place.
 
 Agents script on exit codes, so each code names one kind of outcome and means
 the same thing on every verb:
@@ -19,7 +19,7 @@ the same thing on every verb:
     7  UNAVAILABLE   a 5xx, a timeout, or the server could not be reached
     8  STILL_RUNNING --wait gave up while the job was still running
 
-The table is also printed by `anona guide`, which reads it from EXIT_CODES
+The table is also printed by `anona-memory guide`, which reads it from EXIT_CODES
 below, so the two cannot drift.
 """
 

@@ -18,7 +18,7 @@ def test_record_async_queues_and_prints_the_job(tmp_path):
         reqs, out, err = sent(["record", "The team ships on Tuesdays.", "--async"] + AUTH)
         body = reqs[0]["body"]
         assert body["async"] is True and body["space_id"] == "s", body
-        assert "job-rec-1" in out and "anona jobs get job-rec-1" in out, out
+        assert "job-rec-1" in out and "anona-memory jobs get job-rec-1" in out, out
         reqs, out, err = sent(["record", "x", "--async", "--json"] + AUTH)
         assert one_json(out) == BODIES["record_async"], out
         # Without --async nothing about async is sent.
@@ -198,7 +198,7 @@ def test_spaces_delete_needs_yes(tmp_path):
         assert one_json(out) == {"deleted": True, "space_id": "old"}, out
         route("DELETE", "/v1/spaces/old", lambda r: envelope(403, "space_owner_only"))
         reqs, out, err = sent(["spaces", "delete", "old", "--yes"] + KEYED, want_rc=4)
-        assert err.strip() == "anona: space_owner_only: m (request_id req_1)", err
+        assert err.strip() == "anona-memory: space_owner_only: m (request_id req_1)", err
         print("OK")
     """, tmp_path))
 
@@ -238,7 +238,7 @@ def test_documents_upload_surfaces_413_and_415_and_is_never_retried(tmp_path):
                                  (429, "rate_limited", 6), (503, "engine_unavailable", 7)):
             route("POST", "/v1/spaces/s/documents", lambda r, s=status, c=code: envelope(s, c, "Not that."))
             reqs, out, err = sent(["documents", "upload", str(a)] + AUTH, want_rc=rc)
-            assert err.strip() == f"anona: {code}: Not that. (request_id req_1)", err
+            assert err.strip() == f"anona-memory: {code}: Not that. (request_id req_1)", err
             assert out == "", out
         err = refused(["documents", "upload", str(Path.home() / "missing.pdf")] + AUTH)
         assert "not a readable file" in err, err

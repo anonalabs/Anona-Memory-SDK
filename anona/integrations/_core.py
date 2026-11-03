@@ -56,13 +56,13 @@ def require(module: str, extra: str) -> ModuleType:
     """Import a framework, or explain which extra installs it.
 
     Adapters call this inside ``__init__`` rather than at module import, so
-    ``anona`` stays importable without any framework installed.
+    ``anona-memory`` stays importable without any framework installed.
     """
     try:
         return importlib.import_module(module)
     except ImportError as exc:
         raise ImportError(
-            f"{module} required: pip install 'anona[{extra}]'"
+            f"{module} required: pip install 'anona-memory[{extra}]'"
         ) from exc
 
 

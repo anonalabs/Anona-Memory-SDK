@@ -29,8 +29,8 @@ Configuration is read from the environment, then from ~/.anona/config.env (read
 as data, never sourced):
 
   ANONA_API_KEY        optional. With it, calls go over REST. Without it, they
-                       go through `anona mcp` on the CLI's existing login, so a
-                       user who ran `anona login` needs nothing else. With
+                       go through `anona-memory mcp` on the CLI's existing login, so a
+                       user who ran `anona-memory login` needs nothing else. With
                        neither, every hook is a silent no-op
   ANONA_HOOK_TRANSPORT "rest" or "mcp" to force one; default "auto"
   ANONA_SPACE_ID       pin one space; turns automatic routing off
@@ -210,9 +210,9 @@ def repo_name(cwd: str) -> str:
 #
 #   1. REST with ANONA_API_KEY. Fastest, and the only one that can ask for the
 #      prompt-ready block and attach metadata.
-#   2. `anona mcp`, the CLI's stdio bridge, with whatever login the CLI already
-#      holds (`anona login`, or a temporary profile). No key anywhere. This is
-#      the same process Claude Code runs as the `anona` MCP server, so it is
+#   2. `anona-memory mcp`, the CLI's stdio bridge, with whatever login the CLI already
+#      holds (`anona-memory login`, or a temporary profile). No key anywhere. This is
+#      the same process Claude Code runs as the `anona-memory` MCP server, so it is
 #      the user's existing MCP login.
 #
 # The bridge owns the tokens and refreshes them under a file lock. This script
@@ -300,7 +300,7 @@ _RELEVANCE = re.compile(r"\s*\(relevance [0-9.e+-]+\)")
 
 
 class Mcp:
-    """One `anona mcp` child per hook run, spoken to over stdio JSON-RPC."""
+    """One `anona-memory mcp` child per hook run, spoken to over stdio JSON-RPC."""
 
     name = "mcp"
 
@@ -425,14 +425,14 @@ class Mcp:
 
 
 def _anona_binary() -> str | None:
-    found = shutil.which("anona")
+    found = shutil.which("anona-memory")
     if found:
         return found
     # Claude Code may start hooks with a narrower PATH than the user's shell.
     for candidate in (
-        Path.home() / ".local" / "bin" / "anona",
-        Path("/opt/homebrew/bin/anona"),
-        Path("/usr/local/bin/anona"),
+        Path.home() / ".local" / "bin" / "anona-memory",
+        Path("/opt/homebrew/bin/anona-memory"),
+        Path("/usr/local/bin/anona-memory"),
     ):
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)

@@ -29,20 +29,20 @@ Check, in this order, and use the first that works:
    counts: a server that appears in a config listing, even saying `connected`,
    gives you nothing to call if its tools are absent from this session.
 
-2. **The `anona` CLI.** If `anona` is on PATH, run `anona status` once and read
+2. **The `anona-memory` CLI.** If `anona-memory` is on PATH, run `anona-memory status` once and read
    which credential the data commands will use:
 
-   | `anona status` says | Then |
+   | `anona-memory status` says | Then |
    | --- | --- |
    | `API key for record/retrieve/reason` | Use the CLI. Pass `--space` (see **Which space**). |
    | `Command-line login ... (used by record, retrieve, ...)` | Use the CLI. Pass `--space`. |
    | `Temporary profile for ...`, not expired, and neither line above | Use the CLI. Omit `--space`: the profile's only space is `default`. |
    | Only `Credential found for ...` (the MCP login) | The CLI refuses that credential (exit 4). Go to step 3. |
-   | `Not logged in.` | No credential. You may run `anona start` (see 4), then use the CLI. |
+   | `Not logged in.` | No credential. You may run `anona-memory start` (see 4), then use the CLI. |
 
    ```bash
    anona retrieve "how is auth wired" --space my-project --json --limit 5
-   anona record   "Prefers pytest over unittest." --space my-project --json \
+   anona-memory record   "Prefers pytest over unittest." --space my-project --json \
                   --metadata '{"source": "claude-code", "repo": "my-project"}'
    anona reason   "what do we know about this user" --space my-project --json
    ```
@@ -61,8 +61,8 @@ Check, in this order, and use the first that works:
    | `3` | `record` only: accepted, but no fact was extracted. Nothing stored. | Record again once, with a sentence saying what the thing is or why it matters. |
    | `4` | No usable credential. | Do not retry. Go to step 3. |
 
-   **Before a command or flag you have not used, run `anona guide --json`** (or
-   `anona <command> --help`) and read it rather than guessing; it describes
+   **Before a command or flag you have not used, run `anona-memory guide --json`** (or
+   `anona-memory <command> --help`) and read it rather than guessing; it describes
    the installed copy. The `anona-cli` skill covers the CLI in depth: uploads,
    batch ingest, jobs, settings and every exit code. Destructive commands need
    `--yes`; without it they exit 2 and send nothing. Do not add `--yes` unless
@@ -73,33 +73,33 @@ Check, in this order, and use the first that works:
    `ANONA_API_KEY` is in the environment or in `~/.anona/config.env` (source
    it: `. ~/.anona/config.env`). See `references/usage.md`.
 
-4. **None of these.** If `anona` (or `uvx`) is available you can create a
+4. **None of these.** If `anona-memory` (or `uvx`) is available you can create a
    temporary profile yourself; it needs no account, no email and no card, and
    holds memories for 72 hours:
 
    ```bash
-   anona start     # or, with nothing installed: uvx --from anona anona start
+   anona start     # or, with nothing installed: uvx --from anona-memory anona start
    ```
 
    Tell the user in one line that you did it, that it expires in 72 hours, and
-   that `anona login` keeps it. Otherwise say once that Anona is not configured
+   that `anona-memory login` keeps it. Otherwise say once that Anona is not configured
    and how to set it up
    (`curl -fsSL https://raw.githubusercontent.com/anonalabs/Anona-Memory-SDK/main/skills/install.sh | bash`),
    then do the task without memory. Do not ask again this session.
 
-**Signing in is the user's step, not yours.** `anona login` opens a browser
+**Signing in is the user's step, not yours.** `anona-memory login` opens a browser
 for a person to approve: once for the command line, once for MCP
 (`--cli` / `--mcp` for one). Suggest it in one line when the CLI exits 4; never
 run it and wait.
 
-**Check the CLI version once.** Everything above needs pip `anona` 0.24.0 or
-later (`anona --version`); `anona guide` and exit codes `5`-`8` arrived in the
-release after it. The npm package's `anona` may lack the data commands; if
-`anona record` answers `invalid choice`, use the pip one.
-`pip install anona` does **not** upgrade an existing copy, and on a system
+**Check the CLI version once.** Everything above needs pip `anona-memory` 0.24.0 or
+later (`anona-memory --version`); `anona-memory guide` and exit codes `5`-`8` arrived in the
+release after it. The npm package's `anona-memory` may lack the data commands; if
+`anona-memory record` answers `invalid choice`, use the pip one.
+`pip install anona-memory` does **not** upgrade an existing copy, and on a system
 Python it is refused with `error: externally-managed-environment`.
-`uvx --from anona anona <command>` installs nothing and always runs the
-current version; `pip install -U anona` upgrades.
+`uvx --from anona-memory anona <command>` installs nothing and always runs the
+current version; `pip install -U anona-memory` upgrades.
 
 ## Which space
 
@@ -126,7 +126,7 @@ nothing to choose between: name the space directly.
   looks exactly like a correct call, and those fields are the only way to tell.
 - `routed_to` or `searched` naming a space you did not expect is not an error.
   Mention it once only if the user asks where something went.
-- MCP `record` / `retrieve` and REST take `route`. The `anona` CLI does not: on
+- MCP `record` / `retrieve` and REST take `route`. The `anona-memory` CLI does not: on
   the CLI, keep passing `--space`.
 
 `record` creates the space on first write. `retrieve` does not: a
@@ -215,7 +215,7 @@ redacted excerpt at compaction.
 conversation out of a claude.ai data export) gets the same treatment: read it
 and record the durable facts in it, one per memory. For more than a handful of
 conversations, a pass per conversation is slow and costly; suggest writing the
-facts to a JSON Lines file and loading it with `anona record --batch FILE`
+facts to a JSON Lines file and loading it with `anona-memory record --batch FILE`
 (up to 100 per call) instead.
 
 ## Compaction
@@ -290,7 +290,7 @@ that means for you:
   decisions and fixes behind the work, which a log of files cannot carry.
 - **The hooks never need you.** With `ANONA_API_KEY` (environment or
   `~/.anona/config.env`) they call the REST API; without one they go through
-  `anona mcp` on the CLI's existing login, so a user who ran `anona login`
+  `anona-memory mcp` on the CLI's existing login, so a user who ran `anona-memory login`
   needs no key. They fail silently and never block the session. If the user asks to turn them off: `ANONA_HOOKS=off` for all,
   or `ANONA_HOOK_RECALL=0`, `ANONA_HOOK_DIGEST=0`, `ANONA_HOOK_WORKLOG=0` for
   one. `ANONA_HOOK_ROUTE=off` stops the pull routing; `ANONA_HOOK_ROUTE=auto` lets

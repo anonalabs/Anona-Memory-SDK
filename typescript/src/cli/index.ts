@@ -1,11 +1,11 @@
 /**
- * The `anona` command: start, login, logout, status, mcp, doctor, guide,
+ * The `anona-memory` command: start, login, logout, status, mcp, doctor, guide,
  * help, completion, and the data commands (record, retrieve, reason and the
  * resource verbs), which data.ts runs. Every command line is parsed by the
  * one grammar in args.ts.
  *
  * `login` holds two credentials, each in its own file (store.ts): the command
- * line's, which the data commands use, and MCP's. The pip package's `anona`
+ * line's, which the data commands use, and MCP's. The pip package's `anona-memory`
  * reads and writes the same files and has the same commands, so the two CLIs
  * interoperate.
  */
@@ -59,13 +59,13 @@ function defaultBaseUrl(): string {
   return process.env.ANONA_BASE_URL || DEFAULT_BASE_URL;
 }
 
-/** Runs `fn`; a TargetError becomes `anona: <message>` on stderr and exit 1. */
+/** Runs `fn`; a TargetError becomes `anona-memory: <message>` on stderr and exit 1. */
 function guarded(io: IO, fn: () => Promise<number> | number): Promise<number> | number {
   try {
     return fn();
   } catch (exc) {
     if (!(exc instanceof TargetError)) throw exc;
-    io.stderr.write(`anona: ${exc.message}\n`);
+    io.stderr.write(`anona-memory: ${exc.message}\n`);
     return 1;
   }
 }
@@ -81,8 +81,8 @@ function cliStatus(io: IO, requested?: string, shadowed = false): number | null 
   // Only what the file says: never a token or the client id, and no network
   // call, which would rotate the refresh token just to look at it.
   const use = shadowed
-    ? "used by `anona mcp`; not by the data commands while an API key is set"
-    : "used by record, retrieve, reason, the other data commands and `anona mcp`";
+    ? "used by `anona-memory mcp`; not by the data commands while an API key is set"
+    : "used by record, retrieve, reason, the other data commands and `anona-memory mcp`";
   io.stdout.write(`Command-line login for ${c.baseUrl} (${use}).\n`);
   const remaining = c.expiresAt - Date.now() / 1000;
   if (remaining > 0) {
@@ -90,7 +90,7 @@ function cliStatus(io: IO, requested?: string, shadowed = false): number | null 
   } else {
     io.stdout.write("Its access token has expired; a refresh is attempted on the next command.\n");
   }
-  io.stdout.write("If a command reports an authorization failure, run `anona login --cli`.\n");
+  io.stdout.write("If a command reports an authorization failure, run `anona-memory login --cli`.\n");
   return 0;
 }
 
@@ -102,19 +102,19 @@ function status(io: IO, requested?: string, baseUrlFlag?: string, apiKeyFlag?: s
   if (cli === null) return mcpStatus(io, requested);
   if (cli !== 0) return cli;
   // A working command-line login decides the exit code, and it is also what
-  // `anona mcp` presents; an MCP file beside it is only described.
+  // `anona-memory mcp` presents; an MCP file beside it is only described.
   shadowedMcpStatus(io);
   return 0;
 }
 
-/** The MCP file beside a command-line login, which `anona mcp` presents ahead of it. */
+/** The MCP file beside a command-line login, which `anona-memory mcp` presents ahead of it. */
 function shadowedMcpStatus(io: IO): void {
   const c = loadCredentials();
   if (c === null) return;
   if (isSignedIn(c)) {
     io.stdout.write(
-      `An MCP-only login for ${c.baseUrl} is also stored; \`anona mcp\` uses the ` +
-        "command-line login instead (`anona logout --mcp` removes it).\n",
+      `An MCP-only login for ${c.baseUrl} is also stored; \`anona-memory mcp\` uses the ` +
+        "command-line login instead (`anona-memory logout --mcp` removes it).\n",
     );
   }
   if (c.tempToken && c.tempExpiresAt !== undefined && c.tempExpiresAt > Date.now() / 1000) {
@@ -125,7 +125,7 @@ function shadowedMcpStatus(io: IO): void {
 /**
  * The data commands' API key: its source and a prefix only, since this output
  * ends up in pastes and logs. The stored logins are still described -- they
- * are what `anona mcp` uses -- but the key works either way, so their exit
+ * are what `anona-memory mcp` uses -- but the key works either way, so their exit
  * codes do not decide this one.
  */
 function keyStatus(
@@ -136,7 +136,7 @@ function keyStatus(
 ): number {
   io.stdout.write(
     `API key for record/retrieve/reason: ${displayKey(key)} (from ${SOURCE_NAMES[key.source]}). ` +
-      "Not checked here; `anona doctor` asks the server whether it works.\n",
+      "Not checked here; `anona-memory doctor` asks the server whether it works.\n",
   );
   const [url, urlSource] = findBaseUrl(baseUrlFlag, config);
   let base: string;
@@ -144,7 +144,7 @@ function keyStatus(
     base = forApiKey(url, urlSource, key.source);
   } catch (e) {
     if (!(e instanceof TargetError)) throw e;
-    io.stderr.write(`anona: ${printable(redact(e.message))}\n`);
+    io.stderr.write(`anona-memory: ${printable(redact(e.message))}\n`);
     return 4;
   }
   const safe = (s: string) => printable(redact(s));
@@ -156,12 +156,12 @@ function keyStatus(
     return 0;
   }
   if (loadCredentials() === null) {
-    io.stdout.write("No `anona login` credential is stored for MCP (that one is for `anona mcp`).\n");
+    io.stdout.write("No `anona-memory login` credential is stored for MCP (that one is for `anona-memory mcp`).\n");
     return 0;
   }
   // Introduced as such, or its "Temporary profile ..." line reads as the
   // credential this command just said the key had replaced.
-  io.stdout.write("Also stored, for `anona mcp` (the data commands use the API key above):\n");
+  io.stdout.write("Also stored, for `anona-memory mcp` (the data commands use the API key above):\n");
   mcpStatus(io);
   return 0;
 }
@@ -169,10 +169,10 @@ function keyStatus(
 function mcpStatus(io: IO, requested?: string): number {
   const c = loadCredentials();
   if (c === null) {
-    io.stdout.write("Not logged in. Run `anona login`.\n");
+    io.stdout.write("Not logged in. Run `anona-memory login`.\n");
     return 1;
   }
-  // `--base-url` was read and then ignored here, so `anona status --base-url
+  // `--base-url` was read and then ignored here, so `anona-memory status --base-url
   // https://other` described the stored deployment while naming another --
   // the one shape of wrong answer a status command must never give. Every
   // other credential-holding command already refuses a mismatch.
@@ -184,16 +184,16 @@ function mcpStatus(io: IO, requested?: string): number {
     // The only warning an unclaimed profile gets: it has no email address.
     io.stdout.write(`Temporary profile for ${c.baseUrl}: ${describeDeadline(c.tempExpiresAt)}.\n`);
     if (c.tempExpiresAt > Date.now() / 1000) {
-      io.stdout.write("Run `anona login` to claim it before then.\n");
+      io.stdout.write("Run `anona-memory login` to claim it before then.\n");
     } else if (!isSignedIn(c)) {
       // Expired and nothing to fall back on: it read as success, which is how
-      // a scripted `anona status && ...` walked into a command with no
+      // a scripted `anona-memory status && ...` walked into a command with no
       // credential behind it.
       return 1;
     }
     if (!isSignedIn(c)) return 0;
   } else if (!isSignedIn(c)) {
-    io.stdout.write("Not logged in. Run `anona login`.\n");
+    io.stdout.write("Not logged in. Run `anona-memory login`.\n");
     return 1;
   }
   // Never the tokens or the client id: this output ends up in pastes and logs.
@@ -204,13 +204,13 @@ function mcpStatus(io: IO, requested?: string): number {
   if (remaining > 0) {
     // The minutes alone read as a deadline to act on; the token renews itself.
     io.stdout.write(
-      `Its access token expires in ${Math.floor(remaining / 60)} minutes and is renewed automatically when \`anona mcp\` uses it.\n`,
+      `Its access token expires in ${Math.floor(remaining / 60)} minutes and is renewed automatically when \`anona-memory mcp\` uses it.\n`,
     );
   } else {
-    io.stdout.write("Its access token has expired; `anona mcp` renews it on its next call.\n");
+    io.stdout.write("Its access token has expired; `anona-memory mcp` renews it on its next call.\n");
   }
   io.stdout.write(
-    "Run `anona login` again only if `anona mcp` reports an authorization failure " +
+    "Run `anona-memory login` again only if `anona-memory mcp` reports an authorization failure " +
       "(the login was revoked, or went unused for 30 days).\n",
   );
   return 0;
@@ -231,9 +231,9 @@ async function logout(io: IO, which: { cli: boolean; mcp: boolean; force: boolea
         // it strands the profile and everything in it until the server deletes
         // it too. Checked first, so a refused logout removes nothing at all.
         io.stderr.write(
-          `anona logout: this would abandon an unclaimed temporary profile (it ${describeDeadline(held.tempExpiresAt as number)}). ` +
-            "Run `anona login` to claim it, or `anona logout --force` to discard it. " +
-            "`anona logout --cli` removes only the command-line credential.\n",
+          `anona-memory logout: this would abandon an unclaimed temporary profile (it ${describeDeadline(held.tempExpiresAt as number)}). ` +
+            "Run `anona-memory login` to claim it, or `anona-memory logout --force` to discard it. " +
+            "`anona-memory logout --cli` removes only the command-line credential.\n",
         );
         return true;
       }
@@ -265,7 +265,7 @@ async function logout(io: IO, which: { cli: boolean; mcp: boolean; force: boolea
   }
   if (unrevoked > 0) {
     io.stderr.write(
-      "anona logout: removed locally, but the server could not be told to revoke it; it expires after " +
+      "anona-memory logout: removed locally, but the server could not be told to revoke it; it expires after " +
         "30 days unused, or revoke it now under Integrations -> MCP -> Connected apps in the dashboard.\n",
     );
   }
@@ -294,7 +294,7 @@ function applyGlobals(io: IO, args: Record<string, unknown>): number | null {
     profile();
   } catch (e) {
     if (!(e instanceof BadProfile)) throw e;
-    io.stderr.write(`anona: ANONA_PROFILE: ${printable(redact(e.message))}\n`);
+    io.stderr.write(`anona-memory: ANONA_PROFILE: ${printable(redact(e.message))}\n`);
     return 2;
   }
   OPTIONS.timeout = (args.timeout as number | undefined) ?? null;
@@ -303,16 +303,16 @@ function applyGlobals(io: IO, args: Record<string, unknown>): number | null {
   return null;
 }
 
-/** `anona help spaces delete`: that command's own --help, on stdout, exit 0. */
+/** `anona-memory help spaces delete`: that command's own --help, on stdout, exit 0. */
 function helpTopic(io: IO, topic: string[], args: Record<string, unknown>): number {
   if (args.llm || args.json) {
-    io.stderr.write("anona: help COMMAND takes no --llm or --json. Nothing was printed.\n");
+    io.stderr.write("anona-memory: help COMMAND takes no --llm or --json. Nothing was printed.\n");
     return 2;
   }
   const found = findCommand(topic);
   if ("unknown" in found) {
     const known = found.unknown.length ? found.unknown.join(", ") : "none";
-    io.stderr.write(`anona: no command \`${printable(redact(topic.join(" ")))}\`. Commands here: ${known}.\n`);
+    io.stderr.write(`anona-memory: no command \`${printable(redact(topic.join(" ")))}\`. Commands here: ${known}.\n`);
     return 2;
   }
   io.stdout.write(commandHelp(found.prog, found.spec));
@@ -320,9 +320,9 @@ function helpTopic(io: IO, topic: string[], args: Record<string, unknown>): numb
 }
 
 export async function main(argv: string[], io: IO, login: Partial<LoginOptions> = {}): Promise<number> {
-  // Bare `anona` is how a person or an agent first meets the command: orient
+  // Bare `anona-memory` is how a person or an agent first meets the command: orient
   // them rather than fail with "arguments are required". Only the truly empty
-  // line -- `anona --quiet` with no command is still a usage error.
+  // line -- `anona-memory --quiet` with no command is still a usage error.
   if (argv.length === 0) {
     io.stdout.write(ORIENTATION);
     return 0;
@@ -338,7 +338,7 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
   if (command === "guide" || (command === "help" && args.llm)) return runGuide(io, Boolean(args.json));
   if (command === "help") {
     if (args.json) {
-      io.stderr.write("anona: --json needs --llm. Nothing was printed.\n");
+      io.stderr.write("anona-memory: --json needs --llm. Nothing was printed.\n");
       return 2;
     }
     io.stdout.write(topHelp());
@@ -366,7 +366,7 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
     if (refused !== 0) return refused;
     io.stdout.write(`Signing in to ${base}\n`);
     // Neither flag means the one approval that covers both the command line and
-    // `anona mcp`; the parser keeps the two flags exclusive.
+    // `anona-memory mcp`; the parser keeps the two flags exclusive.
     const wantCli = !args.mcp;
     const wantMcp = Boolean(args.mcp);
     const same = (a: string, b: string) => a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
@@ -377,16 +377,16 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
     const stored = loadCredentials();
     if (!wantMcp && stored && !same(stored.baseUrl, base)) {
       // The command-line approval leaves the MCP file alone, so nothing in it is
-      // lost -- but `anona mcp` and the data commands present this login ahead
+      // lost -- but `anona-memory mcp` and the data commands present this login ahead
       // of it from now on, which is worth saying.
       if (liveTempToken(stored) !== null) {
         io.stdout.write(
           `Note: the unclaimed temporary profile for ${stored.baseUrl} ` +
             `(it ${describeDeadline(stored.tempExpiresAt as number)}) is kept, ` +
-            `but this login is used instead of it. Claim it with \`anona login --base-url ${stored.baseUrl}\`.\n`,
+            `but this login is used instead of it. Claim it with \`anona-memory login --base-url ${stored.baseUrl}\`.\n`,
         );
       } else if (isSignedIn(stored)) {
-        io.stdout.write(`Note: the MCP-only login for ${stored.baseUrl} is kept, but \`anona mcp\` uses this login instead.\n`);
+        io.stdout.write(`Note: the MCP-only login for ${stored.baseUrl} is kept, but \`anona-memory mcp\` uses this login instead.\n`);
       }
     }
     if (wantMcp && stored && !same(stored.baseUrl, base)) {
@@ -398,7 +398,7 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
       if (liveTempToken(stored) !== null) {
         io.stdout.write(
           `Note: that includes an unclaimed temporary profile (it ${describeDeadline(stored.tempExpiresAt as number)}), ` +
-            `which will be abandoned. Claim it first with \`anona login --base-url ${stored.baseUrl}\`.\n`,
+            `which will be abandoned. Claim it first with \`anona-memory login --base-url ${stored.baseUrl}\`.\n`,
         );
       }
     }
@@ -416,7 +416,7 @@ export async function main(argv: string[], io: IO, login: Partial<LoginOptions> 
   if (command === "doctor") return runDoctor(io, args, baseUrl, requested, packageVersion());
   // mcp: a credential belongs to the deployment that issued it. Naming another
   // is refused on stderr; stdout is the client's JSON-RPC stream. The
-  // command-line login is the one `anona login` makes and the proxy presents
+  // command-line login is the one `anona-memory login` makes and the proxy presents
   // first, so its deployment wins, unless the user named the MCP file's
   // deployment and not its own.
   const cliLogin = loadCredentials(cliCredentialsPath());

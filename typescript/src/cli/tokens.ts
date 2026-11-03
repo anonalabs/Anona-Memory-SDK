@@ -1,5 +1,5 @@
 /**
- * A valid access token for `anona mcp`, refreshed and persisted when needed.
+ * A valid access token for `anona-memory mcp`, refreshed and persisted when needed.
  *
  * The access token lives an hour; the refresh token 30 days, renewed on every
  * use, so a credential that is used never expires. That rolling renewal is what
@@ -11,7 +11,7 @@
  * without a native addon, and this package has zero dependencies), so this side
  * uses an exclusive-create lock file, `credentials.json.nodelock`. Python holds
  * `fcntl.flock` on `credentials.json.lock` AND ALSO takes this same `.nodelock`
- * file (anona/cli/tokens.py, `_node_lock`), so a Python and a Node `anona mcp`
+ * file (anona/cli/tokens.py, `_node_lock`), so a Python and a Node `anona-memory mcp`
  * refreshing in the same instant serialise instead of both rotating. That
  * matters: the server treats a replayed refresh token as theft and revokes every
  * refresh token for the client_id, which both implementations share, so a double
@@ -46,9 +46,9 @@ export class NotLoggedIn extends Error {
   }
 }
 
-const RELOGIN = "Run `anona login` again.";
+const RELOGIN = "Run `anona-memory login` again.";
 /** What to tell someone whose command-line login can no longer be renewed. */
-export const CLI_RELOGIN = "Run `anona login --cli` again.";
+export const CLI_RELOGIN = "Run `anona-memory login --cli` again.";
 
 function fresh(c: Credentials): boolean {
   return c.expiresAt - SKEW_SECONDS > Date.now() / 1000;
@@ -88,7 +88,7 @@ async function withLock<T>(lockPath: string, fn: () => Promise<T>): Promise<T> {
       continue; // released between our open and our stat: just retry
     }
     if (Date.now() - started > lockTuning.acquireTimeoutMs) {
-      throw new OAuthError("Timed out waiting for another anona process to finish refreshing.");
+      throw new OAuthError("Timed out waiting for another anona-memory process to finish refreshing.");
     }
     await sleep(lockTuning.pollMs);
   }
@@ -139,7 +139,7 @@ export async function accessToken(
   const dir = dirname(file);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   chmodSync(dir, 0o700);
-  // Several MCP clients means several `anona mcp` processes, and they all see
+  // Several MCP clients means several `anona-memory mcp` processes, and they all see
   // the same expired token at the same moment. One must rotate; the rest must
   // wait and use its result. Hold the lock across read, refresh and write.
   return withLock(file + ".nodelock", async () => {

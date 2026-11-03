@@ -1,5 +1,5 @@
 /**
- * `anona record`, `retrieve` and `reason`: the same behaviour as the pip
+ * `anona-memory record`, `retrieve` and `reason`: the same behaviour as the pip
  * package's verbs, asserted on what reached a real local server. Stub bodies
  * use the gateway's own response models (AddMemoryResponse, SearchResponse,
  * InsightsResponse), every field present, so a verb that reads a field the API
@@ -77,7 +77,7 @@ describe("record / retrieve / reason", () => {
   it("with no credential says what to do, exits 4, sends nothing", async () => {
     const r = await run(["record", "the user prefers pnpm"]);
     expect(r.rc).toBe(4);
-    expect(r.err).toContain("anona start");
+    expect(r.err).toContain("anona-memory start");
     expect(srv.seen).toEqual([]);
   });
 
@@ -85,10 +85,10 @@ describe("record / retrieve / reason", () => {
     for (const verb of ["record", "retrieve", "reason"]) {
       const r = await run([verb, "--help"]);
       expect(r.rc).toBe(0);
-      expect(r.out).toContain(`usage: anona ${verb}`);
+      expect(r.out).toContain(`usage: anona-memory ${verb}`);
     }
     const flat = (await run(["record", "--help"])).out.split(/\s+/).join(" ");
-    expect(flat).toContain("Required with an API key or `anona login` unless ANONA_SPACE_ID is set");
+    expect(flat).toContain("Required with an API key or `anona-memory login` unless ANONA_SPACE_ID is set");
     expect(flat).toContain("a temporary profile uses `default`");
   });
 
@@ -183,7 +183,7 @@ describe("record / retrieve / reason", () => {
       const r = await run(argv);
       expect(r.rc).toBe(4);
       expect(r.err).toContain("temporary profile");
-      expect(r.err).toContain("anona mcp");
+      expect(r.err).toContain("anona-memory mcp");
       expect(r.err).toContain("API key");
       expect(r.err).not.toContain("oauth_MCP_ONLY");
     }
@@ -291,7 +291,7 @@ describe("record / retrieve / reason", () => {
     const r = await run(["record", "x"]);
     expect(r.rc).toBe(1);
     expect(r.err).toBe(
-      "anona: validation_error: Request validation failed -- content: String should have at least 1 character (request_id req_abc123)\n",
+      "anona-memory: validation_error: Request validation failed -- content: String should have at least 1 character (request_id req_abc123)\n",
     );
   });
 
@@ -304,7 +304,7 @@ describe("record / retrieve / reason", () => {
         : { status: 201, body: recorded() };
     const r = await run(["record", "x"]);
     expect(r.rc).toBe(0);
-    expect(r.err).toBe("anona: rate limited, retrying in 0 s (1/2)\nanona: rate limited, retrying in 0 s (2/2)\n");
+    expect(r.err).toBe("anona-memory: rate limited, retrying in 0 s (1/2)\nanona-memory: rate limited, retrying in 0 s (2/2)\n");
     expect(r.out).not.toContain("retrying");
     expect(srv.seen.length).toBe(3);
   });
@@ -340,7 +340,7 @@ describe("record / retrieve / reason", () => {
     srv.respond = () => ({ status: 500, raw: "<html>502 Bad Gateway</html>" });
     const r = await run(["record", "x"]);
     expect(r.rc).toBe(7);
-    expect(r.err).toBe("anona: the server answered HTTP 500: <html>502 Bad Gateway</html>\n");
+    expect(r.err).toBe("anona-memory: the server answered HTTP 500: <html>502 Bad Gateway</html>\n");
   });
 
   it("a hostile error code cannot forge output", async () => {
@@ -472,7 +472,7 @@ describe("record / retrieve / reason", () => {
     await refused(["record", "x", "--metadata", '"a string"']);
     await refused(["record", "x", "--tags", ""]);
     expect(await refused(["record", "x", "--tags", "a,,b"])).toContain(
-      "anona record: error: argument --tags: must be a comma-separated list of non-empty tags",
+      "anona-memory record: error: argument --tags: must be a comma-separated list of non-empty tags",
     );
   });
 
@@ -488,7 +488,7 @@ describe("record / retrieve / reason", () => {
     srv.respond = () => ({ status: 500, body: { error: { code: "internal_error", message: "Something broke.", request_id: "req_1" } } });
     r = await run(["record", "x", "--json", ...keyed()]);
     expect([r.rc, r.out]).toEqual([7, ""]);
-    expect(r.err).toBe("anona: internal_error: Something broke. (request_id req_1)\n");
+    expect(r.err).toBe("anona-memory: internal_error: Something broke. (request_id req_1)\n");
     srv.respond = () => ({ status: 401, body: { error: { code: "invalid_api_key", message: "Invalid API key." } } });
     r = await run(["record", "x", "--json", ...keyed()]);
     expect([r.rc, r.out]).toEqual([4, ""]);

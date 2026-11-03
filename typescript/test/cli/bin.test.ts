@@ -61,14 +61,14 @@ describe("bundled anona bin", () => {
     // a plausible line.
     const r = await exec(["--version"], home.dir());
     expect(r.code).toBe(0);
-    expect(r.out.trim()).toBe(`anona ${PKG_VERSION}`);
+    expect(r.out.trim()).toBe(`anona-memory ${PKG_VERSION}`);
     expect(r.err).toBe("");
   });
 
   it("--help prints usage on stdout, exit 0", async () => {
     const r = await exec(["--help"], home.dir());
     expect(r.code).toBe(0);
-    expect(r.out).toContain("usage: anona");
+    expect(r.out).toContain("usage: anona-memory");
     expect(r.err).toBe("");
   });
 

@@ -3,8 +3,8 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "anona"
-version = "0.26.1"
+name = "anona-memory"
+version = "0.27.0"
 description = "Anona Memory SDK — managed AI memory for intelligent agents"
 readme = "README.md"
 license = { text = "MIT" }
@@ -30,7 +30,7 @@ Repository = "https://github.com/anonalabs/Anona-Memory-SDK"
 [project.optional-dependencies]
 litellm = ["litellm>=1.0"]
 # Upper bound is load-bearing: mcp 2.x moved FastMCP out of
-# mcp.server.fastmcp, so an unpinned install resolves 2.x and anona-mcp fails
+# mcp.server.fastmcp, so an unpinned install resolves 2.x and anona-memory-mcp fails
 # at import with ModuleNotFoundError before it can serve anything.
 mcp = ["mcp>=1.2,<2"]
 # Pulls mcp through the extra above rather than repeating the requirement, so
@@ -93,7 +93,7 @@ crewai = ["crewai>=1.0"]
 # nightly run of this suite is what would catch a later release re-breaking it,
 # within a day rather than whenever someone next touches this package.
 # Verified: with this exclusion a fresh `pip install
-# 'anona[llamaindex]'` resolves llama-index-workflows 2.23.3 and all 13 adapter
+# 'anona-memory[llamaindex]'` resolves llama-index-workflows 2.23.3 and all 13 adapter
 # tests pass; without it, pip takes 2.24.0 and the FunctionAgent test fails.
 llamaindex = ["llama-index-core>=0.14", "llama-index-workflows!=2.24.0"]
 # Floor raised from >=1.0 (verified against real wheels): everything this
@@ -141,11 +141,11 @@ msagent = ["agent-framework-core>=1.0"]
 # needed - contrast llamaindex.py's hasattr guard, needed because its >=0.12
 # floor genuinely included releases missing the attribute this adapter needs.
 strands = ["strands-agents>=1.0"]
-dev = ["pytest", "pytest-asyncio", "respx", "anyio", "anona[mcp]"]
+dev = ["pytest", "pytest-asyncio", "respx", "anyio", "anona-memory[mcp]"]
 
 [project.scripts]
-anona = "anona.cli.main:main"
-anona-mcp = "anona.integrations.mcp:main"
+anona-memory = "anona.cli.main:main"
+anona-memory-mcp = "anona.integrations.mcp:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

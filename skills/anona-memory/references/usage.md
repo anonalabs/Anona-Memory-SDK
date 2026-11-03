@@ -29,14 +29,14 @@ claude mcp add --transport http anona https://memory.anonalabs.com/mcp \
 MCP tools only load at session start. After adding a server, restart the client
 or run `/mcp`.
 
-## 2. The `anona` CLI
+## 2. The `anona-memory` CLI
 
-pip `anona` 0.24.0 or later (`anona --version`). For a shell with no MCP tools.
+pip `anona-memory` 0.24.0 or later (`anona-memory --version`). For a shell with no MCP tools.
 Pass `--json` on every data command: stdout is then one JSON document, and on
 failure stdout is empty with a one-line error on stderr.
 
 This section covers what the memory loop needs. For anything else (file
-uploads, batch ingest, settings, jobs) run `anona guide --json`, which lists
+uploads, batch ingest, settings, jobs) run `anona-memory guide --json`, which lists
 every command and flag the installed copy has, and see the `anona-cli` skill.
 
 ### Credentials
@@ -46,48 +46,48 @@ The data commands take the first of these that exists:
 1. `--api-key` (visible in the process list; prefer the next two)
 2. `ANONA_API_KEY` in the environment
 3. `ANONA_API_KEY` in `~/.anona/config.env` (the CLI reads it; no need to source it)
-4. the command-line login from `anona login` (`~/.anona/cli-credentials.json`)
-5. a temporary profile from `anona start`
+4. the command-line login from `anona-memory login` (`~/.anona/cli-credentials.json`)
+5. a temporary profile from `anona-memory start`
 
 With 1-4 a space is required: `--space`, else `ANONA_SPACE_ID` (environment,
 then `config.env`). Without one the command exits 2 and sends nothing. A
 temporary profile has one space, `default`; omit `--space` there.
 
-The MCP login (`~/.anona/credentials.json`, used by `anona mcp`) is never
+The MCP login (`~/.anona/credentials.json`, used by `anona-memory mcp`) is never
 used by these commands. With only that stored they exit 4.
 
-`anona status` names the credential in use and where it came from, and when a
+`anona-memory status` names the credential in use and where it came from, and when a
 temporary profile expires. It never prints a token.
 
 ### Account and connection commands
 
 ```bash
-anona start                 # temporary profile: no account, one space, 72 hours
-anona login                 # a person approves once in a browser: CLI and MCP
-anona login --mcp           # a separate MCP-only credential instead
-anona status
-anona logout                # both; --cli or --mcp for one
-anona mcp                   # stdio MCP server, using the same login
+anona-memory start                 # temporary profile: no account, one space, 72 hours
+anona-memory login                 # a person approves once in a browser: CLI and MCP
+anona-memory login --mcp           # a separate MCP-only credential instead
+anona-memory status
+anona-memory logout                # both; --cli or --mcp for one
+anona-memory mcp                   # stdio MCP server, using the same login
 ```
 
-`anona login` claims a stored temporary profile, keeping its memories. To give
-an MCP client the tools: `anona login`, then
+`anona-memory login` claims a stored temporary profile, keeping its memories. To give
+an MCP client the tools: `anona-memory login`, then
 `claude mcp add anona -- anona mcp`, then restart the client.
 
 ### Record, retrieve, reason
 
 ```bash
-anona record "Deploys run Tuesdays at 10:00 UTC." --space ops --json \
+anona-memory record "Deploys run Tuesdays at 10:00 UTC." --space ops --json \
   --tags ops,schedule --metadata '{"source": "claude-code"}'
-echo "The release branch is cut on Mondays." | anona record - --space ops --json
-anona record --file notes/decision.md --timestamp 2025-06-01 --space ops --json
+echo "The release branch is cut on Mondays." | anona-memory record - --space ops --json
+anona-memory record --file notes/decision.md --timestamp 2025-06-01 --space ops --json
 
-anona retrieve "deploy schedule" --space ops --json --limit 5
-anona retrieve "deploy schedule" --space ops --json --tags ops --tags-match all
-anona retrieve "what changed" --space ops --json --occurred-after 2026-06-01
+anona-memory retrieve "deploy schedule" --space ops --json --limit 5
+anona-memory retrieve "deploy schedule" --space ops --json --tags ops --tags-match all
+anona-memory retrieve "what changed" --space ops --json --occurred-after 2026-06-01
 
-anona reason "how does this team ship?" --space ops --json
-anona reason "how does this team ship?" --space ops --json --depth thorough
+anona-memory reason "how does this team ship?" --space ops --json
+anona-memory reason "how does this team ship?" --space ops --json --depth thorough
 ```
 
 | Verb | Flags beyond `--space`, `--api-key`, `--base-url`, `--json` |
@@ -108,19 +108,19 @@ when a `fast` answer reads stale.
 ### Spaces, memories, jobs
 
 ```bash
-anona spaces list --json
-anona spaces create my-project --description "Notes for my-project" --json
-anona spaces get my-project --json
-anona memories list --space my-project --json --limit 50 --q pnpm
-anona memories edit MEMORY_ID --text "Corrected sentence." --reason "was wrong" --space my-project --json
-anona memories history MEMORY_ID --space my-project --json
-anona memories delete MEMORY_ID --space my-project --yes --json
-anona jobs get JOB_ID --space my-project --json
-anona jobs cancel JOB_ID --space my-project --yes --json
-anona profile --space my-project --json
-anona model MODEL_ID --space my-project --json
-anona user-profile customer-42 --space my-project --json
-anona usage --json
+anona-memory spaces list --json
+anona-memory spaces create my-project --description "Notes for my-project" --json
+anona-memory spaces get my-project --json
+anona-memory memories list --space my-project --json --limit 50 --q pnpm
+anona-memory memories edit MEMORY_ID --text "Corrected sentence." --reason "was wrong" --space my-project --json
+anona-memory memories history MEMORY_ID --space my-project --json
+anona-memory memories delete MEMORY_ID --space my-project --yes --json
+anona-memory jobs get JOB_ID --space my-project --json
+anona-memory jobs cancel JOB_ID --space my-project --yes --json
+anona-memory profile --space my-project --json
+anona-memory model MODEL_ID --space my-project --json
+anona-memory user-profile customer-42 --space my-project --json
+anona-memory usage --json
 ```
 
 `memories delete`, `spaces delete`, `documents delete`, `jobs cancel` and the
@@ -144,10 +144,10 @@ cannot create a second space (`temp_profile_single_space`).
 
 Codes `5`-`8` arrived in the release after pip 0.24.0; older copies use `1`.
 
-The npm package `@anona-labs/memory` also installs a binary called `anona`,
-which may not have the data commands yet. If `anona record` answers
+The npm package `@anona-labs/memory` also installs a binary called `anona-memory`,
+which may not have the data commands yet. If `anona-memory record` answers
 `invalid choice: 'record'`, the binary on PATH is the npm one or an old pip
-copy: use `uvx --from anona anona <command>`.
+copy: use `uvx --from anona-memory anona <command>`.
 
 ## 3. REST with curl
 
@@ -215,7 +215,7 @@ curl -sS https://api.anonalabs.com/v1/retrieve \
 The response carries `searched` (a write carries `routed_to`): the space or
 spaces that were actually used. Sending both `space_id` and `route`, or neither,
 is `422 route_conflict`. The MCP `record` and `retrieve` tools take the same
-two fields; the `anona` CLI does not, so keep `--space` there.
+two fields; the `anona-memory` CLI does not, so keep `--space` there.
 
 A write that should not block the caller takes `"async": true` and answers with
 a `job_id` instead of a `memory_id`. Poll it at

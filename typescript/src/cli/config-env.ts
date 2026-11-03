@@ -2,7 +2,7 @@
  * `~/.anona/config.env`, read as data. Mirrors anona/cli/config_env.py.
  *
  * The skill installer writes this file for the agent skill and for
- * `anona-mcp`: `NAME='value'` lines, single-quoted, with a quote inside a value
+ * `anona-memory-mcp`: `NAME='value'` lines, single-quoted, with a quote inside a value
  * written as '\''. It is meant to be sourceable by a shell, which is exactly why
  * it must never be sourced or executed here: a value is whatever the installer
  * was given, and a hand-edited line can hold `$(...)` or backticks. So it is
@@ -10,7 +10,7 @@
  * and nothing else, quoted or unquoted, never expanded.
  *
  * Separate from the OAuth credential files (store.ts): this holds an API key,
- * which the REST API accepts, and `anona logout` never touches it.
+ * which the REST API accepts, and `anona-memory logout` never touches it.
  */
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -73,7 +73,7 @@ export function loadConfigEnv(stderr: { write(s: string): unknown }): ConfigEnv 
     return {};
   }
   if (mode & 0o077) {
-    stderr.write(`anona: warning: ${p} is readable by other users; run \`chmod 600 ${p}\`.\n`);
+    stderr.write(`anona-memory: warning: ${p} is readable by other users; run \`chmod 600 ${p}\`.\n`);
   }
   return parseConfigEnv(text);
 }

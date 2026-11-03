@@ -1,5 +1,5 @@
 /**
- * `anona record`, `anona retrieve` and `anona reason`: the non-MCP path, plus
+ * `anona-memory record`, `anona-memory retrieve` and `anona-memory reason`: the non-MCP path, plus
  * the credential, transport and error rendering every data command shares.
  * Mirrors anona/cli/memory.py.
  *
@@ -9,7 +9,7 @@
  *
  * Three credentials work here, highest first. An API key -- from `--api-key`,
  * ANONA_API_KEY or ~/.anona/config.env, resolved in credential.ts and bound to
- * a host in target.ts `forApiKey`. Then the command-line login (`anona login
+ * a host in target.ts `forApiKey`. Then the command-line login (`anona-memory login
  * --cli`, ~/.anona/cli-credentials.json), refreshed when due and once more
  * after a 401. Both reach an account, which can hold many spaces with none
  * implied, so both need a space named. Last, the stored temporary-profile
@@ -62,9 +62,9 @@ const KEY_ROUTE =
   "~/.anona/config.env (create a key in the dashboard under API keys)";
 
 const NO_CREDENTIAL =
-  "anona: no credential. Run `anona login --cli` to sign in, or use " +
+  "anona-memory: no credential. Run `anona-memory login --cli` to sign in, or use " +
   `${KEY_ROUTE};\n` +
-  "or run `anona start` for a temporary profile with no account.";
+  "or run `anona-memory start` for a temporary profile with no account.";
 
 // --- transport ----------------------------------------------------------------
 //
@@ -157,7 +157,7 @@ export function retryingFetch(stderr: DataIO["stderr"], inner: typeof fetch = gl
           : Math.min(0.5 * 2 ** attempt + Math.random() * 0.25, MAX_WAIT_SECONDS);
       try {
         const why = status === 429 ? "rate limited" : `server error ${status}`;
-        notice({ stderr }, `anona: ${why}, retrying in ${delay.toFixed(0)} s (${attempt + 1}/${maxRetries})`);
+        notice({ stderr }, `anona-memory: ${why}, retrying in ${delay.toFixed(0)} s (${attempt + 1}/${maxRetries})`);
       } catch {
         /* a notice must never fail the request it describes */
       }
@@ -230,12 +230,12 @@ async function renewCli(io: DataIO, rejected: string): Promise<string | number> 
   } catch (e) {
     if (e instanceof NotLoggedIn) {
       io.stderr.write(
-        "anona: the server refused the command-line login and it could not be renewed. " +
-          "Run `anona login --cli` to sign in again.\n",
+        "anona-memory: the server refused the command-line login and it could not be renewed. " +
+          "Run `anona-memory login --cli` to sign in again.\n",
       );
       return AUTH_EXIT;
     }
-    io.stderr.write(`anona: could not renew the command-line login (${errorName(e)}).\n`);
+    io.stderr.write(`anona-memory: could not renew the command-line login (${errorName(e)}).\n`);
     return refreshExit(e);
   }
 }
@@ -249,10 +249,10 @@ async function cliBearer(io: DataIO, space: string | undefined): Promise<Bearer 
     token = await accessToken({ file: cliCredentialsPath(), relogin: CLI_RELOGIN });
   } catch (e) {
     if (e instanceof NotLoggedIn) {
-      io.stderr.write(`anona: the command-line login could not be renewed. ${e.message}\n`);
+      io.stderr.write(`anona-memory: the command-line login could not be renewed. ${e.message}\n`);
       return AUTH_EXIT;
     }
-    io.stderr.write(`anona: could not refresh the command-line login (${errorName(e)}).\n`);
+    io.stderr.write(`anona-memory: could not refresh the command-line login (${errorName(e)}).\n`);
     return refreshExit(e);
   }
   return { token, space, renew: (rejected) => renewCli(io, rejected) };
@@ -277,16 +277,16 @@ export async function tokenAndSpace(io: DataIO, space: string | undefined): Prom
     // first -- rotating a token only to refuse it is wasted work on the
     // credential MCP clients depend on.
     io.stderr.write(
-      "anona: the stored `anona login` credential is for MCP (`anona mcp`) only; the REST API refuses it.\n" +
-        `Run \`anona login --cli\` to sign the command line in too, or use ${KEY_ROUTE};\n` +
-        "or a temporary profile (`anona start`).\n",
+      "anona-memory: the stored `anona-memory login` credential is for MCP (`anona-memory mcp`) only; the REST API refuses it.\n" +
+        `Run \`anona-memory login --cli\` to sign the command line in too, or use ${KEY_ROUTE};\n` +
+        "or a temporary profile (`anona-memory start`).\n",
     );
     return AUTH_EXIT;
   }
   const temp = liveTempToken(c);
   if (temp === null) {
     if (c.tempToken) {
-      io.stderr.write("anona: The temporary profile has expired. Run `anona start` for a new one, or `anona login`.\n");
+      io.stderr.write("anona-memory: The temporary profile has expired. Run `anona-memory start` for a new one, or `anona-memory login`.\n");
     } else {
       io.stderr.write(NO_CREDENTIAL + "\n");
     }
@@ -336,7 +336,7 @@ export async function invoke<T>(
   } catch (e) {
     if (!(e instanceof AnonaError)) throw e;
     const rc = fail(io, e, baseUrl);
-    if (e.statusCode === 401) io.stderr.write("anona: run `anona login --cli` to sign the command line in again.\n");
+    if (e.statusCode === 401) io.stderr.write("anona-memory: run `anona-memory login --cli` to sign the command line in again.\n");
     return { done: false, exit: rc };
   }
 }
@@ -414,23 +414,23 @@ export function fail(io: DataIO, e: AnonaError, baseUrl: string): number {
   if (linkRefused(e)) {
     // The link, not the API, refused: it expired or was never good. A fresh
     // `download` asks the API for a new one.
-    io.stderr.write(`anona: download link expired or refused (HTTP ${e.statusCode}); run download again.\n`);
+    io.stderr.write(`anona-memory: download link expired or refused (HTTP ${e.statusCode}); run download again.\n`);
     return exits.UNAVAILABLE;
   }
   if (isTransport(e)) {
-    io.stderr.write(`anona: could not reach ${printable(hostOf(baseUrl))}: ${printable(transportReason(e))}\n`);
+    io.stderr.write(`anona-memory: could not reach ${printable(hostOf(baseUrl))}: ${printable(transportReason(e))}\n`);
     return exits.UNAVAILABLE;
   }
   const rc = exits.forStatus(e.statusCode);
   if (truthy(e.code)) {
     // `code` is server-supplied text on its way to a terminal like the rest.
-    let line = `anona: ${printable(e.code)}: ${printable(messageOf(e))}`;
+    let line = `anona-memory: ${printable(e.code)}: ${printable(messageOf(e))}`;
     const requestId = e.requestId || requestIdOf(e);
     if (requestId) line += ` (request_id ${printable(requestId)})`;
     io.stderr.write(line + "\n");
     return rc;
   }
-  io.stderr.write(`anona: the server answered HTTP ${e.statusCode}: ${printable(messageOf(e))}\n`);
+  io.stderr.write(`anona-memory: the server answered HTTP ${e.statusCode}: ${printable(messageOf(e))}\n`);
   return rc;
 }
 
@@ -443,7 +443,7 @@ export function fail(io: DataIO, e: AnonaError, baseUrl: string): number {
 function rejectEmpty(io: DataIO, what: string, value: string): number | null {
   if (value.trim()) return null;
   io.stderr.write(
-    `anona: the ${what} is empty. Nothing was sent -- the server rejects an empty ${what}, ` +
+    `anona-memory: the ${what} is empty. Nothing was sent -- the server rejects an empty ${what}, ` +
       "and the request would still be billed.\n",
   );
   return USAGE_EXIT;
@@ -462,7 +462,7 @@ export async function readAll(stream: Readable): Promise<string> {
  */
 export async function readContent(io: DataIO, positional: string | undefined, path: string | undefined): Promise<string | number> {
   if (positional !== undefined && path !== undefined) {
-    io.stderr.write("anona: give the content or --file, not both. Nothing was sent.\n");
+    io.stderr.write("anona-memory: give the content or --file, not both. Nothing was sent.\n");
     return USAGE_EXIT;
   }
   if (path !== undefined) {
@@ -471,12 +471,12 @@ export async function readContent(io: DataIO, positional: string | undefined, pa
     } catch (e) {
       // Redacted as well as sanitized: a key pasted into the wrong flag would
       // otherwise be echoed straight back.
-      io.stderr.write(`anona: could not read ${printable(redact(path))}: ${readErrorName(e)}. Nothing was sent.\n`);
+      io.stderr.write(`anona-memory: could not read ${printable(redact(path))}: ${readErrorName(e)}. Nothing was sent.\n`);
       return USAGE_EXIT;
     }
   }
   if (positional === undefined) {
-    io.stderr.write("anona: nothing to record. Pass the content, `-` to read it from stdin, or --file PATH. Nothing was sent.\n");
+    io.stderr.write("anona-memory: nothing to record. Pass the content, `-` to read it from stdin, or --file PATH. Nothing was sent.\n");
     return USAGE_EXIT;
   }
   if (positional === "-") return readAll(io.stdin);
@@ -643,7 +643,7 @@ export async function afterQueued(
     if (o.asJson) emitJson(io, result);
     else if (ids.length) {
       io.stdout.write(`Queued in space '${sp}'. Job: ${ids.map(printable).join(", ")}\n`);
-      io.stdout.write(`Check it with \`anona jobs get ${printable(ids[0])} --space ${sp}\`.\n`);
+      io.stdout.write(`Check it with \`anona-memory jobs get ${printable(ids[0])} --space ${sp}\`.\n`);
     } else {
       io.stdout.write(`Queued in space '${sp}'.\n`);
     }
@@ -658,13 +658,13 @@ export async function afterQueued(
   else docs.forEach((doc, n) => jobs.render(io, doc, ids[n]));
   if (rc === exits.STILL_RUNNING) {
     io.stderr.write(
-      "anona: still running when --wait-timeout ran out; " +
-        `check later with \`anona jobs get ${printable(ids[0])} --space ${sp}\`.\n`,
+      "anona-memory: still running when --wait-timeout ran out; " +
+        `check later with \`anona-memory jobs get ${printable(ids[0])} --space ${sp}\`.\n`,
     );
   } else if (rc === exits.NOT_FOUND) {
     io.stderr.write(jobs.NOT_FOUND_LINE + "\n");
   } else if (rc === NOTHING_EXTRACTED_EXIT) {
-    io.stderr.write(`anona: nothing was stored in space '${sp}': no facts could be extracted.\n`);
+    io.stderr.write(`anona-memory: nothing was stored in space '${sp}': no facts could be extracted.\n`);
   }
   return rc;
 }
@@ -686,7 +686,7 @@ export async function readBatch(io: DataIO, path: string): Promise<Record<string
   try {
     text = path === "-" ? await readAll(io.stdin) : readUtf8(path);
   } catch (e) {
-    io.stderr.write(`anona: could not read ${printable(redact(path))}: ${readErrorName(e)}. Nothing was sent.\n`);
+    io.stderr.write(`anona-memory: could not read ${printable(redact(path))}: ${readErrorName(e)}. Nothing was sent.\n`);
     return USAGE_EXIT;
   }
   const items: Record<string, unknown>[] = [];
@@ -717,18 +717,18 @@ export async function readBatch(io: DataIO, path: string): Promise<Record<string
       }
     }
     if (why !== null) {
-      io.stderr.write(`anona: --batch line ${n + 1}: ${why}. Nothing was sent.\n`);
+      io.stderr.write(`anona-memory: --batch line ${n + 1}: ${why}. Nothing was sent.\n`);
       return USAGE_EXIT;
     }
     items.push(item as Record<string, unknown>);
   }
   if (!items.length) {
-    io.stderr.write("anona: --batch holds no items. Nothing was sent.\n");
+    io.stderr.write("anona-memory: --batch holds no items. Nothing was sent.\n");
     return USAGE_EXIT;
   }
   if (items.length > BATCH_MAX_ITEMS) {
     io.stderr.write(
-      `anona: --batch holds ${items.length} items; the API takes at most ${BATCH_MAX_ITEMS} per call. Split the file. Nothing was sent.\n`,
+      `anona-memory: --batch holds ${items.length} items; the API takes at most ${BATCH_MAX_ITEMS} per call. Split the file. Nothing was sent.\n`,
     );
     return USAGE_EXIT;
   }
@@ -875,7 +875,7 @@ export async function runReason(
   const bearer = got;
   const sp = bearer.space as string;
   // A synthesis is an agent loop over the space, not a lookup: it runs tens of
-  // seconds and sometimes past a minute. stderr, so `anona reason ... >
+  // seconds and sometimes past a minute. stderr, so `anona-memory reason ... >
   // answer.md` still gets only the answer.
   notice(io, `Reasoning over space '${printable(sp)}'. This usually takes under a minute.`);
   // The pip package drops every falsy field from this body.

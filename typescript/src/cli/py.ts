@@ -1,6 +1,6 @@
 /**
  * Small pieces of Python behaviour the data commands have to reproduce, so
- * that `anona` from npm and `anona` from pip print the same thing for the same
+ * that `anona-memory` from npm and `anona-memory` from pip print the same thing for the same
  * response: the terminal sanitizers, Python's truthiness and `str()`, `%.3g`,
  * and `json.dumps(ensure_ascii=True)`.
  *

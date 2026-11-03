@@ -1,4 +1,4 @@
-"""ANO-428: `anona` exits with a code that says which kind of thing happened.
+"""ANO-428: `anona-memory` exits with a code that says which kind of thing happened.
 
 Agents script on exit codes and parse stderr, so "it failed" is not an answer:
 a refused connection, an input the server will reject, an expired credential
@@ -51,7 +51,7 @@ def test_version_is_a_successful_answer_on_stdout(tmp_path):
     ok(_run("""
         rc, out, err = run_main(["--version"])
         assert rc == 0, (rc, err)
-        assert out.startswith("anona "), out
+        assert out.startswith("anona-memory "), out
         assert err == "", err
         print("OK")
     """, tmp_path))
@@ -65,7 +65,7 @@ def test_version_reports_the_code_that_is_running(tmp_path):
     ok(_run("""
         import anona
         rc, out, err = run_main(["--version"])
-        assert out.strip() == f"anona {anona.__version__}", (out, anona.__version__)
+        assert out.strip() == f"anona-memory {anona.__version__}", (out, anona.__version__)
         print("OK")
     """, tmp_path))
 
@@ -74,7 +74,7 @@ def test_help_is_a_successful_answer(tmp_path):
     ok(_run("""
         rc, out, err = run_main(["--help"])
         assert rc == 0, rc
-        assert "usage: anona" in out, out
+        assert "usage: anona-memory" in out, out
         print("OK")
     """, tmp_path))
 
@@ -107,7 +107,7 @@ def test_status_accepts_the_base_url_it_is_already_on(tmp_path):
 
 def test_an_expired_temp_profile_is_not_success(tmp_path):
     # The profile and everything in it are gone. Exit 0 is how a scripted
-    # `anona status && anona record ...` walked into a write with no
+    # `anona-memory status && anona record ...` walked into a write with no
     # credential behind it.
     ok(_run("""
         creds(temp_offset=-3600)
@@ -150,15 +150,18 @@ def test_the_space_flag_does_not_claim_to_be_required_when_signed_in(tmp_path):
         # The states that need a space are an API key and the command-line
         # login (both reach an account); a temporary profile still has its
         # one space. Help text wraps.
-        flat = " ".join(out.split())
-        assert "Required with an API key or `anona login` unless ANONA_SPACE_ID is set" in flat, flat
+        # argparse's textwrap treats the hyphen in "anona-memory" as a break
+        # point, so a wrap can land there across a line break; collapsing on
+        # whitespace alone then reinserts a space at the hyphen.
+        flat = " ".join(out.split()).replace("anona- memory", "anona-memory")
+        assert "Required with an API key or `anona-memory login` unless ANONA_SPACE_ID is set" in flat, flat
         assert "a temporary profile uses `default`" in flat, flat
         print("OK")
     """, tmp_path))
 
 
 def test_start_refusing_to_create_a_second_profile_is_not_success(tmp_path):
-    # Nothing was created. A script running `anona start` to guarantee itself
+    # Nothing was created. A script running `anona-memory start` to guarantee itself
     # a fresh profile got exit 0 and a profile left over from an earlier run.
     ok(_run("""
         creds(temp_offset=3600)

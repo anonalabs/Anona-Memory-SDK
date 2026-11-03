@@ -2,7 +2,7 @@
 
 ## `--json` documents
 
-One document on stdout; nothing on stdout on failure. `anona guide --json`
+One document on stdout; nothing on stdout on failure. `anona-memory guide --json`
 carries each command's shape in `json_output`.
 
 | Command | Document |
@@ -72,7 +72,7 @@ with `--batch` (put them on each line); `--user-id` / `--agent-id` /
 
 ```bash
 split -l 100 big.jsonl part-
-for f in part-*; do anona record --batch "$f" --space S --wait --json || break; done
+for f in part-*; do anona-memory record --batch "$f" --space S --wait --json || break; done
 ```
 
 ## Retries and timeouts
@@ -88,13 +88,13 @@ they go before or after the command.
 
 ## Errors
 
-stderr: `anona: <error_code>: <message> (request_id <id>)`. Match on the code,
+stderr: `anona-memory: <error_code>: <message> (request_id <id>)`. Match on the code,
 which is lowercase snake_case: `space_not_found`, `space_ambiguous`,
 `space_owner_only`, `space_read_only`, `temp_profile_single_space`, `job_not_found`,
 `validation_error`, `reserved_tag`, `invalid_scope`, `rate_limited`,
 `credits_exhausted`, `reason_timeout`, `write_status_unknown`,
 `unsupported_file_type`, `file_too_large`, `session_required`. A failure to connect is
-`anona: could not reach <host>: ...`, never an HTTP status.
+`anona-memory: could not reach <host>: ...`, never an HTTP status.
 
 `temp_profile_single_space` (exit `4`): a temporary profile has only the
 `default` space; it cannot create spaces or write elsewhere. `credits_exhausted`
@@ -106,4 +106,4 @@ landed**: read back before retrying. `reason_timeout` means ask something
 narrower, or retry with `--depth fast`.
 
 `session_required` (exit `4`): the command reads the control plane and an API
-key or temporary profile cannot. Run `anona login --cli`.
+key or temporary profile cannot. Run `anona-memory login --cli`.

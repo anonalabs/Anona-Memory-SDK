@@ -1,10 +1,10 @@
-"""`anona login`: one approval for the command line and `anona mcp`.
+"""`anona-memory login`: one approval for the command line and `anona-memory mcp`.
 
-`anona login` runs ONE browser approval, scope `cli`, stored in
+`anona-memory login` runs ONE browser approval, scope `cli`, stored in
 `cli-credentials.json` (`typ=cli_access`). The gateway accepts that token on
-the REST data plane and on `/mcp`, so the data commands and `anona mcp` both
-present it. `anona login --mcp` still mints a separate MCP-only token
-(`credentials.json`, `typ=mcp_access`, refused on REST), which `anona mcp`
+the REST data plane and on `/mcp`, so the data commands and `anona-memory mcp` both
+present it. `anona-memory login --mcp` still mints a separate MCP-only token
+(`credentials.json`, `typ=mcp_access`, refused on REST), which `anona-memory mcp`
 uses only when there is no command-line login for its deployment. A
 deployment that will not grant `cli` gets the MCP approval instead.
 
@@ -246,7 +246,7 @@ def test_login_is_one_approval_into_the_command_line_file(tmp_path):
         assert typ_of(c["access_token"]) == "cli_access" and c["base_url"] == BASE, c
         assert sorted(c) == ["access_token", "base_url", "client_id", "expires_at", "refresh_token"], c
         assert mode(CLI_FILE) == 0o600 and not MCP_FILE.exists()
-        assert "`anona mcp`" in out, out
+        assert "`anona-memory mcp`" in out, out
         assert not secrets_in(out + err), secrets_in(out + err)
         print("OK")
     """, tmp_path))
@@ -422,7 +422,7 @@ def test_mcp_login_alone_is_refused_and_points_at_login_cli(tmp_path):
         seed_mcp()
         rc, out, err = run_main(["record", "a fact", "--space", "work"])
         assert rc == 4 and DATA == [], (rc, DATA)
-        assert "anona login --cli" in err, err
+        assert "anona-memory login --cli" in err, err
         print("OK")
     """, tmp_path))
 
@@ -494,7 +494,7 @@ def test_a_401_whose_refresh_also_fails_exits_4_and_says_login_cli(tmp_path):
         MODE["refresh"] = "refuse"
         rc, out, err = run_main(["record", "a fact", "--space", "work"])
         assert rc == 4, (rc, err)
-        assert "anona login --cli" in err, err
+        assert "anona-memory login --cli" in err, err
         assert len(DATA) == 1, DATA  # no retry without a new token
         assert not secrets_in(out + err)
         print("OK")
@@ -511,7 +511,7 @@ def test_a_401_twice_exits_4_and_says_login_cli(tmp_path):
         globals()["mint"] = dead_mint
         rc, out, err = run_main(["record", "a fact", "--space", "work"])
         assert rc == 4 and len(DATA) == 2, (rc, DATA, err)
-        assert "anona login --cli" in err, err
+        assert "anona-memory login --cli" in err, err
         print("OK")
     """, tmp_path))
 
@@ -524,7 +524,7 @@ def test_the_cli_login_is_pinned_to_its_deployment(tmp_path):
         seed_cli()
         rc, out, err = run_main(["record", "a fact", "--space", "work", "--base-url", "https://other.example"])
         assert rc == 4 and DATA == [], (rc, DATA)
-        assert "anona login --base-url https://other.example" in err, err
+        assert "anona-memory login --base-url https://other.example" in err, err
         os.environ["ANONA_BASE_URL"] = "https://other.example"
         rc, out, err = run_main(["retrieve", "q", "--space", "work"])
         assert rc == 4 and DATA == [], (rc, DATA)
@@ -585,7 +585,7 @@ def test_logout_cli_needs_no_force_beside_a_live_temp_profile(tmp_path):
         seed_cli()
         rc, out, err = run_main(["logout"])
         assert rc == 1 and CLI_FILE.exists() and MCP_FILE.exists(), "a refused logout removes nothing"
-        assert "anona logout --cli" in err, err
+        assert "anona-memory logout --cli" in err, err
         rc, out, err = run_main(["logout", "--cli"])
         assert rc == 0 and not CLI_FILE.exists() and MCP_FILE.exists(), (rc, err)
         print("OK")
@@ -608,7 +608,7 @@ def test_status_reports_both_credentials_and_no_secret(tmp_path):
         rc, out, err = run_main(["status"])
         assert rc == 0, (rc, out, err)
         assert "Command-line login for " + BASE in out, out
-        assert "`anona mcp`" in out, out
+        assert "`anona-memory mcp`" in out, out
         assert "An MCP-only login for " + BASE + " is also stored" in out, out
         assert not secrets_in(out + err) and "cid-" not in out, out
         print("OK")
@@ -620,9 +620,9 @@ def test_status_with_only_the_cli_login_is_success(tmp_path):
         seed_cli()
         rc, out, err = run_main(["status"])
         assert rc == 0, (rc, out)
-        assert "Command-line login" in out and "`anona mcp`" in out, out
+        assert "Command-line login" in out and "`anona-memory mcp`" in out, out
         # One login covers MCP: nothing tells the user to sign in again for it.
-        assert "anona login --mcp" not in out, out
+        assert "anona-memory login --mcp" not in out, out
         print("OK")
     """, tmp_path))
 
@@ -634,8 +634,8 @@ def test_status_says_an_api_key_shadows_the_cli_login(tmp_path):
         rc, out, err = run_main(["status"])
         assert rc == 0, (rc, out)
         assert "not by the data commands while an API key is set" in out, out
-        assert "used by `anona mcp`" in out, out
-        assert "No `anona login` credential is stored for MCP" not in out, out
+        assert "used by `anona-memory mcp`" in out, out
+        assert "No `anona-memory login` credential is stored for MCP" not in out, out
         assert "FROMENVxxxx" not in out
         print("OK")
     """, tmp_path))
@@ -651,7 +651,7 @@ def test_start_refuses_beside_a_cli_login(tmp_path):
     """, tmp_path))
 
 
-# --- which credential `anona mcp` presents ------------------------------------
+# --- which credential `anona-memory mcp` presents ------------------------------------
 
 
 def test_anona_mcp_presents_the_command_line_login(tmp_path):

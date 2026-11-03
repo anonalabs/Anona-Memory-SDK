@@ -323,10 +323,10 @@ def test_server_errors_map_to_exit_codes(tmp_path):
                     assert rc == want, (argv, status, rc, out, err)
                     assert len(SEEN) > n, (argv, "nothing sent")
                     assert out == "", (argv, status, out)
-                    assert err.startswith("anona: "), (argv, err)
+                    assert err.startswith("anona-memory: "), (argv, err)
         MODE["status"] = 404
         _, _, err = sent(["memories", "history", "nope"] + AUTH, want_rc=5)
-        assert err.strip() == "anona: not_found: Not found. (request_id req_4)", err
+        assert err.strip() == "anona-memory: not_found: Not found. (request_id req_4)", err
         print("OK")
     """, tmp_path))
 
@@ -338,7 +338,7 @@ def test_jobs_get_on_a_job_the_space_does_not_hold_exits_5(tmp_path):
             rc, out, err = run_main(["jobs", "get", "job-0001-bbbb"] + AUTH + extra)
             assert rc == 5, (rc, out, err)
             assert out == "", out
-            assert err.strip() == "anona: job_not_found: No job with that id in this space.", err
+            assert err.strip() == "anona-memory: job_not_found: No job with that id in this space.", err
         print("OK")
     """, tmp_path))
 

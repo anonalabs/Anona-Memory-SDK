@@ -146,7 +146,7 @@ class H(BaseHTTPRequestHandler):
                      json.loads(raw) if raw else None, self.headers.get("authorization")))
         if MODE["status"] == 401:
             status, out = 401, {"error": {"code": "session_required",
-                                          "message": "This needs a dashboard session or `anona login --cli`; an API key or temporary profile cannot use it."}}
+                                          "message": "This needs a dashboard session or `anona-memory login --cli`; an API key or temporary profile cannot use it."}}
         else:
             status, out = canned(self.command, parts.path)
         self.send_response(status)
@@ -399,7 +399,7 @@ def test_dashboard_only_verbs_send_nothing_and_exit_4(tmp_path):
                 rc, out, err = run_main([cmd, act] + extra + KEYED)
                 assert rc == 4, (cmd, act, rc, out, err)
                 assert out == "", (cmd, act, out)
-                assert err == f"anona: {what} is done in the dashboard: {BASE_URL}{path}\\n", (cmd, act, err)
+                assert err == f"anona-memory: {what} is done in the dashboard: {BASE_URL}{path}\\n", (cmd, act, err)
                 assert len(SEEN) == n, (cmd, act, "sent a request")
         # Nested under `spaces members`; SPACE and MEMBER_ID still parse.
         # With a SPACE the line names that space's page, its id escaped as a
@@ -411,7 +411,7 @@ def test_dashboard_only_verbs_send_nothing_and_exit_4(tmp_path):
             rc, out, err = run_main(["spaces", "members", "remove"] + extra + KEYED)
             assert rc == 4, (extra, rc, out, err)
             assert out == "", (extra, out)
-            assert err == f"anona: removing a space member is done in the dashboard: {BASE_URL}/dashboard/spaces{page}\\n", err
+            assert err == f"anona-memory: removing a space member is done in the dashboard: {BASE_URL}/dashboard/spaces{page}\\n", err
             assert len(SEEN) == n, (extra, "sent a request")
         # `projects create` is gone: no dashboard page makes a project.
         rc, out, err = run_main(["projects", "create", "Docs"] + KEYED)
@@ -536,7 +536,7 @@ def test_an_expired_download_link_is_exit_7_not_the_api_status(tmp_path):
             # renewal or retry against the API.
             assert rc == 7, (status, rc, o, e)
             assert o == "", o
-            assert e == f"anona: download link expired or refused (HTTP {{status}}); run download again.\\n", e
+            assert e == f"anona-memory: download link expired or refused (HTTP {{status}}); run download again.\\n", e
             assert [p for _, p, *_ in SEEN[n:]] == ["/v1/spaces/s/exports/j1/download", "/blob/j1"], SEEN[n:]
             assert not Path(out).exists()
         print("OK")
@@ -564,8 +564,8 @@ def test_session_required_is_exit_4(tmp_path):
             rc, out, err = run_main(argv + KEYED)
             assert rc == 4, (argv, rc, out, err)
             assert out == "", (argv, out)
-            assert err.startswith("anona: session_required: "), (argv, err)
-            assert "anona login --cli" in err, (argv, err)
+            assert err.startswith("anona-memory: session_required: "), (argv, err)
+            assert "anona-memory login --cli" in err, (argv, err)
             assert "Traceback" not in err
             # Not pre-refused: the server was asked, and decides.
             assert len(SEEN) == n + 1, (argv, SEEN[n:])

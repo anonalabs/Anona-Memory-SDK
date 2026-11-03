@@ -24,7 +24,7 @@ import { DEFAULT_WAIT, needsSpace, precheck, runVerb, type Verb } from "./verbs.
 
 /** Sanitized like server text: the URL in a refusal came from a flag or a variable. */
 function refuseKey(io: DataIO, e: TargetError): number {
-  io.stderr.write(`anona: ${printable(redact(e.message))}\n`);
+  io.stderr.write(`anona-memory: ${printable(redact(e.message))}\n`);
   return AUTH_EXIT;
 }
 
@@ -68,8 +68,8 @@ export function dataCredential(
         space = findSpace(space, config);
         if (space === undefined) {
           io.stderr.write(
-            "anona: name a space. Pass --space, or set ANONA_SPACE_ID " +
-              "(in the environment or ~/.anona/config.env); `anona spaces list` shows yours. Nothing was sent.\n",
+            "anona-memory: name a space. Pass --space, or set ANONA_SPACE_ID " +
+              "(in the environment or ~/.anona/config.env); `anona-memory spaces list` shows yours. Nothing was sent.\n",
           );
           return USAGE_EXIT;
         }
@@ -86,7 +86,7 @@ export function dataCredential(
     space = findSpace(space, config);
     if (space === undefined) {
       io.stderr.write(
-        "anona: an API key needs a space. Pass --space, or set ANONA_SPACE_ID " +
+        "anona-memory: an API key needs a space. Pass --space, or set ANONA_SPACE_ID " +
           "(in the environment or ~/.anona/config.env). Nothing was sent.\n",
       );
       return USAGE_EXIT;
@@ -101,7 +101,7 @@ export function dataCredential(
 /** record's flag combinations that cannot work: exit 2, nothing sent. */
 function recordUsage(io: DataIO, args: Record<string, unknown>): number | null {
   const no = (message: string) => {
-    io.stderr.write(`anona: ${message} Nothing was sent.\n`);
+    io.stderr.write(`anona-memory: ${message} Nothing was sent.\n`);
     return USAGE_EXIT;
   };
   if (args.batch !== undefined) {
@@ -158,11 +158,11 @@ export async function runData(
       }
     }
     if (command === "retrieve" && args.tags_match !== undefined && args.tags === undefined) {
-      io.stderr.write("anona: --tags-match needs --tags; there is nothing for it to match. Nothing was sent.\n");
+      io.stderr.write("anona-memory: --tags-match needs --tags; there is nothing for it to match. Nothing was sent.\n");
       return USAGE_EXIT;
     }
     if (command === "retrieve" && args.max_tokens !== undefined && args.format !== "block") {
-      io.stderr.write("anona: --max-tokens needs --format block. Nothing was sent.\n");
+      io.stderr.write("anona-memory: --max-tokens needs --format block. Nothing was sent.\n");
       return USAGE_EXIT;
     }
     const got = dataCredential(io, args, baseUrl, requested, true);

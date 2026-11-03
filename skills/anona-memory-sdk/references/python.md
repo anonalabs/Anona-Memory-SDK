@@ -1,6 +1,6 @@
 # Python client
 
-`pip install -U anona`. Requires Python 3.10+, depends only on `httpx`.
+`pip install -U anona-memory`. Requires Python 3.10+, depends only on `httpx`.
 
 ```python
 from anona import AnonaClient, AnonaError
@@ -116,4 +116,4 @@ bridge = MemoryBridge(api_key="anona_live_...", space_id="my-space", user_id="cu
 Then hand the bridge to the adapter for LangChain, CrewAI, LlamaIndex, Google
 ADK, Microsoft Agent Framework or Strands. Install the matching extra first.
 `anona.integrations.litellm` patches LiteLLM so any model call it makes carries
-memory. `anona[mcp]` ships the `anona-mcp` stdio server.
+memory. `anona-memory[mcp]` ships the `anona-memory-mcp` stdio server.

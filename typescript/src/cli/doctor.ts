@@ -1,9 +1,9 @@
 /**
- * `anona doctor`: what this install would do, and whether it would work.
+ * `anona-memory doctor`: what this install would do, and whether it would work.
  * Mirrors anona/cli/doctor.py; the report reports Node where pip's reports
  * Python, and is otherwise the same document.
  *
- * Answers, in order: which runtime and which `anona` are running, which
+ * Answers, in order: which runtime and which `anona-memory` are running, which
  * profile and directory, which credential a data command would use and why the
  * others lost, which server it talks to, whether that server's /health
  * answers, whether the space a data command would use is reachable, and how
@@ -36,9 +36,9 @@ function credentialInfo(apiKeyFlag: string | undefined, baseUrlFlag: string | un
   const cli = loadCredentials(cliCredentialsPath());
   const held = loadCredentials();
   const others: string[] = [];
-  if (cli !== null && isSignedIn(cli)) others.push("command-line login (`anona login --cli`)");
-  if (held !== null && liveTempToken(held) !== null) others.push("temporary profile (`anona start`)");
-  if (held !== null && isSignedIn(held)) others.push("MCP login (used only by `anona mcp`)");
+  if (cli !== null && isSignedIn(cli)) others.push("command-line login (`anona-memory login --cli`)");
+  if (held !== null && liveTempToken(held) !== null) others.push("temporary profile (`anona-memory start`)");
+  if (held !== null && isSignedIn(held)) others.push("MCP login (used only by `anona-memory mcp`)");
   const pinned = (info: Info, resolve: () => string): Info => {
     try {
       info.base_url = resolve();
@@ -100,7 +100,7 @@ function credentialInfo(apiKeyFlag: string | undefined, baseUrlFlag: string | un
     source: null,
     why,
     base_url: null,
-    error: "no credential: run `anona login --cli`, set ANONA_API_KEY, or `anona start`",
+    error: "no credential: run `anona-memory login --cli`, set ANONA_API_KEY, or `anona-memory start`",
     shadowed: others,
   };
 }
@@ -187,7 +187,7 @@ async function spaceInfo(
 const isNumber = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 
 /**
- * The credit balance `anona usage` reports, read the same way. Never fails
+ * The credit balance `anona-memory usage` reports, read the same way. Never fails
  * doctor: a usage call that does not answer is an unknown balance.
  */
 async function creditsInfo(io: DataIO, baseUrl: string, token: string): Promise<Info> {
@@ -267,7 +267,7 @@ export async function runDoctor(
   }
   const p = printable;
   const out = (line: string) => void io.stdout.write(line + "\n");
-  out(`anona ${p(version)} on Node ${p(report.node)} (${p(report.executable)})`);
+  out(`anona-memory ${p(version)} on Node ${p(report.node)} (${p(report.executable)})`);
   out(`Profile: ${p(report.profile)} (${p(report.profile_dir)})`);
   if (cred.kind === null) {
     out(`Credential: none -- ${p(cred.why)}.`);
@@ -300,6 +300,6 @@ export async function runDoctor(
       out("  Problem: credits exhausted; writes and reads will be refused with exit 6.");
     } else out(`Credits: ${p(credits.remaining)} remaining of ${limit}.`);
   }
-  out(rc === exits.OK ? "All good." : `Problems found (exit ${rc}; see \`anona guide\` for exit codes).`);
+  out(rc === exits.OK ? "All good." : `Problems found (exit ${rc}; see \`anona-memory guide\` for exit codes).`);
   return rc;
 }

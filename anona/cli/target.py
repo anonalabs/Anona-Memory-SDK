@@ -7,7 +7,7 @@ a page it read -- sent the token to whoever ran that server. A temp
 token has full data-plane access and cannot be rotated.
 
 So: naming a different deployment than the stored credential's is refused
-rather than obeyed (`anona login --base-url` is how you switch), and a request
+rather than obeyed (`anona-memory login --base-url` is how you switch), and a request
 carrying or receiving a credential must be https://, except to loopback.
 The login path already pins the issuer to the host it asked (oauth.discover);
 this is the same rule for everything else.
@@ -24,7 +24,7 @@ _LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
 class TargetError(Exception):
-    """Printed as `anona: <message>`; the command exits without a request
+    """Printed as `anona-memory: <message>`; the command exits without a request
     (1, or 4 from record/retrieve/reason, where a refused host is an auth
     failure)."""
 
@@ -63,7 +63,7 @@ def resolve(requested: str | None, stored_base_url: str | None) -> str:
         if requested is not None and not _same(requested, stored_base_url):
             raise TargetError(
                 f"the stored credential is for {stored_base_url}, not {requested}. "
-                f"Run `anona login --base-url {requested}` to switch."
+                f"Run `anona-memory login --base-url {requested}` to switch."
             )
         base = stored_base_url
     else:
@@ -77,7 +77,7 @@ def resolve(requested: str | None, stored_base_url: str | None) -> str:
 # A key is not tied to a deployment the way a stored login is -- nothing in it
 # says which server minted it -- so the rule above cannot apply. The risk is
 # the same one, though: a key sitting in the environment or in config.env is
-# picked up by every `anona` invocation, so a `--base-url` that an agent was
+# picked up by every `anona-memory` invocation, so a `--base-url` that an agent was
 # talked into typing would carry it to whoever runs that host. So a key only
 # goes to the Anona hosts, unless the server was named in the SAME place the
 # key came from: both on the command line, both in the environment, or both

@@ -1,4 +1,4 @@
-"""`anona login`: open a browser, catch the redirect on loopback, store a token.
+"""`anona-memory login`: open a browser, catch the redirect on loopback, store a token.
 
 RFC 8252 native-app flow. Nothing in here prints or logs a token, an
 authorization code or the PKCE verifier; the authorization URL is the one
@@ -106,7 +106,7 @@ def _await_callback(server: HTTPServer, timeout: float = TIMEOUT_SECONDS) -> str
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise Abort(
-                f"Timed out after {int(timeout)}s waiting for the browser. Run `anona login` again."
+                f"Timed out after {int(timeout)}s waiting for the browser. Run `anona-memory login` again."
             )
         server.timeout = remaining
         server.handle_request()
@@ -143,7 +143,7 @@ def _exchange(
     except httpx.HTTPError as exc:
         raise Abort(f"Could not reach the token endpoint: {type(exc).__name__}.") from exc
     if resp.status_code != 200:
-        raise Abort(f"The token endpoint refused the code ({resp.status_code}). Run `anona login` again.")
+        raise Abort(f"The token endpoint refused the code ({resp.status_code}). Run `anona-memory login` again.")
     try:
         body = resp.json()
     except ValueError:
@@ -196,9 +196,9 @@ def _register(
     code is redeemed — so closing the browser after clicking Allow, a
     `_await_callback` timeout, or a dropped `_exchange` all leave the profile
     claimed server-side and the dead token still on disk with a future
-    `temp_expires_at`. Without this, every later `anona login` resent that
-    token, took a 400, and aborted; `anona start` refused to make another
-    because one "already exists"; and the only exit was `anona logout --force`,
+    `temp_expires_at`. Without this, every later `anona-memory login` resent that
+    token, took a 400, and aborted; `anona-memory start` refused to make another
+    because one "already exists"; and the only exit was `anona-memory logout --force`,
     which nothing in either message suggests. The account was locked out of its
     own CLI, permanently, by succeeding.
 
@@ -233,7 +233,7 @@ def _register(
 
 class ScopeRefused(Abort):
     """The deployment will not grant the command-line scope. Not fatal to a
-    plain `anona login`: it falls back to the MCP approval."""
+    plain `anona-memory login`: it falls back to the MCP approval."""
 
 
 # What `_approve` returns, instead of 1, when the deployment will not grant the
@@ -351,7 +351,7 @@ def _approve(
                 # the server has already told us that token opens nothing, so
                 # writing it back only reproduces the dead end on the next run.
                 # The command-line file never holds a profile at all: it stays
-                # in the MCP file, where `anona start` put it.
+                # in the MCP file, where `anona-memory start` put it.
                 if not cli and not claimed and not dropped_temp:
                     # Carried across, not dropped. Only a server-confirmed
                     # claim spends the token; a login that claimed nothing —
@@ -365,7 +365,7 @@ def _approve(
                     # to the deployment just signed in to: the same match
                     # `_live_temp_token` makes. Carrying it across deployments
                     # would retag another host's token with this base URL and
-                    # then present it there. `anona login` already announces
+                    # then present it there. `anona-memory login` already announces
                     # that a credential for another deployment is replaced.
                     stored = store.load()
                     if stored is not None and stored.base_url.rstrip(
@@ -378,14 +378,14 @@ def _approve(
                 else:
                     store.save(creds)
         except OSError as exc:
-            again = "anona login --cli" if cli else "anona login"
+            again = "anona-memory login --cli" if cli else "anona-memory login"
             raise Abort(
                 f"Approval succeeded, but the credential could not be saved to "
                 f"{where}: {exc.strerror or type(exc).__name__}. "
                 f"Fix that and run `{again}` again."
             ) from exc
     except (Abort, oauth.OAuthError) as exc:
-        print(f"anona login: {exc}", file=sys.stderr)
+        print(f"anona-memory login: {exc}", file=sys.stderr)
         return _REFUSED if fallback and isinstance(exc, ScopeRefused) else 1
     finally:
         if server is not None:
@@ -393,7 +393,7 @@ def _approve(
     if cli:
         print(
             "Signed in. The command line (record, retrieve, reason and the other "
-            "data commands) and `anona mcp` now use this login."
+            "data commands) and `anona-memory mcp` now use this login."
         )
     else:
         print("Signed in. MCP clients can now connect without an API key.")
@@ -401,26 +401,26 @@ def _approve(
 
 
 def run_login(base_url: str, open_browser: bool = True) -> int:
-    """The MCP-only approval: `anona login --mcp`, and `anona login`'s fallback
+    """The MCP-only approval: `anona-memory login --mcp`, and `anona-memory login`'s fallback
     on a deployment without command-line tokens. Stored in `credentials.json`,
     exactly as it always was."""
     return _approve(base_url, open_browser, oauth.MCP_SCOPE)
 
 
 def run_cli_login(base_url: str, open_browser: bool = True) -> int:
-    """The command-line approval: `anona login --cli`, and what `anona login`
-    asks for. Stored in `cli-credentials.json`; `anona mcp` uses it too."""
+    """The command-line approval: `anona-memory login --cli`, and what `anona-memory login`
+    asks for. Stored in `cli-credentials.json`; `anona-memory mcp` uses it too."""
     return _approve(base_url, open_browser, oauth.CLI_SCOPE)
 
 
 def run_logins(base_url: str, open_browser: bool = True) -> int:
-    """`anona login`: one approval that signs in the command line and MCP.
+    """`anona-memory login`: one approval that signs in the command line and MCP.
 
     The command-line token is accepted on `/mcp` as well as the REST API, so
-    `anona mcp` uses it and there is no second approval. (Two approvals, one
+    `anona-memory mcp` uses it and there is no second approval. (Two approvals, one
     per token, is what this used to do; the MCP token is narrower, but both
     files sit side by side in `~/.anona`, so the split protected nothing on the
-    machine and cost a second trip to the browser.) `anona login --mcp` still
+    machine and cost a second trip to the browser.) `anona-memory login --mcp` still
     mints an MCP-only token for anyone who wants one.
 
     A deployment that predates command-line tokens refuses the scope; then the

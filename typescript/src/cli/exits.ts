@@ -1,8 +1,8 @@
 /**
- * Every exit code `anona` uses, in one place. Mirrors anona/cli/exits.py.
+ * Every exit code `anona-memory` uses, in one place. Mirrors anona/cli/exits.py.
  *
  * Agents script on exit codes, so each code names one kind of outcome and means
- * the same thing on every verb. The table is also printed by `anona guide`,
+ * the same thing on every verb. The table is also printed by `anona-memory guide`,
  * which reads it from EXIT_CODES, so the two cannot drift.
  */
 export const OK = 0;

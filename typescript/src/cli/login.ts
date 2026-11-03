@@ -1,5 +1,5 @@
 /**
- * `anona login`: open a browser, catch the redirect on loopback, store a token.
+ * `anona-memory login`: open a browser, catch the redirect on loopback, store a token.
  *
  * RFC 8252 native-app flow. Nothing in here prints or logs a token, an
  * authorization code or the PKCE verifier; the authorization URL is the one
@@ -150,7 +150,7 @@ async function awaitCallback(lb: LoopbackServer, timeoutMs: number): Promise<str
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
-      () => reject(new Abort(`Timed out after ${Math.round(timeoutMs / 1000)}s waiting for the browser. Run \`anona login\` again.`)),
+      () => reject(new Abort(`Timed out after ${Math.round(timeoutMs / 1000)}s waiting for the browser. Run \`anona-memory login\` again.`)),
       timeoutMs,
     );
   });
@@ -194,7 +194,7 @@ async function exchange(
     throw new Abort(`Could not reach the token endpoint: ${(err as Error).name}.`);
   }
   if (resp.status !== 200) {
-    throw new Abort(`The token endpoint refused the code (${resp.status}). Run \`anona login\` again.`);
+    throw new Abort(`The token endpoint refused the code (${resp.status}). Run \`anona-memory login\` again.`);
   }
   let body: unknown;
   try {
@@ -315,7 +315,7 @@ export interface LoginOptions {
   stderr?: { write(s: string): unknown };
 }
 
-/** The deployment will not grant the command-line scope. Not fatal to a plain `anona login`: it falls back to MCP. */
+/** The deployment will not grant the command-line scope. Not fatal to a plain `anona-memory login`: it falls back to MCP. */
 export class ScopeRefused extends Abort {
   constructor(message: string) {
     super(message);
@@ -413,7 +413,7 @@ async function approve(baseUrl: string, opts: LoginOptions, scope: string, fallb
         // `droppedTemp` is the third case and must not carry: the server has
         // said that token opens nothing, so writing it back only reproduces the
         // dead end on the next run. The command-line file never holds a
-        // profile: it stays in the MCP file, where `anona start` put it.
+        // profile: it stays in the MCP file, where `anona-memory start` put it.
         if (!cli && !claimed && !droppedTemp) {
           // Carried across, not dropped. Only a server-confirmed claim spends
           // the token; a login that claimed nothing leaves the stored one as it
@@ -432,12 +432,12 @@ async function approve(baseUrl: string, opts: LoginOptions, scope: string, fallb
       if (e instanceof OAuthError) throw e; // the lock timed out; not a disk fault
       throw new Abort(
         `Approval succeeded, but the credential could not be saved to ${where}: ` +
-          `${(e as NodeJS.ErrnoException).code ?? "error"}. Fix that and run \`anona login${cli ? " --cli" : ""}\` again.`,
+          `${(e as NodeJS.ErrnoException).code ?? "error"}. Fix that and run \`anona-memory login${cli ? " --cli" : ""}\` again.`,
       );
     }
   } catch (e) {
     if (e instanceof Abort || e instanceof OAuthError) {
-      err.write(`anona login: ${e.message}\n`);
+      err.write(`anona-memory login: ${e.message}\n`);
       return fallback && e instanceof ScopeRefused ? REFUSED : 1;
     }
     throw e;
@@ -446,30 +446,30 @@ async function approve(baseUrl: string, opts: LoginOptions, scope: string, fallb
   }
   out.write(
     cli
-      ? "Signed in. The command line (record, retrieve, reason and the other data commands) and `anona mcp` now use this login.\n"
+      ? "Signed in. The command line (record, retrieve, reason and the other data commands) and `anona-memory mcp` now use this login.\n"
       : "Signed in. MCP clients can now connect without an API key.\n",
   );
   return 0;
 }
 
-/** The MCP-only approval: `anona login --mcp`, and `anona login`'s fallback on a deployment without command-line tokens. */
+/** The MCP-only approval: `anona-memory login --mcp`, and `anona-memory login`'s fallback on a deployment without command-line tokens. */
 export async function runLogin(baseUrl: string, opts: LoginOptions = {}): Promise<number> {
   return approve(baseUrl, opts, MCP_SCOPE);
 }
 
-/** The command-line approval: `anona login --cli`, and what `anona login` asks for. `anona mcp` uses it too. */
+/** The command-line approval: `anona-memory login --cli`, and what `anona-memory login` asks for. `anona-memory mcp` uses it too. */
 export async function runCliLogin(baseUrl: string, opts: LoginOptions = {}): Promise<number> {
   return approve(baseUrl, opts, CLI_SCOPE);
 }
 
 /**
- * `anona login`: one approval that signs in the command line and MCP.
+ * `anona-memory login`: one approval that signs in the command line and MCP.
  *
  * The command-line token is accepted on `/mcp` as well as the REST API, so
- * `anona mcp` uses it and there is no second approval. (Two approvals, one per
+ * `anona-memory mcp` uses it and there is no second approval. (Two approvals, one per
  * token, is what this used to do; the MCP token is narrower, but both files sit
  * side by side in `~/.anona`, so the split protected nothing on the machine and
- * cost a second trip to the browser.) `anona login --mcp` still mints an
+ * cost a second trip to the browser.) `anona-memory login --mcp` still mints an
  * MCP-only token for anyone who wants one.
  *
  * A deployment that predates command-line tokens refuses the scope; then the

@@ -1,6 +1,6 @@
 """`record`, `retrieve` and `reason` with an API key.
 
-The `anona login` token is MCP-only and stays that way; an account reaches
+The `anona-memory login` token is MCP-only and stays that way; an account reaches
 these three verbs with an API key instead. Every case runs a real local HTTP
 server and asserts on what reached it -- which bearer, which space, or that
 nothing arrived at all -- so a refusal that still sent the request, or a
@@ -189,7 +189,7 @@ def test_mcp_login_only_still_refuses_and_names_the_api_key_options(tmp_path):
         for argv in (["record", "x"], ["retrieve", "x"], ["reason", "x"]):
             rc, out, err = run_main(argv)
             assert rc == 4, (argv, rc, err)
-            for needle in ("ANONA_API_KEY", "--api-key", "config.env", "anona start", "anona mcp"):
+            for needle in ("ANONA_API_KEY", "--api-key", "config.env", "anona-memory start", "anona-memory mcp"):
                 assert needle in err, (argv, needle, err)
             assert "oauth_MCP_ONLY" not in out + err
         assert SEEN == [], SEEN
@@ -201,7 +201,7 @@ def test_no_credential_at_all_is_an_auth_exit(tmp_path):
     ok(_run("""
         rc, out, err = run_main(["record", "x"])
         assert rc == 4, (rc, err)
-        assert "ANONA_API_KEY" in err and "anona start" in err, err
+        assert "ANONA_API_KEY" in err and "anona-memory start" in err, err
         assert SEEN == [], SEEN
         print("OK")
     """, tmp_path))
@@ -458,7 +458,7 @@ def test_status_names_the_key_source_and_only_its_prefix(tmp_path):
 
 
 def test_status_with_a_key_introduces_the_stored_profile_as_mcps(tmp_path):
-    """The stored temporary profile is what `anona mcp` uses. Printed bare
+    """The stored temporary profile is what `anona-memory mcp` uses. Printed bare
     after the key, its "Temporary profile ... claim it" line read as the
     credential the data commands were using."""
     ok(_run("""
@@ -467,7 +467,7 @@ def test_status_with_a_key_introduces_the_stored_profile_as_mcps(tmp_path):
         rc, out, err = run_main(["status", "--api-key", key])
         assert rc == 0, (rc, out, err)
         lines = out.splitlines()
-        intro = "Also stored, for `anona mcp` (the data commands use the API key above):"
+        intro = "Also stored, for `anona-memory mcp` (the data commands use the API key above):"
         assert intro in lines, out
         profile = next(i for i, l in enumerate(lines) if l.startswith("Temporary profile for"))
         assert lines.index(intro) < profile, out
@@ -478,7 +478,7 @@ def test_status_with_a_key_introduces_the_stored_profile_as_mcps(tmp_path):
 def test_status_without_a_key_is_unchanged(tmp_path):
     ok(_run("""
         rc, out, err = run_main(["status"])
-        assert rc == 1 and out.strip() == "Not logged in. Run `anona login`.", (rc, out)
+        assert rc == 1 and out.strip() == "Not logged in. Run `anona-memory login`.", (rc, out)
         temp_profile()
         rc, out, err = run_main(["status"])
         assert rc == 0 and out.startswith("Temporary profile for"), out

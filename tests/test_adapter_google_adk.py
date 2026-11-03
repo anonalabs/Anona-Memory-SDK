@@ -636,6 +636,6 @@ def test_import_error_names_the_extra():
             AnonaMemoryService(bridge=b)
             print('NO ERROR RAISED')
         except ImportError as e:
-            assert "pip install 'anona[adk]'" in str(e), str(e)
+            assert "pip install 'anona-memory[adk]'" in str(e), str(e)
             print('OK')
     """))

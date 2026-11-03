@@ -439,7 +439,7 @@ def _settings_parsers(sub, common, creds) -> None:
         )
         creds(st, "configure")
         if kind == "reason-settings":
-            st.add_argument("--model", default=None, help="A model id or tier name from `anona llm-models`")
+            st.add_argument("--model", default=None, help="A model id or tier name from `anona-memory llm-models`")
             st.add_argument("--depth", choices=("fast", "thorough"), default=None, help="How deep `reason` reads")
         elif kind == "chat-settings":
             st.add_argument("--memory-limit", type=_bounded(1, 20), default=None, help="Memories injected per turn (1-20)")
@@ -461,7 +461,7 @@ def _settings_parsers(sub, common, creds) -> None:
                 default=None,
                 help="Inject memories into proxied calls",
             )
-            st.add_argument("--chat-model", default=None, help="The LLM proxied calls use (see `anona llm-models`)")
+            st.add_argument("--chat-model", default=None, help="The LLM proxied calls use (see `anona-memory llm-models`)")
         elif kind == "routing-settings":
             st.add_argument("--charter", type=_text_arg, default=None, help="What belongs in this space, in words; @FILE reads it")
             st.add_argument("--topics", type=_topics, default=None, help="Comma-separated topics the space covers")
@@ -546,7 +546,7 @@ def precheck(args: argparse.Namespace) -> int | None:
         for path in args.paths:
             if not os.path.isfile(path):
                 print(
-                    f"anona: {_p(path)} is not a readable file. Nothing was sent.",
+                    f"anona-memory: {_p(path)} is not a readable file. Nothing was sent.",
                     file=sys.stderr,
                 )
                 return EMPTY_INPUT_EXIT
@@ -557,7 +557,7 @@ def precheck(args: argparse.Namespace) -> int | None:
             return changes
         if not changes:
             print(
-                f"anona: name at least one field to change (see `anona {verb[0]} set --help`). "
+                f"anona-memory: name at least one field to change (see `anona-memory {verb[0]} set --help`). "
                 "Nothing was sent.",
                 file=sys.stderr,
             )
@@ -567,7 +567,7 @@ def precheck(args: argparse.Namespace) -> int | None:
 
 def _reject_wait_timeout(args: argparse.Namespace) -> int | None:
     if getattr(args, "wait_timeout", None) is not None and not getattr(args, "wait", False):
-        print("anona: --wait-timeout needs --wait. Nothing was sent.", file=sys.stderr)
+        print("anona-memory: --wait-timeout needs --wait. Nothing was sent.", file=sys.stderr)
         return EMPTY_INPUT_EXIT
     return None
 
@@ -583,7 +583,7 @@ def settings_changes(args: argparse.Namespace) -> dict | int:
     for field in args.clear or ():
         if field in changes:
             print(
-                f"anona: {field} is both set and cleared. Nothing was sent.",
+                f"anona-memory: {field} is both set and cleared. Nothing was sent.",
                 file=sys.stderr,
             )
             return EMPTY_INPUT_EXIT
@@ -594,7 +594,7 @@ def settings_changes(args: argparse.Namespace) -> dict | int:
 def _reject_blank(what: str, value: str) -> int | None:
     if value.strip():
         return None
-    print(f"anona: the {what} is empty. Nothing was sent.", file=sys.stderr)
+    print(f"anona-memory: the {what} is empty. Nothing was sent.", file=sys.stderr)
     return EMPTY_INPUT_EXIT
 
 
@@ -603,7 +603,7 @@ def refuse_unconfirmed(args: argparse.Namespace, space: str | None) -> int | Non
     what = _destroy_message(verb_of(args), args, space)
     if what is None or args.yes:
         return None
-    print(f"anona: this would {what}. Pass --yes to do it. Nothing was sent.", file=sys.stderr)
+    print(f"anona-memory: this would {what}. Pass --yes to do it. Nothing was sent.", file=sys.stderr)
     return EMPTY_INPUT_EXIT
 
 
@@ -663,10 +663,10 @@ def _run_upload(args: argparse.Namespace, base_url: str, bearer: Bearer, space: 
             files.extend(part)
     except AnonaError as exc:
         # The SDK's own per-file ceiling, checked before anything is sent.
-        print(f"anona: {_p(exc.detail)} Nothing was sent.", file=sys.stderr)
+        print(f"anona-memory: {_p(exc.detail)} Nothing was sent.", file=sys.stderr)
         return exits.USAGE
     except OSError as exc:
-        print(f"anona: could not read a file ({type(exc).__name__}). Nothing was sent.", file=sys.stderr)
+        print(f"anona-memory: could not read a file ({type(exc).__name__}). Nothing was sent.", file=sys.stderr)
         return exits.USAGE
 
     def send(client: AnonaClient):

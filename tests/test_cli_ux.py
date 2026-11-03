@@ -1,6 +1,6 @@
 """The CLI's shared behaviour: exit codes, error rendering, retries and
-timeouts, --quiet, named profiles, `anona doctor`, `anona guide` and
-`anona completion`.
+timeouts, --quiet, named profiles, `anona-memory doctor`, `anona-memory guide` and
+`anona-memory completion`.
 """
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ def test_an_envelope_without_a_code_never_prints_a_python_dict(tmp_path):
         assert '"why": "bad"' in err, err
         route("POST", "/v1/record", lambda r: reply(400, {"detail": "Plain words."}))
         reqs, out, err = sent(["record", "x"] + AUTH, want_rc=1)
-        assert err.strip() == "anona: the server answered HTTP 400: Plain words.", err
+        assert err.strip() == "anona-memory: the server answered HTTP 400: Plain words.", err
         print("OK")
     """, tmp_path))
 
@@ -81,7 +81,7 @@ def test_429_is_retried_with_retry_after_and_bounded_by_retries(tmp_path):
         # A safe-to-repeat GET is retried on a 5xx; --quiet hides the notice.
         route("GET", "/v1/spaces/s/reason-settings", lambda r: envelope(503, "unavailable"))
         reqs, out, err = sent(["reason-settings", "get", "--retries", "2", "--quiet"] + AUTH, want_rc=7, n_requests=3)
-        assert "retrying" not in err and err.startswith("anona: unavailable"), err
+        assert "retrying" not in err and err.startswith("anona-memory: unavailable"), err
         refused(["record", "x", "--retries", "11"] + AUTH)
         refused(["record", "x", "--timeout", "0"] + AUTH)
         print("OK")
@@ -277,7 +277,7 @@ def test_guide_lists_every_command_in_text_and_json(tmp_path):
 sub = [a for a in parser._actions if a.__class__.__name__ == "_SubParsersAction"][0]
 registered = set(sub.choices)
 for name in registered:
-    assert ("  anona " + name) in text, ("missing from the text guide", name)
+    assert ("  anona-memory " + name) in text, ("missing from the text guide", name)
 for c in leaves:
     assert ("  " + introspect.usage(c)) in text, ("missing from the text guide", c.name)
     for opt in c.options:
@@ -300,7 +300,7 @@ assert sorted(guide.EXAMPLES) == sorted(names), sorted(set(names) ^ set(guide.EX
 assert sorted(guide.JSON_SHAPES) == sorted(names), sorted(set(names) ^ set(guide.JSON_SHAPES))
 for name, example in guide.EXAMPLES.items():
     argv = shlex.split(example)
-    assert argv[0] == "anona", example
+    assert argv[0] == "anona-memory", example
     ns = parser.parse_args(argv[1:])
     got = [ns.command] + ([ns.action] if getattr(ns, "action", None) else [])
     if getattr(ns, "sub_action", None):
@@ -319,7 +319,7 @@ assert rc == 0 and out == text, "help --llm differs from guide"
 rc, out, err = run_main(["help", "--llm", "--json"])
 assert out == js
 rc, out, err = run_main(["help"])
-assert rc == 0 and "usage: anona" in out
+assert rc == 0 and "usage: anona-memory" in out
 assert run_main(["help", "--json"])[0] == 2
 print("OK")
 """, tmp_path))
@@ -341,7 +341,7 @@ def _complete(script_path, words: list[str]) -> list[str]:
     line = " ".join(words)
     cmd = (
         f"source {script_path}; COMP_WORDS=({line}); COMP_CWORD={len(words) - 1}; "
-        "_anona; printf '%s\\n' \"${COMPREPLY[@]}\""
+        "_anona_memory; printf '%s\\n' \"${COMPREPLY[@]}\""
     )
     out = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, timeout=20)
     assert out.returncode == 0, out.stderr

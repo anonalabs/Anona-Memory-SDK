@@ -1,6 +1,6 @@
 {
   "name": "@anona-labs/memory",
-  "version": "0.20.1",
+  "version": "0.21.0",
   "description": "Anona Memory SDK — managed AI memory for intelligent agents",
   "license": "MIT",
   "type": "module",
@@ -14,7 +14,7 @@
   "homepage": "https://anonalabs.com",
   "engines": { "node": ">=18" },
   "publishConfig": { "access": "public" },
-  "bin": { "anona": "./dist/cli.mjs" },
+  "bin": { "anona-memory": "./dist/cli.mjs" },
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",

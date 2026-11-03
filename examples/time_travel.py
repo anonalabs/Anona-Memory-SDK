@@ -1,6 +1,6 @@
 """Dated history: import it, filter on when things happened, replay the past.
 
-    pip install anona
+    pip install anona-memory
     export ANONA_API_KEY=anona_live_...
     python examples/time_travel.py
 

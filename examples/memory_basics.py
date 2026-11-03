@@ -1,6 +1,6 @@
 """The core loop: record facts, search them, reason across them.
 
-    pip install anona
+    pip install anona-memory
     export ANONA_API_KEY=anona_live_...
     python examples/memory_basics.py
 

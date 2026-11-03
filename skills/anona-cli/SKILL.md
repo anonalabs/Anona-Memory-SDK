@@ -6,7 +6,7 @@ license: MIT
 
 # The anona CLI
 
-`anona` is the command line for Anona Memory: record, retrieve and reason over
+`anona-memory` is the command line for Anona Memory: record, retrieve and reason over
 memories, and manage spaces, memories, documents, jobs and per-space settings.
 This skill is how to drive it without guessing.
 
@@ -22,45 +22,45 @@ This skill is how to drive it without guessing.
 
 ## Rule 1: read the CLI's own reference before an unfamiliar command
 
-Never guess a flag. The installed CLI describes itself. Start with `anona` on
+Never guess a flag. The installed CLI describes itself. Start with `anona-memory` on
 its own (where to start: credentials, the three memory commands; sends
-nothing, exits `0`) or go straight to `anona guide`:
+nothing, exits `0`) or go straight to `anona-memory guide`:
 
 ```bash
-anona                   # orientation: how to sign in, the memory verbs, where to read more
-anona guide --json      # every command, flag, example, --json shape, exit code
-anona <command> --help  # one command
+anona-memory             # orientation: how to sign in, the memory verbs, where to read more
+anona-memory guide --json      # every command, flag, example, --json shape, exit code
+anona-memory <command> --help  # one command
 ```
 
-`anona guide --json` is generated from the parser, so it lists exactly what
+`anona-memory guide --json` is generated from the parser, so it lists exactly what
 this copy has. Look a command up with jq:
 
 ```bash
-anona guide --json | jq '.. | objects | select(.name? == "documents upload")'
+anona-memory guide --json | jq '.. | objects | select(.name? == "documents upload")'
 ```
 
-An older copy answers a bare `anona` with a usage error (exit `2`) and
-`anona guide` with `invalid choice: 'guide'`. There, use
-`anona --help` and `anona <command> --help`, or run the current version with
-`uvx --from anona anona <command>`. `anona --version` shows what is installed.
+An older copy answers a bare `anona-memory` with a usage error (exit `2`) and
+`anona-memory guide` with `invalid choice: 'guide'`. There, use
+`anona-memory --help` and `anona-memory <command> --help`, or run the current version with
+`uvx --from anona-memory anona <command>`. `anona-memory --version` shows what is installed.
 
 ## Rule 2: always `--json`, branch on the exit code
 
 With `--json`, stdout is exactly one JSON document, and empty on failure; the
-error is one line on stderr, `anona: <error_code>: <message>`. Never parse the
+error is one line on stderr, `anona-memory: <error_code>: <message>`. Never parse the
 plain-text output.
 
 | Exit | Means | Do |
 | --- | --- | --- |
 | `0` | Done. An empty search is `{"results": []}`, still `0`. | Carry on. |
 | `1` | Refused for another reason (`409`, `422`), or a waited-on job failed. | Read the code on stderr. Do not retry blindly. |
-| `2` | Your command was wrong. **Nothing was sent or billed.** | Fix it once, using `anona <command> --help`. |
+| `2` | Your command was wrong. **Nothing was sent or billed.** | Fix it once, using `anona-memory <command> --help`. |
 | `3` | `record` only: accepted, but nothing was extracted. **Not a failure.** | Re-record once with a sentence of context, or move on. |
 | `4` | No usable credential, a refused host, `401` or `403`. | Do not retry. See **Credentials**. |
-| `5` | `404`: space, memory, job or setting not found. | Check the id (`anona spaces list`). |
-| `6` | Rate limited after retries, or out of credits (reads spend credits too). | Stop. `anona usage` shows credits. |
+| `5` | `404`: space, memory, job or setting not found. | Check the id (`anona-memory spaces list`). |
+| `6` | Rate limited after retries, or out of credits (reads spend credits too). | Stop. `anona-memory usage` shows credits. |
 | `7` | `5xx`, timeout, or unreachable. **A write may have been stored.** | Never re-run a write without checking first. |
-| `8` | `--wait` gave up; the job is still running. | Poll later with `anona jobs get JOB_ID --space S`. |
+| `8` | `--wait` gave up; the job is still running. | Poll later with `anona-memory jobs get JOB_ID --space S`. |
 
 Older CLIs (pip 0.24.0, the npm package) report `5`-`7` as `1` and a `403` as
 `1`: treat `1` like `7` for a write there, and check before re-sending.
@@ -69,8 +69,8 @@ Older CLIs (pip 0.24.0, the npm package) report `5`-`7` as `1` and a `403` as
 
 The CLI never re-sends a write after a timeout or a `5xx`, because it may
 already have landed. After exit `7` from `record` or `documents upload`, check
-with `anona retrieve` or `anona memories list --q "<text>"` (or
-`anona documents list`) before you run it again.
+with `anona-memory retrieve` or `anona-memory memories list --q "<text>"` (or
+`anona-memory documents list`) before you run it again.
 
 ## Rule 4: destructive commands need `--yes`, and the user's say-so
 
@@ -86,17 +86,17 @@ The data commands take the first that exists:
 1. `--api-key` (visible in the process list; prefer the next two)
 2. `ANONA_API_KEY` in the environment
 3. `ANONA_API_KEY` in `~/.anona/config.env`
-4. the command-line login from `anona login`
-5. a temporary profile from `anona start`
+4. the command-line login from `anona-memory login`
+5. a temporary profile from `anona-memory start`
 
 With 1-4 a space is required: `--space S` or `ANONA_SPACE_ID`, else exit `2`.
 A temporary profile has one space, `default`: omit `--space`. The MCP login is
-never used by these commands. `anona doctor --json` says which credential wins
+never used by these commands. `anona-memory doctor --json` says which credential wins
 and why, and whether the space is reachable, without printing a secret.
 
-`anona login` needs a person at a browser: suggest it in one line, never run it
-and wait. You may run `anona start` for a temporary profile (72 hours, no
-account) and tell the user it expires and that `anona login` keeps it. Details:
+`anona-memory login` needs a person at a browser: suggest it in one line, never run it
+and wait. You may run `anona-memory start` for a temporary profile (72 hours, no
+account) and tell the user it expires and that `anona-memory login` keeps it. Details:
 `references/credentials.md`.
 
 ## Scoping
@@ -109,12 +109,12 @@ convention per space and hold it. Uploads take the same flags.
 ## The everyday commands
 
 ```bash
-anona retrieve "how is auth wired" --space my-project --json --limit 5
-anona record "Prefers pytest over unittest." --space my-project --json
-anona reason "what do we know about this user" --space my-project --json
-anona documents upload spec.pdf notes.md --space my-project --wait --json
-anona record --batch history.jsonl --space my-project --wait --json
-anona jobs get JOB_ID --space my-project --json
+anona-memory retrieve "how is auth wired" --space my-project --json --limit 5
+anona-memory record "Prefers pytest over unittest." --space my-project --json
+anona-memory reason "what do we know about this user" --space my-project --json
+anona-memory documents upload spec.pdf notes.md --space my-project --wait --json
+anona-memory record --batch history.jsonl --space my-project --wait --json
+anona-memory jobs get JOB_ID --space my-project --json
 ```
 
 More, by task: `references/commands.md`. JSON shapes, `--wait`, batch files,
@@ -122,6 +122,6 @@ retries: `references/scripting.md`.
 
 ## Failure is never the user's problem
 
-If memory is optional to the task, a failed `anona` call must not stop it. Carry
+If memory is optional to the task, a failed `anona-memory` call must not stop it. Carry
 on without memory and mention the failure once, at the end. Never retry in a
 loop.
